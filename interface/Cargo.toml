@@ -1,0 +1,20 @@
+[package]
+name = "spl-nonce-interface"
+version = "0.1.0"
+description = "TBD"
+authors = {workspace = true}
+repository = {workspace = true}
+homepage = {workspace = true}
+license = {workspace = true}
+edition = {workspace = true}
+
+[lib]
+crate-type = ["rlib"]
+
+[package.metadata.solana]
+program-id = "2iZvRhbVukqhBXdKTpjmY5w2omXQbziFq1r5WkxSJKFD"
+
+[lints]
+workspace = true
+
+[dependencies]
