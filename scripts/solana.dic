@@ -43,7 +43,6 @@ timestamp/S
 entrypoint/S
 spl
 pda/S
-PDA/S
 multisignature/S
 multisig/S
 staker/S
@@ -54,3 +53,4 @@ pinocchio
 Pinocchio
 IDL
 Ed25519
+tx

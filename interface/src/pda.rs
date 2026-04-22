@@ -1,40 +1,38 @@
 //! PDA derivation helpers for the SPL Nonce program.
 //!
-//! One [`AuthorityPolicy`] determines two canonical PDAs:
-//! [`NonceStatePda`] and [`NonceAuthorityPda`].
+//! A nonce account has two stable identities:
+//! - [`NonceStatePda`], derived from an initialization nonce id
+//! - [`NonceAuthorityPda`], derived from the nonce state address
 
-use {crate::state::AuthorityPolicy, solana_address::Address};
+use solana_address::Address;
 
-/// Nonce state account PDA. Stores the nonce counter and authority policy.
+/// Nonce state account PDA. Stores the replay-protection nonce and authority.
 ///
-/// Seeds: `["nonce-state", authority_policy_hash, bump]`
+/// Seeds: `["nonce-state", nonce_id, bump]`
 pub struct NonceStatePda;
 
 impl NonceStatePda {
     pub const SEED_PREFIX: &[u8] = b"nonce-state";
 
     #[inline(always)]
-    pub fn derive_address_and_bump(
-        program_id: &Address,
-        authority_policy: &AuthorityPolicy,
-    ) -> (Address, u8) {
-        let authority_policy_hash = authority_policy.hash();
-        Address::derive_program_address(&[Self::SEED_PREFIX, &authority_policy_hash], program_id)
-            .expect("failed to derive NonceStatePda from authority policy")
+    pub fn derive_address_and_bump(program_id: &Address, nonce_id: &[u8; 32]) -> (Address, u8) {
+        Address::derive_program_address(&[Self::SEED_PREFIX, nonce_id], program_id)
+            .expect("failed to derive NonceStatePda from nonce id")
     }
 
     #[inline(always)]
-    pub fn derive_address(program_id: &Address, authority_policy: &AuthorityPolicy) -> Address {
-        Self::derive_address_and_bump(program_id, authority_policy).0
+    pub fn derive_address(program_id: &Address, nonce_id: &[u8; 32]) -> Address {
+        let (address, _bump) = Self::derive_address_and_bump(program_id, nonce_id);
+        address
     }
 }
 
 /// Nonce authority PDA.
 ///
-/// The PDA the program signs as when executing committed CPI instructions.
-/// Downstream programs can recognize this address as an owner or authority.
+/// Program-owned runtime signer for the nonce account. `Submit` promotes it to `is_signer=true`
+/// via `invoke_signed` wherever the wrapped message references it.
 ///
-/// Seeds: `["nonce-authority", authority_policy_hash, bump]`
+/// Seeds: `["nonce-authority", nonce_state_addr, bump]`
 pub struct NonceAuthorityPda;
 
 impl NonceAuthorityPda {
@@ -43,15 +41,15 @@ impl NonceAuthorityPda {
     #[inline(always)]
     pub fn derive_address_and_bump(
         program_id: &Address,
-        authority_policy: &AuthorityPolicy,
+        nonce_state_addr: &Address,
     ) -> (Address, u8) {
-        let authority_policy_hash = authority_policy.hash();
-        Address::derive_program_address(&[Self::SEED_PREFIX, &authority_policy_hash], program_id)
-            .expect("failed to derive NonceAuthorityPda from authority policy")
+        Address::derive_program_address(&[Self::SEED_PREFIX, nonce_state_addr.as_ref()], program_id)
+            .expect("failed to derive NonceAuthorityPda from nonce state address")
     }
 
     #[inline(always)]
-    pub fn derive_address(program_id: &Address, authority_policy: &AuthorityPolicy) -> Address {
-        Self::derive_address_and_bump(program_id, authority_policy).0
+    pub fn derive_address(program_id: &Address, nonce_state_address: &Address) -> Address {
+        let (address, _bump) = Self::derive_address_and_bump(program_id, nonce_state_address);
+        address
     }
 }

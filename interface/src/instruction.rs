@@ -1,44 +1,101 @@
+use {
+    solana_address::Address,
+    wincode::{SchemaRead, SchemaWrite},
+};
+
 /// Instructions supported by the SPL Nonce program.
 #[repr(u8)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum NonceInstruction {
-    /// Creates a new nonce state account for the given authority policy. Anyone
-    /// may initialize the canonical pre-funded PDA for a given authority policy.
+    /// Creates a nonce account at the PDA derived from a caller-chosen 32-byte `nonce_id`.
     ///
-    /// On success, the state account is initialized with:
-    /// - `nonce = 0`
-    /// - the authority policy that will govern future signed actions
-    ///
-    /// The nonce state address is derived from [`NonceStatePda`](crate::pda::NonceStatePda)
-    /// and must already be pre-funded with enough lamports to be rent-exempt before
-    /// this instruction runs. During initialization, the program claims that PDA
-    /// as nonce state and writes the initial state into it.
-    ///
-    /// Accounts required:
-    /// - `[writable]` Nonce state PDA to initialize (pre-funded)
-    /// - `[]` System program used to allocate and assign the pre-funded PDA
-    Initialize,
-
-    /// Verifies threshold Ed25519 signatures over a signed message, then
-    /// performs the action committed in that message.
-    ///
-    /// The signed message specifies one of:
-    /// - `Execute`: run signed CPI instructions
-    /// - `AdvanceNonce`: increment the nonce, invalidating all previously signed messages
-    /// - `Close`: close the state account and refund lamports
+    /// Instruction data: [`InitializeData`].
     ///
     /// On success, the program:
-    /// 1. Verifies that enough authority-policy members signed the message
-    /// 2. Checks the message nonce matches the state and the deadline has not passed
-    /// 3. Performs the committed action
-    ///
-    /// The instruction data format is defined in [`message`](crate::message).
+    /// 1. Allocates and assigns the PDA via System program CPI. Caller must pre-fund it with
+    ///    rent-exempt lamports.
+    /// 2. Derives the initial `nonce` as
+    ///    `sha256("spl-nonce::init-v1" ‖ state_pda_address ‖ slot_hashes[0])`.
+    /// 3. Writes `NonceState { nonce, authority }` into the account data.
     ///
     /// Accounts required:
-    /// - `[writable]` Nonce state PDA
-    /// - Remaining: accounts from the signed message's account table, in the
-    ///   exact same order. `AdvanceNonce` requires no remaining accounts.
+    /// - `[writable]` `NonceStatePda`, pre-funded
+    /// - `[]` `SlotHashes` sysvar
+    /// - `[]` System program
+    Initialize,
+
+    /// Authorizes and executes a wrapped Solana transaction signed by `NonceState` authority.
+    ///
+    /// Instruction data: `solana_transaction::Transaction`.
+    ///
+    /// On success, the program:
+    /// 1. Deserializes the `Transaction` and sanitizes the wrapped message.
+    /// 2. Checks `message.account_keys[0] == state.authority`.
+    /// 3. Checks `message.recent_blockhash == state.nonce`.
+    /// 4. Verifies that every signer declared by the wrapped message either signs the
+    ///    outer transaction or the inner wrapped transaction.
+    /// 5. Executes each `message.instructions` entry by CPI, promoting `NonceAuthorityPda`
+    ///    to signer wherever referenced.
+    /// 6. Derives and stores the next nonce as
+    ///    `sha256("spl-nonce::v1" ‖ state_pda ‖ old_nonce ‖ slot_hashes[0] ‖ sha256(bincode(tx.message)))`.
+    ///
+    /// Accounts required:
+    /// - `[writable]` `NonceStatePda`
+    /// - `[]` `SlotHashes` sysvar
+    /// - `[]` `Instructions` sysvar
+    /// - Remaining: `tx.message.account_keys`, in order, with `is_signer` and `is_writable`
+    ///   flags matching the wrapped message.
     Submit,
+
+    /// Rotates the authority controlling this nonce account.
+    ///
+    /// Instruction data: [`SetAuthorityData`].
+    ///
+    /// Runs only as an inner instruction of a wrapped transaction submitted through `Submit`.
+    /// Inherits the authorization from the outer `Submit`. A direct outer call cannot succeed,
+    /// because nothing outside this program can sign for `NonceAuthorityPda`.
+    ///
+    /// Accounts required:
+    /// - `[signer]` `NonceAuthorityPda`
+    /// - `[writable]` `NonceStatePda`
+    SetAuthority,
+
+    /// Closes a nonce account and refunds its lamports.
+    ///
+    /// Instruction data: [`CloseData`].
+    ///
+    /// Runs only as an inner instruction of a wrapped transaction submitted through `Submit`
+    /// for the same reason as `SetAuthority`.
+    ///
+    /// Accounts required:
+    /// - `[signer]` `NonceAuthorityPda`
+    /// - `[writable]` `NonceStatePda`
+    /// - `[writable]` Lamport recipient
+    Close,
+}
+
+/// Data for [`NonceInstruction::Initialize`].
+#[derive(Clone, Debug, PartialEq, Eq, SchemaRead, SchemaWrite)]
+pub struct InitializeData {
+    /// Caller-chosen identifier for this nonce account. Each distinct value derives its own
+    /// [`NonceStatePda`](crate::pda::NonceStatePda).
+    pub nonce_id: [u8; 32],
+    /// Authorizes `Submit` ix for this account.
+    pub authority: Address,
+}
+
+/// Data for [`NonceInstruction::SetAuthority`].
+#[derive(Clone, Debug, PartialEq, Eq, SchemaRead, SchemaWrite)]
+pub struct SetAuthorityData {
+    /// Replacement authority address.
+    pub authority: Address,
+}
+
+/// Data for [`NonceInstruction::Close`].
+#[derive(Clone, Debug, PartialEq, Eq, SchemaRead, SchemaWrite)]
+pub struct CloseData {
+    /// Address that receives all lamports from the closed nonce account.
+    pub recipient: Address,
 }
 
 impl TryFrom<u8> for NonceInstruction {
@@ -48,6 +105,8 @@ impl TryFrom<u8> for NonceInstruction {
         match value {
             0 => Ok(Self::Initialize),
             1 => Ok(Self::Submit),
+            2 => Ok(Self::SetAuthority),
+            3 => Ok(Self::Close),
             _ => Err(()),
         }
     }
@@ -67,11 +126,13 @@ mod tests {
     fn discriminants_match() {
         assert_eq!(u8::from(NonceInstruction::Initialize), 0);
         assert_eq!(u8::from(NonceInstruction::Submit), 1);
+        assert_eq!(u8::from(NonceInstruction::SetAuthority), 2);
+        assert_eq!(u8::from(NonceInstruction::Close), 3);
     }
 
     #[test]
     fn try_from_rejects_unknown() {
-        assert!(NonceInstruction::try_from(2).is_err());
+        assert!(NonceInstruction::try_from(4).is_err());
         assert!(NonceInstruction::try_from(255).is_err());
     }
 }
