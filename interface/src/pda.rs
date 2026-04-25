@@ -1,28 +1,28 @@
 //! PDA derivation helpers for the SPL Nonce program.
 //!
 //! A nonce account has two stable identities:
-//! - [`NonceStatePda`], derived from an initialization nonce id
+//! - [`NonceStatePda`], derived from the authority address
 //! - [`NonceAuthorityPda`], derived from the nonce state address
 
 use solana_address::Address;
 
 /// Nonce state account PDA. Stores the replay-protection nonce and authority.
 ///
-/// Seeds: `["nonce-state", nonce_id, bump]`
+/// Seeds: `["nonce-state", authority, bump]`
 pub struct NonceStatePda;
 
 impl NonceStatePda {
     pub const SEED_PREFIX: &[u8] = b"nonce-state";
 
     #[inline(always)]
-    pub fn derive_address_and_bump(program_id: &Address, nonce_id: &[u8; 32]) -> (Address, u8) {
-        Address::derive_program_address(&[Self::SEED_PREFIX, nonce_id], program_id)
-            .expect("failed to derive NonceStatePda from nonce id")
+    pub fn derive_address_and_bump(program_id: &Address, authority: &Address) -> (Address, u8) {
+        Address::derive_program_address(&[Self::SEED_PREFIX, authority.as_ref()], program_id)
+            .expect("failed to derive NonceStatePda from authority")
     }
 
     #[inline(always)]
-    pub fn derive_address(program_id: &Address, nonce_id: &[u8; 32]) -> Address {
-        let (address, _bump) = Self::derive_address_and_bump(program_id, nonce_id);
+    pub fn derive_address(program_id: &Address, authority: &Address) -> Address {
+        let (address, _bump) = Self::derive_address_and_bump(program_id, authority);
         address
     }
 }

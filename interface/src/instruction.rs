@@ -7,9 +7,7 @@ use {
 #[repr(u8)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum NonceInstruction {
-    /// Creates a nonce account at the PDA derived from a caller-chosen 32-byte `nonce_id`.
-    ///
-    /// Instruction data: [`InitializeData`].
+    /// Creates the nonce state PDA for an authority.
     ///
     /// On success, the program:
     /// 1. Allocates and assigns the PDA via System program CPI. Caller must pre-fund it with
@@ -48,25 +46,12 @@ pub enum NonceInstruction {
     ///   flags matching the wrapped message.
     Submit,
 
-    /// Rotates the authority controlling this nonce account.
-    ///
-    /// Instruction data: [`SetAuthorityData`].
-    ///
-    /// Runs only as an inner instruction of a wrapped transaction submitted through `Submit`.
-    /// Inherits the authorization from the outer `Submit`. A direct outer call cannot succeed,
-    /// because nothing outside this program can sign for `NonceAuthorityPda`.
-    ///
-    /// Accounts required:
-    /// - `[signer]` `NonceAuthorityPda`
-    /// - `[writable]` `NonceStatePda`
-    SetAuthority,
-
     /// Closes a nonce account and refunds its lamports.
     ///
     /// Instruction data: [`CloseData`].
     ///
-    /// Runs only as an inner instruction of a wrapped transaction submitted through `Submit`
-    /// for the same reason as `SetAuthority`.
+    /// Runs only as an inner instruction of a wrapped transaction submitted through `Submit`,
+    /// because nothing outside this program can sign for `NonceAuthorityPda`.
     ///
     /// Accounts required:
     /// - `[signer]` `NonceAuthorityPda`
@@ -106,8 +91,7 @@ impl TryFrom<u8> for NonceInstruction {
         match value {
             0 => Ok(Self::Initialize),
             1 => Ok(Self::Submit),
-            2 => Ok(Self::SetAuthority),
-            3 => Ok(Self::Close),
+            2 => Ok(Self::Close),
             _ => Err(()),
         }
     }
@@ -127,8 +111,7 @@ mod tests {
     fn discriminants_match() {
         assert_eq!(u8::from(NonceInstruction::Initialize), 0);
         assert_eq!(u8::from(NonceInstruction::Submit), 1);
-        assert_eq!(u8::from(NonceInstruction::SetAuthority), 2);
-        assert_eq!(u8::from(NonceInstruction::Close), 3);
+        assert_eq!(u8::from(NonceInstruction::Close), 2);
     }
 
     #[test]
