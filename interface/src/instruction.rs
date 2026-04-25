@@ -26,18 +26,19 @@ pub enum NonceInstruction {
 
     /// Authorizes and executes a wrapped Solana transaction signed by `NonceState` authority.
     ///
-    /// Instruction data: `solana_transaction::Transaction`.
+    /// Instruction data: serialized `solana_transaction::versioned::VersionedTransaction`
+    /// whose message is `solana_message::v1::Message`.
     ///
     /// On success, the program:
-    /// 1. Deserializes the `Transaction` and sanitizes the wrapped message.
-    /// 2. Checks `message.account_keys[0] == state.authority`.
-    /// 3. Checks `message.recent_blockhash == state.nonce`.
+    /// 1. Deserializes the transaction and sanitizes the wrapped message.
+    /// 2. Checks `state.authority` appears in the wrapped message's required-signer prefix.
+    /// 3. Checks `message.lifetime_specifier == state.nonce`.
     /// 4. Verifies that every signer declared by the wrapped message either signs the
     ///    outer transaction or the inner wrapped transaction.
     /// 5. Executes each `message.instructions` entry by CPI, promoting `NonceAuthorityPda`
     ///    to signer wherever referenced.
     /// 6. Derives and stores the next nonce as
-    ///    `sha256("spl-nonce::v1" ‖ state_pda ‖ old_nonce ‖ slot_hashes[0] ‖ sha256(bincode(tx.message)))`.
+    ///    `sha256("spl-nonce::v1" ‖ state_pda ‖ old_nonce ‖ slot_hashes[0] ‖ sha256(signed_message_bytes))`
     ///
     /// Accounts required:
     /// - `[writable]` `NonceStatePda`
