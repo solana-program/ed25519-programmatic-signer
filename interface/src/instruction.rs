@@ -17,8 +17,8 @@ pub enum NonceInstruction {
     /// 3. Writes `NonceState { nonce, authority }` into the account data.
     ///
     /// Accounts required:
+    /// - `[signer]` Authority whose address derives the nonce account
     /// - `[writable]` `NonceStatePda`, pre-funded
-    /// - `[]` `SlotHashes` sysvar
     /// - `[]` System program
     Initialize,
 
@@ -58,23 +58,6 @@ pub enum NonceInstruction {
     /// - `[writable]` `NonceStatePda`
     /// - `[writable]` Lamport recipient
     Close,
-}
-
-/// Data for [`NonceInstruction::Initialize`].
-#[derive(Clone, Debug, PartialEq, Eq, SchemaRead, SchemaWrite)]
-pub struct InitializeData {
-    /// Caller-chosen identifier for this nonce account. Each distinct value derives its own
-    /// [`NonceStatePda`](crate::pda::NonceStatePda).
-    pub nonce_id: [u8; 32],
-    /// Authorizes `Submit` ix for this account.
-    pub authority: Address,
-}
-
-/// Data for [`NonceInstruction::SetAuthority`].
-#[derive(Clone, Debug, PartialEq, Eq, SchemaRead, SchemaWrite)]
-pub struct SetAuthorityData {
-    /// Replacement authority address.
-    pub authority: Address,
 }
 
 /// Data for [`NonceInstruction::Close`].
