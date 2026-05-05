@@ -12,7 +12,7 @@ edition = {workspace = true}
 crate-type = ["cdylib"]
 
 [package.metadata.solana]
-program-id = "nonce34S3Viw97xQwWGpRWEGufiSpfVEAiFe7Lefv7y"
+program-id = "EdSigVfK1DkeMrjFNDMjwfQaJPhPTtX7jW8uPv3oKEgN"
 
 [lints]
 workspace = true
