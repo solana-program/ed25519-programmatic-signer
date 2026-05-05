@@ -1,4 +1,4 @@
-//! Interface for the Nonce program.
+//! Interface for the Ed25519 Durable Signer program.
 #![no_std]
 
 pub mod instruction;

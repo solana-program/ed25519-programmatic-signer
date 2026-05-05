@@ -284,7 +284,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "spl-nonce-interface"
+name = "spl-ed25519-durable-signer-interface"
 version = "0.1.0"
 dependencies = [
  "solana-address",
@@ -293,7 +293,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "spl-nonce-program"
+name = "spl-ed25519-durable-signer-program"
 version = "0.1.0"
 
 [[package]]

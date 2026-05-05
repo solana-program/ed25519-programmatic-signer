@@ -4,14 +4,14 @@ use {
     wincode::{SchemaRead, SchemaWrite},
 };
 
-/// On-chain state for a nonce account. Caller-created and owned by the nonce program.
+/// On-chain data for a caller-created durable signer account.
 ///
-/// One authority can control any number of independent nonce state accounts. This is useful for
+/// One authority can control any number of independent durable signer accounts. This is useful for
 /// when that authority wants to prepare or submit more than one transaction concurrently. Each
 /// account carries its own nonce, so consuming one nonce does not advance or invalidate
 /// transactions prepared against another nonce state account.
 #[derive(Clone, Debug, PartialEq, Eq, SchemaRead, SchemaWrite)]
-pub struct NonceState {
+pub struct DurableSignerAccount {
     /// Single-use value that prevents a signed message from being replayed. `Submit` requires this
     /// to match the wrapped message's lifetime field: `lifetime_specifier` for `v1` messages or
     /// `recent_blockhash` for `legacy` and `v0` messages. On success, `Submit` advances it to a

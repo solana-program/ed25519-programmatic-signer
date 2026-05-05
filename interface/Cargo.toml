@@ -1,7 +1,7 @@
 [package]
-name = "spl-nonce-interface"
+name = "spl-ed25519-durable-signer-interface"
 version = "0.1.0"
-description = "Interface for the SPL Nonce program"
+description = "Interface for the SPL Ed25519 Durable Signer program"
 authors = { workspace = true }
 repository = { workspace = true }
 homepage = { workspace = true }

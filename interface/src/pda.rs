@@ -1,21 +1,21 @@
 use solana_address::Address;
 
-/// Nonce authority PDA.
+/// Durable signer PDA.
 ///
 /// Program-owned runtime signer for an authority. `Submit` promotes it to `is_signer=true`
 /// via `invoke_signed` wherever a wrapped instruction references it after the corresponding
 /// authority has signed the wrapped message.
 ///
-/// Seeds: `["nonce-authority", authority, bump]`
-pub struct NonceAuthorityPda;
+/// Seeds: `["durable-signer", authority, bump]`
+pub struct DurableSignerPda;
 
-impl NonceAuthorityPda {
-    pub const SEED_PREFIX: &[u8] = b"nonce-authority";
+impl DurableSignerPda {
+    pub const SEED_PREFIX: &[u8] = b"durable-signer";
 
     #[inline(always)]
     pub fn derive_address_and_bump(program_id: &Address, authority: &Address) -> (Address, u8) {
         Address::derive_program_address(&[Self::SEED_PREFIX, authority.as_ref()], program_id)
-            .expect("failed to derive NonceAuthorityPda from authority")
+            .expect("failed to derive DurableSignerPda from authority")
     }
 
     #[inline(always)]
