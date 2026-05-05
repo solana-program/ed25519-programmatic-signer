@@ -44,7 +44,7 @@ pub enum DurableSignerInstruction {
     /// 4. Checks the wrapped message's lifetime / recent blockhash field equals the account's
     ///    `nonce`.
     /// 5. Verifies the outer transaction's only top-level instruction is `Submit`.
-    /// 6. For each wrapped required signer position `i`, requires
+    /// 6. Iterates over the outer authority accounts in order. For each `authority_i`, requires
     ///    `DurableSignerPda(authority_i) == message.account_keys[i]` and verifies
     ///    `tx.signatures[i]` over the wrapped message with `authority_i`.
     /// 7. Executes each `message.instructions` entry by CPI, using `invoke_signed` to promote
@@ -56,10 +56,9 @@ pub enum DurableSignerInstruction {
     /// - `[writable]` Durable signer account whose nonce is consumed and advanced
     /// - `[]` `SlotHashes` sysvar
     /// - `[]` `Instructions` sysvar
-    /// - Required-signer authority addresses, ordered to match the wrapped required signers:
-    ///   `DurableSignerPda(authority_i) == message.account_keys[i]`.
-    /// - Remaining: all accounts referenced by the wrapped message, in order, with `is_signer`
-    ///   and `is_writable` flags matching the wrapped message.
+    /// - Authority addresses, ordered to match the wrapped message's required signers.
+    /// - Remaining accounts referenced by the wrapped message, in order. Writable flags
+    ///   must match the wrapped message.
     Submit,
 
     /// Closes a durable signer account and refunds its lamports.
