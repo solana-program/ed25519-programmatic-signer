@@ -6,8 +6,10 @@ on:
   pull_request:
 
 env:
-  RUST_PACKAGES: "['interface', 'program']"
+  RUST_PACKAGES: "['client', 'interface', 'program']"
   SBPF_PROGRAM_PACKAGES: "['program']"
+  NO_STD_CORE_PACKAGES: "['interface', 'program']"
+  NO_STD_ALLOC_PACKAGES: "['client']"
 
 jobs:
   set_env:
@@ -18,6 +20,8 @@ jobs:
       RUST_PACKAGES: ${{ steps.compute.outputs.RUST_PACKAGES }}
       RUST_TOOLCHAIN_NIGHTLY: ${{ steps.compute.outputs.RUST_TOOLCHAIN_NIGHTLY }}
       SOLANA_CLI_VERSION: ${{ steps.compute.outputs.SOLANA_CLI_VERSION }}
+      NO_STD_CORE_PACKAGES: ${{ steps.compute.outputs.NO_STD_CORE_PACKAGES }}
+      NO_STD_ALLOC_PACKAGES: ${{ steps.compute.outputs.NO_STD_ALLOC_PACKAGES }}
     steps:
       - name: Git Checkout
         uses: actions/checkout@v4
@@ -30,6 +34,8 @@ jobs:
           echo "RUST_PACKAGES=$RUST_PACKAGES" >> "$GITHUB_OUTPUT"
           echo "RUST_TOOLCHAIN_NIGHTLY=$(make rust-toolchain-nightly)" >> "$GITHUB_OUTPUT"
           echo "SOLANA_CLI_VERSION=$(make solana-cli-version)" >> "$GITHUB_OUTPUT"
+          echo "NO_STD_CORE_PACKAGES=$NO_STD_CORE_PACKAGES" >> "$GITHUB_OUTPUT"
+          echo "NO_STD_ALLOC_PACKAGES=$NO_STD_ALLOC_PACKAGES" >> "$GITHUB_OUTPUT"
 
   main:
     needs: set_env
@@ -40,3 +46,6 @@ jobs:
       rustfmt-toolchain: ${{ needs.set_env.outputs.RUST_TOOLCHAIN_NIGHTLY }}
       clippy-toolchain: ${{ needs.set_env.outputs.RUST_TOOLCHAIN_NIGHTLY }}
       solana-cli-version: ${{ needs.set_env.outputs.SOLANA_CLI_VERSION }}
+      no-std-toolchain: ${{ needs.set_env.outputs.RUST_TOOLCHAIN_NIGHTLY }}
+      no-std-core-packages: ${{ needs.set_env.outputs.NO_STD_CORE_PACKAGES }}
+      no-std-alloc-packages: ${{ needs.set_env.outputs.NO_STD_ALLOC_PACKAGES }}

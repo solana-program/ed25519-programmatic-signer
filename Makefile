@@ -63,3 +63,19 @@ test-%:
 
 generate-clients:
 	@echo "No clients to generate yet"
+
+check-no-std-core-%:
+	cargo $(nightly) hack check \
+		--target bpfel-unknown-none \
+		--each-feature \
+		--manifest-path $(call make-path,$*)/Cargo.toml \
+		-Zbuild-std=core \
+		$(ARGS)
+
+check-no-std-alloc-%:
+	cargo $(nightly) hack check \
+		--target bpfel-unknown-none \
+		--each-feature \
+		--manifest-path $(call make-path,$*)/Cargo.toml \
+		-Zbuild-std=alloc,core \
+		$(ARGS)

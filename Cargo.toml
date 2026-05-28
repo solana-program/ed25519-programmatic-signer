@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["interface", "program"]
+members = ["client", "interface", "program"]
 
 [workspace.package]
 authors = ["Anza Maintainers <maintainers@anza.xyz>"]
@@ -8,6 +8,21 @@ repository = "https://github.com/solana-program/nonce"
 homepage = "https://anza.xyz/"
 license = "Apache-2.0"
 edition = "2021"
+
+[workspace.dependencies]
+mollusk-svm = "0.13.1"
+pinocchio = { version = "0.11.0", default-features = false }
+solana-account = "3.4.0"
+solana-address = { version = "2.6.0", default-features = false }
+solana-hash = { version = "4.2.0", default-features = false }
+solana-instruction = { version = "3.3.0", default-features = false }
+solana-program-error = { version = "3.0.1", default-features = false }
+solana-rent = { version = "3.1.0", default-features = false }
+solana-sdk-ids = "3.1.0"
+solana-sha256-hasher = { version = "3.1.0", default-features = false }
+spl-ed25519-durable-signer-client = { path = "client" }
+spl-ed25519-durable-signer-interface = { path = "interface" }
+wincode = { version = "0.5.5", default-features = false }
 
 [workspace.lints.rust.unexpected_cfgs]
 level = "warn"

@@ -1,0 +1,21 @@
+[package]
+name = "spl-ed25519-durable-signer-client"
+version = "0.1.0"
+description = "Off-chain client helpers for the SPL Ed25519 Durable Signer program"
+authors = { workspace = true }
+repository = { workspace = true }
+homepage = { workspace = true }
+license = { workspace = true }
+edition = { workspace = true }
+
+[lib]
+crate-type = ["rlib"]
+
+[lints]
+workspace = true
+
+[dependencies]
+solana-address = { workspace = true }
+solana-instruction = { workspace = true }
+solana-sdk-ids = { workspace = true }
+spl-ed25519-durable-signer-interface = { workspace = true }

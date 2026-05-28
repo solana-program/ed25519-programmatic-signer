@@ -18,6 +18,17 @@ program-id = "EdSigVfK1DkeMrjFNDMjwfQaJPhPTtX7jW8uPv3oKEgN"
 workspace = true
 
 [dependencies]
-
+pinocchio = { workspace = true }
+solana-sha256-hasher = { workspace = true, features = ["sha2"] }
+spl-ed25519-durable-signer-interface = { workspace = true }
+wincode = { workspace = true }
 
 [dev-dependencies]
+mollusk-svm = { workspace = true }
+solana-account = { workspace = true }
+solana-address = { workspace = true }
+solana-hash = { workspace = true }
+solana-instruction = { workspace = true }
+solana-program-error = { workspace = true }
+solana-rent = { workspace = true }
+spl-ed25519-durable-signer-client = { workspace = true }

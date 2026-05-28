@@ -1,11 +1,13 @@
 use {
     solana_address::Address,
+    solana_program_error::ProgramError,
     wincode::{SchemaRead, SchemaWrite},
 };
 
 /// Instructions supported by the SPL Ed25519 Durable Signer program.
 #[repr(u8)]
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, SchemaRead, SchemaWrite)]
+#[wincode(tag_encoding = "u8")]
 pub enum DurableSignerInstruction {
     /// Initializes a durable signer account for an authority.
     ///
@@ -19,7 +21,7 @@ pub enum DurableSignerInstruction {
     ///    `sha256("spl-ed25519-durable-signer::init-v1" ‖ durable_signer_account_address ‖ slot_hashes[0])`.
     /// 3. Writes `DurableSignerAccount { nonce, authority }` into the account data.
     ///
-    /// Instruction data: empty.
+    /// Instruction data: instruction discriminator only
     ///
     /// Accounts required:
     /// - `[writable]` Durable signer account
@@ -30,7 +32,8 @@ pub enum DurableSignerInstruction {
     /// Authorizes and executes a wrapped Solana transaction whose required signers are
     /// `DurableSignerPda` accounts.
     ///
-    /// Instruction data: serialized `solana_transaction::versioned::VersionedTransaction`.
+    /// Instruction data: instruction discriminator followed by a serialized
+    /// `solana_transaction::versioned::VersionedTransaction`.
     /// All message variants supported by `VersionedTransaction` are accepted.
     ///
     /// Wrapped required signers are paired by index:
@@ -63,7 +66,7 @@ pub enum DurableSignerInstruction {
 
     /// Closes a durable signer account and refunds its lamports.
     ///
-    /// Instruction data: [`CloseData`].
+    /// Instruction data: instruction discriminator followed by [`CloseData`].
     ///
     /// Runs only as an inner instruction of a wrapped transaction submitted through `Submit`
     /// because nothing outside this program can sign for `DurableSignerPda`.
@@ -82,22 +85,11 @@ pub struct CloseData {
     pub recipient: Address,
 }
 
-impl TryFrom<u8> for DurableSignerInstruction {
-    type Error = ();
-
-    fn try_from(value: u8) -> Result<Self, Self::Error> {
-        match value {
-            0 => Ok(Self::Initialize),
-            1 => Ok(Self::Submit),
-            2 => Ok(Self::Close),
-            _ => Err(()),
-        }
-    }
-}
-
-impl From<DurableSignerInstruction> for u8 {
-    fn from(value: DurableSignerInstruction) -> Self {
-        value as u8
+impl DurableSignerInstruction {
+    #[inline(always)]
+    pub fn try_from_bytes(instruction_data: &[u8]) -> Result<Self, ProgramError> {
+        wincode::deserialize_exact(instruction_data)
+            .map_err(|_| ProgramError::InvalidInstructionData)
     }
 }
 
@@ -105,16 +97,22 @@ impl From<DurableSignerInstruction> for u8 {
 mod tests {
     use super::DurableSignerInstruction;
 
-    #[test]
-    fn discriminants_match() {
-        assert_eq!(u8::from(DurableSignerInstruction::Initialize), 0);
-        assert_eq!(u8::from(DurableSignerInstruction::Submit), 1);
-        assert_eq!(u8::from(DurableSignerInstruction::Close), 2);
+    fn instruction_bytes(instruction: DurableSignerInstruction) -> [u8; 1] {
+        let mut bytes = [0];
+        wincode::serialize_into(bytes.as_mut_slice(), &instruction).unwrap();
+        bytes
     }
 
     #[test]
-    fn try_from_rejects_unknown() {
-        assert!(DurableSignerInstruction::try_from(4).is_err());
-        assert!(DurableSignerInstruction::try_from(255).is_err());
+    fn instruction_tags_match_wire_format() {
+        assert_eq!(instruction_bytes(DurableSignerInstruction::Initialize), [0]);
+        assert_eq!(instruction_bytes(DurableSignerInstruction::Submit), [1]);
+        assert_eq!(instruction_bytes(DurableSignerInstruction::Close), [2]);
+    }
+
+    #[test]
+    fn try_from_bytes_rejects_unknown() {
+        assert!(DurableSignerInstruction::try_from_bytes(&[4]).is_err());
+        assert!(DurableSignerInstruction::try_from_bytes(&[255]).is_err());
     }
 }
