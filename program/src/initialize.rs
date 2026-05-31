@@ -27,6 +27,13 @@ pub fn process_initialize(program_id: &Address, accounts: &mut [AccountView]) ->
         return Err(ProgramError::InvalidAccountData);
     }
 
+    // A fresh account is zero-filled. Any nonzero byte means it is already initialized.
+    let data = durable_signer_account.try_borrow()?;
+    if data.iter().any(|byte| *byte != 0) {
+        return Err(ProgramError::AccountAlreadyInitialized);
+    }
+    drop(data);
+
     let rent_required = Rent::get()?.try_minimum_balance(DurableSignerAccount::LEN)?;
     if durable_signer_account.lamports() < rent_required {
         return Err(ProgramError::AccountNotRentExempt);
@@ -53,13 +60,8 @@ pub fn process_initialize(program_id: &Address, accounts: &mut [AccountView]) ->
         authority: Address::from(authority.address()),
     };
 
-    // A fresh account is zero-filled. Any nonzero byte means it is already initialized.
-    let mut data = durable_signer_account.try_borrow_mut()?;
-    if data.iter().any(|byte| *byte != 0) {
-        return Err(ProgramError::AccountAlreadyInitialized);
-    }
-
     // Write data into the account
+    let mut data = durable_signer_account.try_borrow_mut()?;
     wincode::serialize_into(&mut *data, &state)
         .map_err(|_| ProgramError::InvalidInstructionData)?;
 
