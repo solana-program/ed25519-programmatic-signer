@@ -2942,43 +2942,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "spl-ed25519-programmatic-signer-legacy-client"
-version = "0.1.0"
-dependencies = [
- "solana-address 2.6.1",
- "solana-instruction",
- "solana-sdk-ids",
- "spl-ed25519-programmatic-signer-legacy-interface",
-]
-
-[[package]]
-name = "spl-ed25519-programmatic-signer-legacy-interface"
-version = "0.1.0"
-dependencies = [
- "solana-address 2.6.1",
- "solana-hash",
- "solana-program-error",
- "wincode",
-]
-
-[[package]]
-name = "spl-ed25519-programmatic-signer-legacy-program"
-version = "0.1.0"
-dependencies = [
- "mollusk-svm",
- "pinocchio",
- "solana-account",
- "solana-address 2.6.1",
- "solana-instruction",
- "solana-program-error",
- "solana-rent",
- "solana-sha256-hasher",
- "spl-ed25519-programmatic-signer-legacy-client",
- "spl-ed25519-programmatic-signer-legacy-interface",
- "wincode",
-]
-
-[[package]]
 name = "spl-ed25519-signer-client"
 version = "0.1.0"
 dependencies = [
@@ -3016,13 +2979,105 @@ dependencies = [
  "solana-keypair",
  "solana-message",
  "solana-program-error",
- "solana-sdk-ids",
  "solana-signer",
  "solana-system-interface",
  "solana-transaction",
  "spl-ed25519-signer-client",
  "spl-ed25519-signer-interface",
+ "spl-message-executor-interface",
  "test-case",
+]
+
+[[package]]
+name = "spl-message-executor-client"
+version = "0.1.0"
+dependencies = [
+ "solana-address 2.6.1",
+ "solana-instruction",
+ "solana-message",
+ "solana-sdk-ids",
+ "spl-message-executor-interface",
+ "spl-nonce-interface",
+]
+
+[[package]]
+name = "spl-message-executor-interface"
+version = "0.1.0"
+dependencies = [
+ "solana-address 2.6.1",
+ "solana-message",
+ "solana-program-error",
+ "solana-sdk-ids",
+ "wincode",
+]
+
+[[package]]
+name = "spl-message-executor-program"
+version = "0.1.0"
+dependencies = [
+ "mollusk-svm",
+ "pinocchio",
+ "solana-account",
+ "solana-address 2.6.1",
+ "solana-hash",
+ "solana-instruction",
+ "solana-keypair",
+ "solana-message",
+ "solana-program-error",
+ "solana-rent",
+ "solana-sdk-ids",
+ "solana-sha256-hasher",
+ "solana-signer",
+ "solana-system-interface",
+ "solana-transaction",
+ "spl-ed25519-signer-client",
+ "spl-ed25519-signer-interface",
+ "spl-message-executor-client",
+ "spl-message-executor-interface",
+ "spl-nonce-client",
+ "spl-nonce-interface",
+ "wincode",
+]
+
+[[package]]
+name = "spl-nonce-client"
+version = "0.1.0"
+dependencies = [
+ "pinocchio",
+ "solana-address 2.6.1",
+ "solana-hash",
+ "solana-instruction",
+ "solana-sdk-ids",
+ "spl-nonce-interface",
+ "wincode",
+]
+
+[[package]]
+name = "spl-nonce-interface"
+version = "0.1.0"
+dependencies = [
+ "solana-address 2.6.1",
+ "solana-hash",
+ "solana-program-error",
+ "wincode",
+]
+
+[[package]]
+name = "spl-nonce-program"
+version = "0.1.0"
+dependencies = [
+ "mollusk-svm",
+ "pinocchio",
+ "solana-account",
+ "solana-address 2.6.1",
+ "solana-hash",
+ "solana-instruction",
+ "solana-program-error",
+ "solana-rent",
+ "solana-sha256-hasher",
+ "spl-nonce-client",
+ "spl-nonce-interface",
+ "wincode",
 ]
 
 [[package]]

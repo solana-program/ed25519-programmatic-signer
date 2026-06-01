@@ -6,10 +6,18 @@ on:
   pull_request:
 
 env:
-  RUST_PACKAGES: "['client', 'interface', 'program', 'signer-client', 'signer-interface', 'signer-program']"
-  SBPF_PROGRAM_PACKAGES: "['program', 'signer-program']"
-  NO_STD_CORE_PACKAGES: "['interface', 'program']"
-  NO_STD_ALLOC_PACKAGES: "['client', 'signer-client', 'signer-interface', 'signer-program']"
+  RUST_PACKAGES: >-
+    ['nonce-client', 'nonce-interface', 'nonce-program',
+    'ed25519-signer-client', 'ed25519-signer-interface', 'ed25519-signer-program',
+    'message-executor-client', 'message-executor-interface', 'message-executor-program']
+  SBPF_PROGRAM_PACKAGES: >-
+    ['nonce-program', 'ed25519-signer-program', 'message-executor-program']
+  NO_STD_CORE_PACKAGES: >-
+    ['nonce-interface', 'nonce-program']
+  NO_STD_ALLOC_PACKAGES: >-
+    ['nonce-client',
+    'ed25519-signer-client', 'ed25519-signer-interface', 'ed25519-signer-program',
+    'message-executor-client', 'message-executor-interface', 'message-executor-program']
 
 jobs:
   set_env:

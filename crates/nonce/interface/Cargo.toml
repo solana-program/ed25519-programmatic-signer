@@ -1,0 +1,27 @@
+[package]
+name = "spl-nonce-interface"
+version = "0.1.0"
+description = "Interface for the SPL Nonce program"
+authors = { workspace = true }
+repository = { workspace = true }
+homepage = { workspace = true }
+license = { workspace = true }
+edition = { workspace = true }
+
+[lib]
+crate-type = ["rlib"]
+
+[package.metadata.solana]
+program-id = "NoncEdyBt4BCQoUVNRX7pKFNAtu3vgWd18RsbYvDuA4"
+
+[lints]
+workspace = true
+
+[dependencies]
+solana-address = { workspace = true, features = ["curve25519", "decode", "wincode"] }
+solana-hash = { workspace = true, features = ["copy", "wincode"] }
+solana-program-error = { workspace = true }
+wincode = { workspace = true, features = ["derive"] }
+
+[dev-dependencies]
+wincode = { workspace = true, features = ["alloc"] }

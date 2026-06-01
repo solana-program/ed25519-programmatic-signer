@@ -1,0 +1,28 @@
+[package]
+name = "spl-nonce-client"
+version = "0.1.0"
+description = "Off-chain client helpers for the SPL Nonce program"
+authors = { workspace = true }
+repository = { workspace = true }
+homepage = { workspace = true }
+license = { workspace = true }
+edition = { workspace = true }
+
+[lib]
+crate-type = ["rlib"]
+
+[lints]
+workspace = true
+
+[features]
+default = []
+cpi = ["dep:pinocchio"]
+
+[dependencies]
+pinocchio = { workspace = true, features = ["cpi"], optional = true }
+solana-address = { workspace = true }
+solana-hash = { workspace = true }
+solana-instruction = { workspace = true, features = ["wincode"] }
+solana-sdk-ids = { workspace = true }
+spl-nonce-interface = { workspace = true }
+wincode = { workspace = true, features = ["alloc"] }

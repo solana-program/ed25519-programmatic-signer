@@ -1,13 +1,6 @@
 [workspace]
 resolver = "2"
-members = [
-    "client",
-    "interface",
-    "program",
-    "signer/client",
-    "signer/interface",
-    "signer/program",
-]
+members = ["crates/*/*"]
 
 [workspace.package]
 authors = ["Anza Maintainers <maintainers@anza.xyz>"]
@@ -35,12 +28,12 @@ solana-transaction = { version = "4.1.3", default-features = false }
 test-case = "3.3.1"
 wincode = { version = "0.5.5", default-features = false }
 
-spl-ed25519-signer-client = { path = "signer/client" }
-spl-ed25519-signer-interface = { path = "signer/interface" }
-
-# TODO: remove after migrating to new executor system design
-spl-ed25519-programmatic-signer-legacy-client = { path = "client" }
-spl-ed25519-programmatic-signer-legacy-interface = { path = "interface" }
+spl-ed25519-signer-client = { path = "crates/ed25519-signer/client" }
+spl-ed25519-signer-interface = { path = "crates/ed25519-signer/interface" }
+spl-message-executor-client = { path = "crates/message-executor/client" }
+spl-message-executor-interface = { path = "crates/message-executor/interface" }
+spl-nonce-client = { path = "crates/nonce/client" }
+spl-nonce-interface = { path = "crates/nonce/interface" }
 
 # TODO: pinned to mollusk's `4.1-beta` branch for a friendlier dep graph resolution w/ the new no-std crates
 mollusk-svm = { git = "https://github.com/anza-xyz/mollusk", branch = "4.1-beta" }
@@ -49,7 +42,7 @@ mollusk-svm = { git = "https://github.com/anza-xyz/mollusk", branch = "4.1-beta"
 level = "warn"
 check-cfg = [
     'cfg(target_os, values("solana"))',
-    'cfg(feature, values("custom-alloc", "custom-heap", "custom-panic", "frozen-abi", "no-entrypoint"))',
+    'cfg(feature, values("custom-alloc", "custom-heap", "custom-panic", "derive", "fetch", "frozen-abi", "no-entrypoint", "serde"))',
 ]
 
 [workspace.metadata.spellcheck]

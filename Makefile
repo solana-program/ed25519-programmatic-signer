@@ -3,13 +3,10 @@ SOLANA_CLI_VERSION = 3.1.8
 
 nightly = +${RUST_TOOLCHAIN_NIGHTLY}
 
-# This is a bit tricky -- findstring returns the found string, so we're looking
-# for "directory-", returning that, and replacing "-" with "/" to change the
-# first "-" to a "/". But if it isn't found, we replace "" with "", which works
-# in the case where there is no subdirectory.
-pattern-dir = $(firstword $(subst -, ,$1))
-find-pattern-dir = $(findstring $(call pattern-dir,$1)-,$1)
-make-path = $(subst $(call find-pattern-dir,$1),$(subst -,/,$(call find-pattern-dir,$1)),$1)
+# Maps a target suffix like `message-executor-program` to `crates/message-executor/program`:
+# the last dash-separated word is the crate kind, everything before it is the crate directory.
+crate-kind = $(lastword $(subst -, ,$1))
+make-path = crates/$(patsubst %-$(call crate-kind,$1),%,$1)/$(call crate-kind,$1)
 
 rust-toolchain-nightly:
 	@echo ${RUST_TOOLCHAIN_NIGHTLY}
