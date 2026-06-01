@@ -19,3 +19,4 @@ solana-address = { workspace = true }
 solana-instruction = { workspace = true }
 solana-sdk-ids = { workspace = true }
 spl-ed25519-durable-signer-interface = { workspace = true }
+wincode = { workspace = true, features = ["alloc"] }

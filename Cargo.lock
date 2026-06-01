@@ -538,6 +538,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "brine-ed25519"
+version = "0.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6252f0e605575f2645dc381ca80a6acaff14bf91dc941b0dc240aed0e5536f01"
+dependencies = [
+ "curve25519-dalek",
+ "sha2 0.10.9",
+ "solana-define-syscall 2.3.0",
+ "solana-program-error",
+]
+
+[[package]]
 name = "bs58"
 version = "0.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -816,6 +828,31 @@ dependencies = [
  "rfc6979",
  "signature",
  "spki",
+]
+
+[[package]]
+name = "ed25519"
+version = "2.2.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "115531babc129696a58c64a4fef0a8bf9e9698629fb97e9e40767d235cfbcd53"
+dependencies = [
+ "pkcs8",
+ "signature",
+]
+
+[[package]]
+name = "ed25519-dalek"
+version = "2.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "70e796c081cee67dc755e1a36a0a172b897fab85fc3f6bc48307991f64e4eca9"
+dependencies = [
+ "curve25519-dalek",
+ "ed25519",
+ "rand_core 0.6.4",
+ "serde",
+ "sha2 0.10.9",
+ "subtle",
+ "zeroize",
 ]
 
 [[package]]
@@ -1333,7 +1370,7 @@ dependencies = [
  "solana-loader-v3-interface",
  "solana-loader-v4-interface",
  "solana-logger",
- "solana-message",
+ "solana-message 3.1.0",
  "solana-precompile-error",
  "solana-program-error",
  "solana-program-runtime",
@@ -1537,6 +1574,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2ee67f1008b1ba2321834326597b8e186293b049a023cdef258527550b9935b4"
 
 [[package]]
+name = "pbkdf2"
+version = "0.11.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "83a0692ec44e4cf1ef28ca317f14f8f07da2d95ec3fa01f86e4467b725e60917"
+dependencies = [
+ "digest 0.10.7",
+]
+
+[[package]]
 name = "percentage"
 version = "0.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1554,6 +1600,7 @@ dependencies = [
  "solana-account-view",
  "solana-address 2.6.0",
  "solana-define-syscall 5.0.0",
+ "solana-instruction-view",
  "solana-program-error",
 ]
 
@@ -2028,7 +2075,7 @@ dependencies = [
  "solana-program-error",
  "solana-sanitize",
  "solana-sha256-hasher",
- "wincode",
+ "wincode 0.5.5",
 ]
 
 [[package]]
@@ -2170,6 +2217,12 @@ dependencies = [
 
 [[package]]
 name = "solana-define-syscall"
+version = "2.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2ae3e2abcf541c8122eafe9a625d4d194b4023c20adde1e251f94e056bb1aee2"
+
+[[package]]
+name = "solana-define-syscall"
 version = "3.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f9697086a4e102d28a156b8d6b521730335d6951bd39a5e766512bbe09007cee"
@@ -2252,6 +2305,7 @@ dependencies = [
  "serde_derive",
  "solana-atomic-u64",
  "solana-sanitize",
+ "wincode 0.4.9",
 ]
 
 [[package]]
@@ -2277,6 +2331,18 @@ dependencies = [
  "num-traits",
  "serde",
  "serde_derive",
+ "solana-program-error",
+]
+
+[[package]]
+name = "solana-instruction-view"
+version = "2.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6ab7a27d0c4214b9f7389c3dd00b68c93093a67f1dcc5b7893aebe299bbcbb47"
+dependencies = [
+ "solana-account-view",
+ "solana-address 2.6.0",
+ "solana-define-syscall 5.0.0",
  "solana-program-error",
 ]
 
@@ -2307,6 +2373,22 @@ dependencies = [
  "sha3",
  "solana-define-syscall 4.0.1",
  "solana-hash 4.2.0",
+]
+
+[[package]]
+name = "solana-keypair"
+version = "3.1.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "263d614c12aa267a3278703175fd6440552ca61bc960b5a02a4482720c53438b"
+dependencies = [
+ "ed25519-dalek",
+ "five8",
+ "five8_core",
+ "rand 0.9.4",
+ "solana-address 2.6.0",
+ "solana-seed-phrase",
+ "solana-signature",
+ "solana-signer",
 ]
 
 [[package]]
@@ -2377,6 +2459,20 @@ dependencies = [
  "solana-sanitize",
  "solana-sdk-ids",
  "solana-transaction-error",
+]
+
+[[package]]
+name = "solana-message"
+version = "4.2.0"
+dependencies = [
+ "solana-address 2.6.0",
+ "solana-hash 4.2.0",
+ "solana-instruction",
+ "solana-sanitize",
+ "solana-sdk-ids",
+ "solana-short-vec",
+ "solana-transaction-error",
+ "wincode 0.5.5",
 ]
 
 [[package]]
@@ -2607,6 +2703,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "solana-seed-phrase"
+version = "3.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "dc905b200a95f2ea9146e43f2a7181e3aeb55de6bc12afb36462d00a3c7310de"
+dependencies = [
+ "hmac",
+ "pbkdf2",
+ "sha2 0.10.9",
+]
+
+[[package]]
 name = "solana-serialize-utils"
 version = "3.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2629,13 +2736,34 @@ dependencies = [
 ]
 
 [[package]]
+name = "solana-short-vec"
+version = "3.2.1"
+dependencies = [
+ "wincode 0.5.5",
+]
+
+[[package]]
 name = "solana-signature"
 version = "3.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "132a93134f1262aa832f1849b83bec6c9945669b866da18661a427943b9e801e"
 dependencies = [
+ "ed25519-dalek",
  "five8",
+ "serde",
  "solana-sanitize",
+ "wincode 0.4.9",
+]
+
+[[package]]
+name = "solana-signer"
+version = "3.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5bfea97951fee8bae0d6038f39a5efcb6230ecdfe33425ac75196d1a1e3e3235"
+dependencies = [
+ "solana-pubkey 3.0.0",
+ "solana-signature",
+ "solana-transaction-error",
 ]
 
 [[package]]
@@ -2744,11 +2872,11 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "067861db805d135a6fbe489bf2b74d701f270df8d03afd3257f7d51a2ff3467e"
 dependencies = [
  "solana-hash 4.2.0",
- "solana-message",
+ "solana-message 3.1.0",
  "solana-pubkey 4.1.0",
  "solana-sdk-ids",
  "solana-signature",
- "solana-transaction",
+ "solana-transaction 3.1.0",
 ]
 
 [[package]]
@@ -2868,11 +2996,28 @@ dependencies = [
  "solana-hash 4.2.0",
  "solana-instruction",
  "solana-instruction-error",
- "solana-message",
+ "solana-message 3.1.0",
  "solana-sanitize",
  "solana-sdk-ids",
  "solana-signature",
  "solana-transaction-error",
+]
+
+[[package]]
+name = "solana-transaction"
+version = "4.1.2"
+dependencies = [
+ "solana-address 2.6.0",
+ "solana-hash 4.2.0",
+ "solana-instruction",
+ "solana-instruction-error",
+ "solana-message 4.2.0",
+ "solana-sanitize",
+ "solana-sdk-ids",
+ "solana-short-vec",
+ "solana-signature",
+ "solana-transaction-error",
+ "wincode 0.5.5",
 ]
 
 [[package]]
@@ -2896,8 +3041,6 @@ dependencies = [
 [[package]]
 name = "solana-transaction-error"
 version = "3.2.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4a2165ad25b694c654d5395fc7a049452a192376e4c96a7fad05580f6ba5ba1c"
 dependencies = [
  "solana-instruction-error",
  "solana-sanitize",
@@ -2921,6 +3064,7 @@ dependencies = [
  "solana-instruction",
  "solana-sdk-ids",
  "spl-ed25519-durable-signer-interface",
+ "wincode 0.5.5",
 ]
 
 [[package]]
@@ -2930,25 +3074,34 @@ dependencies = [
  "solana-address 2.6.0",
  "solana-hash 4.2.0",
  "solana-program-error",
- "wincode",
+ "solana-transaction 4.1.2",
+ "wincode 0.5.5",
 ]
 
 [[package]]
 name = "spl-ed25519-durable-signer-program"
 version = "0.1.0"
 dependencies = [
+ "brine-ed25519",
  "mollusk-svm",
  "pinocchio",
  "solana-account",
  "solana-address 2.6.0",
  "solana-hash 4.2.0",
  "solana-instruction",
+ "solana-keypair",
+ "solana-message 4.2.0",
  "solana-program-error",
  "solana-rent",
+ "solana-sdk-ids",
  "solana-sha256-hasher",
+ "solana-signature",
+ "solana-signer",
+ "solana-system-interface 2.0.0",
+ "solana-transaction 4.1.2",
  "spl-ed25519-durable-signer-client",
  "spl-ed25519-durable-signer-interface",
- "wincode",
+ "wincode 0.5.5",
 ]
 
 [[package]]
@@ -3166,6 +3319,19 @@ name = "winapi-x86_64-pc-windows-gnu"
 version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "712e227841d057c1ee1cd2fb22fa7e5a5461ae8e48fa2ca79ec42cfc1931183f"
+
+[[package]]
+name = "wincode"
+version = "0.4.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "657690780ce23e6f66576a782ffd88eb353512381817029cc1d7a99154bb6d1f"
+dependencies = [
+ "pastey",
+ "proc-macro2",
+ "quote",
+ "thiserror 2.0.18",
+ "wincode-derive",
+]
 
 [[package]]
 name = "wincode"

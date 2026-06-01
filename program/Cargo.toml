@@ -18,10 +18,16 @@ program-id = "EdSigVfK1DkeMrjFNDMjwfQaJPhPTtX7jW8uPv3oKEgN"
 workspace = true
 
 [dependencies]
-pinocchio = { workspace = true }
+brine-ed25519 = { workspace = true }
+pinocchio = { workspace = true, features = ["alloc", "cpi"] }
+solana-address = { workspace = true, features = ["curve25519", "syscalls"] }
+solana-hash = { workspace = true }
+solana-instruction = { workspace = true, features = ["syscalls"] }
+solana-sdk-ids = { workspace = true }
 solana-sha256-hasher = { workspace = true, features = ["sha2"] }
+solana-transaction = { workspace = true }
 spl-ed25519-durable-signer-interface = { workspace = true }
-wincode = { workspace = true }
+wincode = { workspace = true, features = ["alloc"] }
 
 [dev-dependencies]
 mollusk-svm = { workspace = true }
@@ -29,6 +35,12 @@ solana-account = { workspace = true }
 solana-address = { workspace = true }
 solana-hash = { workspace = true }
 solana-instruction = { workspace = true }
+solana-keypair = { workspace = true }
+solana-message = { workspace = true }
 solana-program-error = { workspace = true }
 solana-rent = { workspace = true }
+solana-sdk-ids = { workspace = true }
+solana-signature = { workspace = true }
+solana-signer = { workspace = true }
+solana-system-interface = { workspace = true }
 spl-ed25519-durable-signer-client = { workspace = true }

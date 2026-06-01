@@ -15,6 +15,6 @@ pub fn initialize(durable_signer: &Address, authority: &Address) -> Instruction 
             AccountMeta::new_readonly(*authority, false),
             AccountMeta::new_readonly(slot_hashes::id(), false),
         ],
-        data: vec![DurableSignerInstruction::Initialize as u8],
+        data: wincode::serialize(&DurableSignerInstruction::Initialize).unwrap(),
     }
 }

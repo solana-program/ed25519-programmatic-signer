@@ -2,6 +2,9 @@
 
 #![no_std]
 
+extern crate alloc;
+
 mod entrypoint;
 mod initialize;
 mod processor;
+mod submit;

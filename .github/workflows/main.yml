@@ -8,8 +8,8 @@ on:
 env:
   RUST_PACKAGES: "['client', 'interface', 'program']"
   SBPF_PROGRAM_PACKAGES: "['program']"
-  NO_STD_CORE_PACKAGES: "['interface', 'program']"
-  NO_STD_ALLOC_PACKAGES: "['client']"
+  NO_STD_CORE_PACKAGES: "[]"
+  NO_STD_ALLOC_PACKAGES: "['client', 'interface', 'program']"
 
 jobs:
   set_env:

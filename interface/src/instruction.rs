@@ -1,12 +1,12 @@
 use {
-    solana_address::Address,
     solana_program_error::ProgramError,
+    solana_transaction::versioned::VersionedTransaction,
     wincode::{SchemaRead, SchemaWrite},
 };
 
 /// Instructions supported by the SPL Ed25519 Durable Signer program.
 #[repr(u8)]
-#[derive(Clone, Copy, Debug, PartialEq, Eq, SchemaRead, SchemaWrite)]
+#[derive(Clone, Debug, PartialEq, Eq, SchemaRead, SchemaWrite)]
 #[wincode(tag_encoding = "u8")]
 pub enum DurableSignerInstruction {
     /// Initializes a durable signer account for an authority.
@@ -62,11 +62,11 @@ pub enum DurableSignerInstruction {
     /// - Authority addresses, ordered to match the wrapped message's required signers.
     /// - Remaining accounts referenced by the wrapped message, in order. Writable flags
     ///   must match the wrapped message.
-    Submit,
+    Submit(VersionedTransaction),
 
     /// Closes a durable signer account and refunds its lamports.
     ///
-    /// Instruction data: instruction discriminator followed by [`CloseData`].
+    /// Instruction data: instruction discriminator only.
     ///
     /// Runs only as an inner instruction of a wrapped transaction submitted through `Submit`
     /// because nothing outside this program can sign for `DurableSignerPda`.
@@ -76,13 +76,6 @@ pub enum DurableSignerInstruction {
     /// - `[writable]` Durable signer account
     /// - `[writable]` Lamport recipient
     Close,
-}
-
-/// Data for [`DurableSignerInstruction::Close`].
-#[derive(Clone, Debug, PartialEq, Eq, SchemaRead, SchemaWrite)]
-pub struct CloseData {
-    /// Address that receives all lamports from the closed durable signer account.
-    pub recipient: Address,
 }
 
 impl DurableSignerInstruction {
@@ -95,19 +88,33 @@ impl DurableSignerInstruction {
 
 #[cfg(test)]
 mod tests {
-    use super::DurableSignerInstruction;
+    use {
+        super::DurableSignerInstruction,
+        alloc::vec,
+        solana_transaction::{Message, VersionedMessage, versioned::VersionedTransaction},
+    };
 
-    fn instruction_bytes(instruction: DurableSignerInstruction) -> [u8; 1] {
-        let mut bytes = [0];
-        wincode::serialize_into(bytes.as_mut_slice(), &instruction).unwrap();
-        bytes
+    fn empty_transaction() -> VersionedTransaction {
+        VersionedTransaction {
+            signatures: vec![],
+            message: VersionedMessage::Legacy(Message::default()),
+        }
     }
 
     #[test]
     fn instruction_tags_match_wire_format() {
-        assert_eq!(instruction_bytes(DurableSignerInstruction::Initialize), [0]);
-        assert_eq!(instruction_bytes(DurableSignerInstruction::Submit), [1]);
-        assert_eq!(instruction_bytes(DurableSignerInstruction::Close), [2]);
+        assert_eq!(
+            wincode::serialize(&DurableSignerInstruction::Initialize).unwrap()[0],
+            0
+        );
+        assert_eq!(
+            wincode::serialize(&DurableSignerInstruction::Submit(empty_transaction())).unwrap()[0],
+            1
+        );
+        assert_eq!(
+            wincode::serialize(&DurableSignerInstruction::Close).unwrap()[0],
+            2
+        );
     }
 
     #[test]

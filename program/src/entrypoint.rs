@@ -1,9 +1,9 @@
 use pinocchio::{
-    AccountView, Address, ProgramResult, no_allocator, nostd_panic_handler, program_entrypoint,
+    AccountView, Address, ProgramResult, default_allocator, nostd_panic_handler, program_entrypoint,
 };
 
 program_entrypoint!(process_instruction);
-no_allocator!();
+default_allocator!();
 nostd_panic_handler!();
 
 #[inline(always)]
