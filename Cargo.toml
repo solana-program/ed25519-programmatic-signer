@@ -32,7 +32,12 @@ spl-ed25519-durable-signer-interface = { path = "interface" }
 wincode = { version = "0.5.5", default-features = false }
 
 [patch.crates-io]
+solana-address = { path = "../solana-sdk/address" }
+solana-instruction-error = { path = "../solana-sdk/instruction-error" }
 solana-message = { path = "../solana-sdk/message" }
+solana-program-error = { path = "../solana-sdk/program-error" }
+solana-sanitize = { path = "../solana-sdk/sanitize" }
+solana-sdk-ids = { path = "../solana-sdk/sdk-ids" }
 solana-short-vec = { path = "../solana-sdk/short-vec" }
 solana-transaction = { path = "../solana-sdk/transaction" }
 solana-transaction-error = { path = "../solana-sdk/transaction-error" }

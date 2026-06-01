@@ -18,9 +18,11 @@ use {
         v1::{Message as MessageV1, TransactionConfig},
     },
     solana_sdk_ids::bpf_loader_upgradeable,
-    solana_signature::Signature,
     solana_signer::Signer,
-    solana_transaction::{VersionedMessage, versioned::VersionedTransaction},
+    solana_transaction::{
+        AccountMeta as WrappedAccountMeta, Hash as WrappedHash, Instruction as WrappedInstruction,
+        Signature as WrappedSignature, VersionedMessage, versioned::VersionedTransaction,
+    },
     spl_ed25519_durable_signer_interface::{
         instruction::DurableSignerInstruction, pda::DurableSignerPda,
     },
@@ -33,7 +35,7 @@ pub struct SubmitBuilder<'a> {
     durable_signer: Option<(Address, Account)>,
     authority: Keypair,
     additional_authorities: Vec<Keypair>,
-    inner_instructions: Vec<Instruction>,
+    inner_instructions: Vec<WrappedInstruction>,
     lifetime_specifier: Option<Hash>,
     durable_signer_pda_lamports: u64,
     accounts: Vec<(Address, Account)>,
@@ -81,7 +83,8 @@ impl<'a> SubmitBuilder<'a> {
     }
 
     pub fn inner_instruction(mut self, instruction: Instruction) -> Self {
-        self.inner_instructions.push(instruction);
+        self.inner_instructions
+            .push(wrapped_instruction(instruction));
         self
     }
 
@@ -133,7 +136,7 @@ impl<'a> SubmitBuilder<'a> {
             .take()
             .unwrap_or_else(|| initialize_durable_signer(&self.mollusk, &authority_address));
         let state = decode_state(&durable_signer.1);
-        let lifetime_specifier = self.lifetime_specifier.unwrap_or(state.nonce);
+        let lifetime_specifier = wrapped_hash(self.lifetime_specifier.unwrap_or(state.nonce));
 
         let authority_pda = DurableSignerPda::derive_address(&program_id, &authority_address);
         let message =
@@ -182,7 +185,7 @@ impl<'a> SubmitBuilder<'a> {
     fn sign_message(&self, message: &MessageV1) -> SignedV1Message {
         let message_bytes = v1_message_bytes(message);
         let signer_count = usize::from(message.header.num_required_signatures);
-        let mut signatures = vec![Signature::default(); signer_count];
+        let mut signatures = vec![WrappedSignature::default(); signer_count];
         let mut authorities = vec![Address::default(); signer_count];
         let mut signers = Vec::with_capacity(self.additional_authorities.len().saturating_add(1));
         signers.push(&self.authority);
@@ -200,12 +203,13 @@ impl<'a> SubmitBuilder<'a> {
                 .iter()
                 .position(|key| key == &pda)
                 .expect("authority PDA must be in the required-signer prefix");
-            signatures[signer_index] = signer.try_sign_message(&message_bytes).unwrap();
+            signatures[signer_index] =
+                wrapped_signature(signer.try_sign_message(&message_bytes).unwrap());
             authorities[signer_index] = authority;
         }
 
         for index in &self.zero_signature_indexes {
-            signatures[*index] = Signature::default();
+            signatures[*index] = WrappedSignature::default();
         }
 
         SignedV1Message {
@@ -273,7 +277,7 @@ impl<'a> SubmitBuilder<'a> {
 
 pub struct SignedV1Message {
     pub message_bytes: Vec<u8>,
-    pub signatures: Vec<Signature>,
+    pub signatures: Vec<WrappedSignature>,
     pub authorities: Vec<Address>,
 }
 
@@ -343,9 +347,33 @@ pub fn empty_v1_message(lifetime_specifier: Hash, signer: Address) -> MessageV1 
             num_readonly_unsigned_accounts: 0,
         },
         config: TransactionConfig::empty(),
-        lifetime_specifier,
+        lifetime_specifier: wrapped_hash(lifetime_specifier),
         account_keys: vec![signer],
         instructions: vec![],
+    }
+}
+
+pub fn wrapped_hash(hash: Hash) -> WrappedHash {
+    WrappedHash::new_from_array(*hash.as_bytes())
+}
+
+pub fn wrapped_signature(signature: solana_signature::Signature) -> WrappedSignature {
+    WrappedSignature::from(*signature.as_array())
+}
+
+fn wrapped_instruction(instruction: Instruction) -> WrappedInstruction {
+    WrappedInstruction {
+        program_id: instruction.program_id,
+        accounts: instruction
+            .accounts
+            .into_iter()
+            .map(|meta| WrappedAccountMeta {
+                pubkey: meta.pubkey,
+                is_signer: meta.is_signer,
+                is_writable: meta.is_writable,
+            })
+            .collect(),
+        data: instruction.data,
     }
 }
 

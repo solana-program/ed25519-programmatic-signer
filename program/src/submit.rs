@@ -129,7 +129,7 @@ pub fn process_submit(
         .map_err(|_| DurableSignerError::InvalidDurableSignerAccount)?;
     drop(data);
 
-    if *message.recent_blockhash() != state.nonce {
+    if message.recent_blockhash().as_ref() != state.nonce.as_ref() {
         return Err(DurableSignerError::NonceMismatch.into());
     }
 

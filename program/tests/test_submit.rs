@@ -6,7 +6,7 @@ use {
         },
         submit_builder::{
             SignedV1Message, SubmitBuilder, compiled_transfer_instruction, empty_v1_message,
-            submit_instruction_for_v1_message, v1_message_bytes,
+            submit_instruction_for_v1_message, v1_message_bytes, wrapped_hash, wrapped_signature,
         },
     },
     mollusk_svm::result::Check,
@@ -144,7 +144,9 @@ fn submit_rejects_raw_keypair_required_signer() {
     let message = empty_v1_message(nonce, authority.pubkey());
     let message_bytes = v1_message_bytes(&message);
     let signed = SignedV1Message {
-        signatures: vec![authority.try_sign_message(&message_bytes).unwrap()],
+        signatures: vec![wrapped_signature(
+            authority.try_sign_message(&message_bytes).unwrap(),
+        )],
         authorities: vec![authority.pubkey()],
         message_bytes,
     };
@@ -185,13 +187,15 @@ fn submit_rejects_wrapped_transaction_config() {
             compute_unit_limit: Some(100_000),
             ..TransactionConfig::empty()
         },
-        lifetime_specifier: nonce,
+        lifetime_specifier: wrapped_hash(nonce),
         account_keys: vec![authority_pda],
         instructions: vec![],
     };
     let message_bytes = v1_message_bytes(&message);
     let signed = SignedV1Message {
-        signatures: vec![authority.try_sign_message(&message_bytes).unwrap()],
+        signatures: vec![wrapped_signature(
+            authority.try_sign_message(&message_bytes).unwrap(),
+        )],
         authorities: vec![authority.pubkey()],
         message_bytes,
     };
@@ -245,7 +249,9 @@ fn submit_rejects_wrong_authority_in_payload() {
     let message = empty_v1_message(nonce, attacker_pda);
     let message_bytes = v1_message_bytes(&message);
     let signed = SignedV1Message {
-        signatures: vec![attacker.try_sign_message(&message_bytes).unwrap()],
+        signatures: vec![wrapped_signature(
+            attacker.try_sign_message(&message_bytes).unwrap(),
+        )],
         authorities: vec![attacker.pubkey()],
         message_bytes,
     };
@@ -307,15 +313,15 @@ fn submit_rejects_non_pda_signer_even_when_authority_is_not_first() {
             num_readonly_unsigned_accounts: 1,
         },
         config: TransactionConfig::empty(),
-        lifetime_specifier: nonce,
+        lifetime_specifier: wrapped_hash(nonce),
         account_keys: vec![other.pubkey(), authority_pda, recipient, system_program],
         instructions: vec![compiled_transfer_instruction(1, 2, 3, 1)],
     };
     let message_bytes = v1_message_bytes(&message);
     let signed = SignedV1Message {
         signatures: vec![
-            other.try_sign_message(&message_bytes).unwrap(),
-            authority.try_sign_message(&message_bytes).unwrap(),
+            wrapped_signature(other.try_sign_message(&message_bytes).unwrap()),
+            wrapped_signature(authority.try_sign_message(&message_bytes).unwrap()),
         ],
         authorities: vec![other.pubkey(), authority.pubkey()],
         message_bytes,
@@ -359,7 +365,7 @@ fn submit_rejects_wrapped_submit_cpi() {
             num_readonly_unsigned_accounts: 3,
         },
         config: TransactionConfig::empty(),
-        lifetime_specifier: nonce,
+        lifetime_specifier: wrapped_hash(nonce),
         account_keys: vec![
             authority_pda,
             durable_signer.0,
@@ -375,7 +381,9 @@ fn submit_rejects_wrapped_submit_cpi() {
     };
     let message_bytes = v1_message_bytes(&message);
     let signed = SignedV1Message {
-        signatures: vec![authority.try_sign_message(&message_bytes).unwrap()],
+        signatures: vec![wrapped_signature(
+            authority.try_sign_message(&message_bytes).unwrap(),
+        )],
         authorities: vec![authority.pubkey()],
         message_bytes,
     };
