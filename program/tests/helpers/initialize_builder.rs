@@ -14,7 +14,7 @@ use {
 pub struct InitializeBuilder<'a> {
     mollusk: Mollusk,
     durable_signer: Option<(Address, Account)>,
-    authority_addr: Option<Address>,
+    authority_address: Option<Address>,
     instruction_data: Option<Vec<u8>>,
     checks: Vec<Check<'a>>,
 }
@@ -24,7 +24,7 @@ impl Default for InitializeBuilder<'_> {
         Self {
             mollusk: init_mollusk(),
             durable_signer: None,
-            authority_addr: None,
+            authority_address: None,
             instruction_data: None,
             checks: vec![],
         }
@@ -38,7 +38,7 @@ impl<'a> InitializeBuilder<'a> {
     }
 
     pub fn authority_addr(mut self, key: Address) -> Self {
-        self.authority_addr = Some(key);
+        self.authority_address = Some(key);
         self
     }
 
@@ -56,19 +56,19 @@ impl<'a> InitializeBuilder<'a> {
         let durable_signer = self
             .durable_signer
             .unwrap_or_else(|| DurableSignerAccountBuilder::default().build());
-        let authority_addr = self
-            .authority_addr
+        let authority_address = self
+            .authority_address
             .unwrap_or_else(|| Address::from([2; 32]));
         let slot_hashes = self.mollusk.sysvars.keyed_account_for_slot_hashes_sysvar();
 
-        let mut instruction = initialize(&durable_signer.0, &authority_addr);
+        let mut instruction = initialize(&durable_signer.0, &authority_address);
         if let Some(instruction_data) = self.instruction_data {
             instruction.data = instruction_data;
         }
 
         let accounts = vec![
             durable_signer,
-            (authority_addr, Account::default()),
+            (authority_address, Account::default()),
             slot_hashes,
         ];
 
