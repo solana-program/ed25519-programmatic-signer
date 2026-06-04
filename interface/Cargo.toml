@@ -18,6 +18,7 @@ program-id = "EdSigVfK1DkeMrjFNDMjwfQaJPhPTtX7jW8uPv3oKEgN"
 workspace = true
 
 [dependencies]
-solana-address = { version = "2.6.0", features = ["curve25519", "decode", "wincode"] }
-solana-hash = { version = "4.3.0", features = ["wincode"] }
-wincode = { version = "0.5.3", features = ["derive"] }
+solana-address = { workspace = true, features = ["curve25519", "decode", "wincode"] }
+solana-hash = { workspace = true }
+solana-program-error = { workspace = true }
+wincode = { workspace = true, features = ["derive"] }
