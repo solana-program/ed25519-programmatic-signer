@@ -49,3 +49,25 @@ jobs:
       no-std-toolchain: ${{ needs.set_env.outputs.RUST_TOOLCHAIN_NIGHTLY }}
       no-std-core-packages: ${{ needs.set_env.outputs.NO_STD_CORE_PACKAGES }}
       no-std-alloc-packages: ${{ needs.set_env.outputs.NO_STD_ALLOC_PACKAGES }}
+
+  falcon_program:
+    name: Test Falcon Program
+    needs: set_env
+    runs-on: ubuntu-latest
+    steps:
+      - name: Git Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Environment
+        uses: solana-program/actions/setup-ubuntu@main
+        with:
+          default-toolchain: true
+          cli: true
+          cargo-cache-key: cargo-falcon-program
+          solana: ${{ needs.set_env.outputs.SOLANA_CLI_VERSION }}
+
+      - name: Build Falcon SBF
+        run: make build-sbf-program-falcon
+
+      - name: Test Falcon SBF
+        run: make test-program-falcon

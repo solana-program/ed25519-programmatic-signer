@@ -1,15 +1,14 @@
-//! Verifier selection — **the one knob a fork flips before deploying.**
+//! Signing scheme selection.
 //!
-//! The program is generic over a single [`Verifier`](crate::verifier::Verifier);
-//! everything else is hardcoded. Point [`ActiveVerifier`] at a different impl and
-//! redeploy to change the signature scheme — e.g. swap the standard ed25519
-//! scheme for the post-quantum [`FalconVerifier`](crate::falcon::FalconVerifier):
-//!
-//! ```ignore
-//! pub type ActiveVerifier = crate::falcon::FalconVerifier;
-//! ```
+//! The program is generic over a single [`SigningScheme`](crate::verifier::SigningScheme);
+//! everything else is hard-coded. The active scheme is chosen at build time:
+//! standard Ed25519 by default, or the post-quantum
+//! [`FalconScheme`](crate::falcon::FalconScheme) with `--features falcon`.
 
-use crate::verifier::Ed25519Verifier;
+/// Signature scheme the deployed program enforces (standard Solana Ed25519).
+#[cfg(not(feature = "falcon"))]
+pub type ActiveScheme = crate::verifier::Ed25519Scheme;
 
-/// Signature scheme the deployed program enforces.
-pub type ActiveVerifier = Ed25519Verifier;
+/// Signature scheme the deployed program enforces (post-quantum Falcon-512).
+#[cfg(feature = "falcon")]
+pub type ActiveScheme = crate::falcon::FalconScheme;

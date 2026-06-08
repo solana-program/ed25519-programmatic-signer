@@ -1,14 +1,83 @@
 use {
+    alloc::vec::Vec,
     solana_program_error::ProgramError,
-    solana_transaction::versioned::VersionedTransaction,
-    wincode::{SchemaRead, SchemaWrite},
+    solana_transaction::{VersionedMessage, versioned::VersionedTransaction},
+    wincode::{SchemaRead, SchemaWrite, config::DefaultConfig},
 };
 
-/// Instructions supported by the SPL Ed25519 Durable Signer program.
+/// Falcon-512 public key length, in bytes.
+pub const FALCON512_PUBLIC_KEY_LEN: usize = 897;
+/// Falcon-512 compressed signature length after zero-padding, in bytes.
+pub const FALCON512_SIGNATURE_LEN: usize = 666;
+
+/// Falcon-512 public key supplied when initializing a Falcon durable signer.
+#[derive(Clone, Debug, PartialEq, Eq, SchemaRead, SchemaWrite)]
+pub struct FalconInitialize {
+    /// Standard Falcon-512 wire public key with a header byte and packed polynomial.
+    pub public_key: [u8; FALCON512_PUBLIC_KEY_LEN],
+}
+
+/// Falcon-512 signature for one wrapped required signer.
+#[derive(Clone, Debug, PartialEq, Eq, SchemaRead, SchemaWrite)]
+pub struct FalconSignature {
+    /// Standard compressed Falcon-512 signature (`0x39` header) padded with
+    /// trailing zeroes to the fixed verification input size.
+    pub bytes: [u8; FALCON512_SIGNATURE_LEN],
+}
+
+impl AsRef<[u8]> for FalconSignature {
+    #[inline(always)]
+    fn as_ref(&self) -> &[u8] {
+        &self.bytes
+    }
+}
+
+impl FalconSignature {
+    /// Builds a fixed-size Falcon signature from a compressed signature.
+    ///
+    /// `solana-falcon512` expects a fixed 666-byte buffer. PQClean-style
+    /// compressed signatures can be shorter, so callers pass the compressed
+    /// bytes and this constructor right-pads them with zeroes.
+    pub fn try_from_compressed(compressed: &[u8]) -> Result<Self, ProgramError> {
+        if compressed.len() > FALCON512_SIGNATURE_LEN {
+            return Err(ProgramError::InvalidInstructionData);
+        }
+
+        let mut bytes = [0u8; FALCON512_SIGNATURE_LEN];
+        bytes[..compressed.len()].copy_from_slice(compressed);
+        Ok(Self { bytes })
+    }
+}
+
+/// Falcon-specific signed envelope for `Submit`.
+///
+/// `VersionedTransaction` cannot represent Falcon directly because its
+/// signature vector is fixed to 64-byte Solana signatures. The Falcon program
+/// variant therefore keeps the reusable [`VersionedMessage`] and pairs it with
+/// Falcon-sized signatures.
+#[derive(Clone, Debug, PartialEq, Eq, SchemaRead, SchemaWrite)]
+pub struct FalconSubmit {
+    /// Falcon signatures ordered by required signer index.
+    ///
+    /// This first Falcon implementation requires exactly one signature because
+    /// the durable signer state stores one Falcon public key. The vector keeps
+    /// the large signature bytes off the processor stack during instruction
+    /// deserialization.
+    pub signatures: Vec<FalconSignature>,
+    /// Wrapped message whose required signer key is the durable signer PDA.
+    pub message: VersionedMessage,
+}
+
+/// Generic instruction envelope used by concrete program variants.
+///
+/// The Ed25519 deployment uses [`DurableSignerInstruction`] below, preserving
+/// `Submit(VersionedTransaction)` for native Solana tooling. The Falcon
+/// deployment uses [`FalconDurableSignerInstruction`], where `Submit` carries a
+/// Falcon-specific signed envelope instead.
 #[repr(u8)]
 #[derive(Clone, Debug, PartialEq, Eq, SchemaRead, SchemaWrite)]
 #[wincode(tag_encoding = "u8")]
-pub enum DurableSignerInstruction {
+pub enum DurableSignerInstructionData<Initialize, Submit> {
     /// Initializes a durable signer account for an authority.
     ///
     /// The caller must first create and fund the account. Recommended to include
@@ -21,24 +90,27 @@ pub enum DurableSignerInstruction {
     ///    `sha256("spl-ed25519-durable-signer::init-v1" ‖ durable_signer_account_address ‖ slot_hashes[0])`.
     /// 3. Writes `DurableSignerAccount { nonce, authority }` into the account data.
     ///
-    /// Instruction data: instruction discriminator only
+    /// Instruction data: instruction discriminator followed by the
+    /// scheme-specific initialize payload. The Ed25519 payload is `()`, which
+    /// serializes to no bytes and keeps the original one-byte instruction.
     ///
     /// Accounts required:
     /// - `[writable]` Durable signer account
-    /// - `[]` Authority to store in the durable signer account
+    /// - Scheme-specific authority inputs
     /// - `[]` `SlotHashes` sysvar
-    Initialize,
+    Initialize(Initialize),
 
     /// Authorizes and executes a wrapped Solana transaction whose required signers are
     /// `DurableSignerPda` accounts.
     ///
     /// Instruction data: instruction discriminator followed by a serialized
-    /// `solana_transaction::versioned::VersionedTransaction`.
-    /// All message variants supported by `VersionedTransaction` are accepted.
+    /// scheme-specific signed envelope. Ed25519 uses
+    /// [`VersionedTransaction`]; Falcon uses [`FalconSubmit`].
     ///
     /// Wrapped required signers are paired by index:
     /// - `message.account_keys[i]`: `DurableSignerPda` promoted during CPI.
-    /// - `tx.signatures[i]`: wrapped-message signature from the matching authority address.
+    /// - The active scheme's submit envelope: wrapped-message authorization in
+    ///   that scheme's signature format.
     ///
     /// On success, the program:
     /// 1. Deserializes the transaction and sanitizes the wrapped message.
@@ -47,9 +119,9 @@ pub enum DurableSignerInstruction {
     /// 4. Checks the wrapped message's lifetime / recent blockhash field equals the account's
     ///    `nonce`.
     /// 5. Verifies the outer transaction's only top-level instruction is `Submit`.
-    /// 6. Iterates over the outer authority accounts in order. For each `authority_i`, requires
-    ///    `DurableSignerPda(authority_i) == message.account_keys[i]` and verifies
-    ///    `tx.signatures[i]` over the wrapped message with `authority_i`.
+    /// 6. Asks the active signing scheme to verify each required signer and
+    ///    prove that `message.account_keys[i]` is the corresponding
+    ///    `DurableSignerPda`.
     /// 7. Executes each `message.instructions` entry by CPI, using `invoke_signed` to promote
     ///    each authorized signer's corresponding `DurableSignerPda`.
     /// 8. Derives and stores the next nonce as
@@ -59,17 +131,23 @@ pub enum DurableSignerInstruction {
     /// - `[writable]` Durable signer account whose nonce is consumed and advanced
     /// - `[]` `SlotHashes` sysvar
     /// - `[]` `Instructions` sysvar
-    /// - Authority addresses, ordered to match the wrapped message's required signers.
+    /// - Scheme-specific authority accounts, if the active scheme needs them.
+    ///   Ed25519 expects authority addresses ordered to match the wrapped
+    ///   message's required signers; the first Falcon variant stores authority
+    ///   material in the durable signer account and expects none here.
     /// - Remaining accounts referenced by the wrapped message, in order. Writable flags
     ///   must match the wrapped message.
-    Submit(VersionedTransaction),
+    Submit(Submit),
 
-    /// Closes a durable signer account and refunds its lamports.
+    /// Reserved close instruction.
     ///
     /// Instruction data: instruction discriminator only.
     ///
-    /// Runs only as an inner instruction of a wrapped transaction submitted through `Submit`
-    /// because nothing outside this program can sign for `DurableSignerPda`.
+    /// This is not implemented yet; the current processor rejects it with
+    /// `ProgramError::InvalidInstructionData`. A future implementation should
+    /// run only as an inner instruction of a wrapped transaction submitted
+    /// through `Submit`, because nothing outside this program can sign for
+    /// `DurableSignerPda`.
     ///
     /// Accounts required:
     /// - `[signer]` `DurableSignerPda`
@@ -78,9 +156,19 @@ pub enum DurableSignerInstruction {
     Close,
 }
 
-impl DurableSignerInstruction {
+/// Standard Ed25519 instruction format.
+pub type DurableSignerInstruction = DurableSignerInstructionData<(), VersionedTransaction>;
+
+/// Falcon-512 instruction format.
+pub type FalconDurableSignerInstruction =
+    DurableSignerInstructionData<FalconInitialize, FalconSubmit>;
+
+impl<Initialize, Submit> DurableSignerInstructionData<Initialize, Submit> {
     #[inline(always)]
-    pub fn try_from_bytes(instruction_data: &[u8]) -> Result<Self, ProgramError> {
+    pub fn try_from_bytes(instruction_data: &[u8]) -> Result<Self, ProgramError>
+    where
+        for<'de> Self: SchemaRead<'de, DefaultConfig, Dst = Self>,
+    {
         wincode::deserialize_exact(instruction_data)
             .map_err(|_| ProgramError::InvalidInstructionData)
     }
@@ -89,7 +177,7 @@ impl DurableSignerInstruction {
 #[cfg(test)]
 mod tests {
     use {
-        super::DurableSignerInstruction,
+        super::{DurableSignerInstruction, FALCON512_SIGNATURE_LEN, FalconSignature},
         alloc::vec,
         solana_transaction::{Message, VersionedMessage, versioned::VersionedTransaction},
     };
@@ -104,7 +192,7 @@ mod tests {
     #[test]
     fn instruction_tags_match_wire_format() {
         assert_eq!(
-            wincode::serialize(&DurableSignerInstruction::Initialize).unwrap()[0],
+            wincode::serialize(&DurableSignerInstruction::Initialize(())).unwrap()[0],
             0
         );
         assert_eq!(
@@ -121,5 +209,16 @@ mod tests {
     fn try_from_bytes_rejects_unknown() {
         assert!(DurableSignerInstruction::try_from_bytes(&[4]).is_err());
         assert!(DurableSignerInstruction::try_from_bytes(&[255]).is_err());
+    }
+
+    #[test]
+    fn falcon_signature_constructor_pads_and_rejects_oversized_input() {
+        let signature = FalconSignature::try_from_compressed(&[1, 2, 3]).unwrap();
+
+        assert_eq!(&signature.bytes[..3], &[1, 2, 3]);
+        assert!(signature.bytes[3..].iter().all(|byte| *byte == 0));
+        assert!(
+            FalconSignature::try_from_compressed(&vec![0; FALCON512_SIGNATURE_LEN + 1]).is_err()
+        );
     }
 }

@@ -1,29 +1,37 @@
 use {
+    crate::verifier::{SchemeState, SigningScheme},
     pinocchio::{
         AccountView, Address, ProgramResult,
         error::ProgramError,
         sysvars::{Sysvar, rent::Rent, slot_hashes::SlotHashes},
     },
-    spl_ed25519_durable_signer_interface::state::{
-        DurableSignerAccount, INIT_NONCE_DERIVATION_TAG,
-    },
+    spl_ed25519_durable_signer_interface::state::INIT_NONCE_DERIVATION_TAG,
+    wincode::{SchemaWrite, config::DefaultConfig},
 };
 
-/// Turns a caller-created, program-owned account into a [`DurableSignerAccount`]
-/// bound to `authority` with a fresh nonce.
-#[inline(always)]
-pub fn process_initialize(program_id: &Address, accounts: &mut [AccountView]) -> ProgramResult {
-    let [durable_signer_account, authority, slot_hashes_account, ..] = accounts else {
+/// Turns a caller-created, program-owned account into a scheme-specific durable
+/// signer account with a fresh nonce.
+#[inline(never)]
+pub fn process_initialize<S: SigningScheme>(
+    program_id: &Address,
+    accounts: &mut [AccountView],
+    initialize: &S::Initialize,
+) -> ProgramResult
+where
+    SchemeState<S>: SchemaWrite<DefaultConfig, Src = SchemeState<S>>,
+{
+    let [durable_signer_account, remaining_accounts @ ..] = accounts else {
         return Err(ProgramError::NotEnoughAccountKeys);
     };
+    let parsed = S::parse_initialize_accounts(remaining_accounts, initialize)?;
 
     // Caller must ensure account is pre-created with authority set to the program
     if !durable_signer_account.owned_by(program_id) {
         return Err(ProgramError::IllegalOwner);
     }
 
-    // Ensure's precise length matches the layout
-    if durable_signer_account.data_len() != DurableSignerAccount::LEN {
+    // The account layout is selected at compile time with the signing scheme.
+    if durable_signer_account.data_len() != S::STATE_LEN {
         return Err(ProgramError::InvalidAccountData);
     }
 
@@ -34,13 +42,13 @@ pub fn process_initialize(program_id: &Address, accounts: &mut [AccountView]) ->
     }
     drop(data);
 
-    let rent_required = Rent::get()?.try_minimum_balance(DurableSignerAccount::LEN)?;
+    let rent_required = Rent::get()?.try_minimum_balance(S::STATE_LEN)?;
     if durable_signer_account.lamports() < rent_required {
         return Err(ProgramError::AccountNotRentExempt);
     }
 
     // Read the most recent slot hash to feed the nonce derivation
-    let slot_hashes = SlotHashes::from_account_view(slot_hashes_account)?;
+    let slot_hashes = SlotHashes::from_account_view(parsed.slot_hashes_account)?;
     let recent_entry = slot_hashes
         .get_entry(0)
         .ok_or(ProgramError::InvalidArgument)?;
@@ -55,9 +63,9 @@ pub fn process_initialize(program_id: &Address, accounts: &mut [AccountView]) ->
         &recent_entry.hash,
     ]);
 
-    let state = DurableSignerAccount {
+    let state = SchemeState::<S> {
         nonce: initial_nonce,
-        authority: Address::from(authority.address()),
+        authority: parsed.authority,
     };
 
     // Write data into the account

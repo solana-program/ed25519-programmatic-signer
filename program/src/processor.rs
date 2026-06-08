@@ -1,21 +1,33 @@
 use {
-    crate::{initialize::process_initialize, submit::process_submit, verifier::Verifier},
+    crate::{
+        initialize::process_initialize,
+        submit::process_submit,
+        verifier::{SchemeInstruction, SchemeState, SigningScheme},
+    },
     pinocchio::{AccountView, Address, ProgramResult, error::ProgramError},
-    spl_ed25519_durable_signer_interface::instruction::DurableSignerInstruction,
+    spl_ed25519_durable_signer_interface::instruction::DurableSignerInstructionData,
+    wincode::{SchemaRead, SchemaWrite, config::DefaultConfig},
 };
 
-#[inline(always)]
-pub fn process_instruction<V: Verifier>(
+#[inline(never)]
+pub fn process_instruction<S: SigningScheme>(
     program_id: &Address,
     accounts: &mut [AccountView],
     instruction_data: &[u8],
-) -> ProgramResult {
-    match DurableSignerInstruction::try_from_bytes(instruction_data)? {
-        DurableSignerInstruction::Initialize => process_initialize(program_id, accounts),
-        DurableSignerInstruction::Submit(transaction) => {
-            process_submit::<V>(program_id, accounts, instruction_data, transaction)
+) -> ProgramResult
+where
+    SchemeInstruction<S>: for<'de> SchemaRead<'de, DefaultConfig, Dst = SchemeInstruction<S>>,
+    SchemeState<S>: for<'de> SchemaRead<'de, DefaultConfig, Dst = SchemeState<S>>
+        + SchemaWrite<DefaultConfig, Src = SchemeState<S>>,
+{
+    match SchemeInstruction::<S>::try_from_bytes(instruction_data)? {
+        DurableSignerInstructionData::Initialize(initialize) => {
+            process_initialize::<S>(program_id, accounts, &initialize)
         }
-        DurableSignerInstruction::Close => Err(ProgramError::InvalidInstructionData),
+        DurableSignerInstructionData::Submit(submit) => {
+            process_submit::<S>(program_id, accounts, instruction_data, submit)
+        }
+        DurableSignerInstructionData::Close => Err(ProgramError::InvalidInstructionData),
     }
 }
 
@@ -23,9 +35,10 @@ pub fn process_instruction<V: Verifier>(
 mod tests {
     use {
         super::*,
-        crate::verifier::Ed25519Verifier,
+        crate::verifier::Ed25519Scheme,
         alloc::vec,
         solana_transaction::{Message, VersionedMessage, versioned::VersionedTransaction},
+        spl_ed25519_durable_signer_interface::instruction::DurableSignerInstruction,
     };
 
     fn empty_transaction() -> VersionedTransaction {
@@ -39,7 +52,7 @@ mod tests {
     fn parse_instruction_valid_discriminators() {
         assert!(matches!(
             DurableSignerInstruction::try_from_bytes(&[0]).unwrap(),
-            DurableSignerInstruction::Initialize
+            DurableSignerInstruction::Initialize(())
         ));
         assert!(matches!(
             DurableSignerInstruction::try_from_bytes(
@@ -64,7 +77,7 @@ mod tests {
         let mut accounts = [];
 
         assert_eq!(
-            process_instruction::<Ed25519Verifier>(&Address::default(), &mut accounts, &[2])
+            process_instruction::<Ed25519Scheme>(&Address::default(), &mut accounts, &[2])
                 .unwrap_err(),
             ProgramError::InvalidInstructionData
         );

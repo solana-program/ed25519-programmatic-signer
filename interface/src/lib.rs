@@ -1,4 +1,8 @@
-//! Interface for the Ed25519 Durable Signer program.
+//! Shared wire types for the Durable Signer program.
+//!
+//! [`instruction::DurableSignerInstruction`] is the default Ed25519 interface.
+//! [`instruction::FalconDurableSignerInstruction`] is the Falcon-512 interface
+//! used by the `falcon` program build.
 #![no_std]
 
 extern crate alloc;

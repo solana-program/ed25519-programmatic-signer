@@ -17,8 +17,15 @@ program-id = "EdSigVfK1DkeMrjFNDMjwfQaJPhPTtX7jW8uPv3oKEgN"
 [lints]
 workspace = true
 
+[features]
+# Deploys the program with the post-quantum Falcon-512 verifier instead of
+# ed25519. Off by default so standard builds/tests stay ed25519 and don't pull
+# the Falcon dependency.
+falcon = ["dep:solana-falcon512"]
+
 [dependencies]
 brine-ed25519 = { workspace = true }
+solana-falcon512 = { version = "0.1.2", default-features = false, optional = true }
 pinocchio = { workspace = true, features = ["alloc", "cpi"] }
 solana-address = { workspace = true, features = ["curve25519", "syscalls"] }
 solana-hash = { workspace = true }
@@ -29,8 +36,17 @@ solana-transaction = { workspace = true }
 spl-ed25519-durable-signer-interface = { workspace = true }
 wincode = { workspace = true, features = ["alloc"] }
 
+# Falcon end-to-end submit test; only compiled/run with `--features falcon`.
+[[test]]
+name = "test_falcon_submit"
+required-features = ["falcon"]
+
 [dev-dependencies]
 mollusk-svm = { workspace = true }
+# Off-chain Falcon-512 key generation + signing for `falcon`-feature tests only.
+# PQClean-backed, matching the format `solana-falcon512` verifies.
+pqcrypto-falcon = "0.4"
+pqcrypto-traits = "0.3"
 solana-account = { workspace = true }
 solana-address = { workspace = true }
 solana-hash = { workspace = true }

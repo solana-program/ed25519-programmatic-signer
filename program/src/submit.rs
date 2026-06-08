@@ -1,7 +1,7 @@
 #[cfg(target_os = "solana")]
 use solana_instruction::{TRANSACTION_LEVEL_STACK_HEIGHT, syscalls::get_stack_height};
 use {
-    crate::verifier::Verifier,
+    crate::verifier::{SchemeState, SigningScheme, VerifiedSigner},
     alloc::vec::Vec,
     pinocchio::{
         AccountView, Address, ProgramResult,
@@ -14,10 +14,9 @@ use {
         bpf_loader_upgradeable,
         sysvar::{instructions as instructions_sysvar_id, slot_hashes as slot_hashes_sysvar_id},
     },
-    solana_transaction::{CompiledInstruction, VersionedMessage, versioned::VersionedTransaction},
-    spl_ed25519_durable_signer_interface::{
-        error::DurableSignerError, pda::DurableSignerPda, state::DurableSignerAccount,
-    },
+    solana_transaction::{CompiledInstruction, VersionedMessage},
+    spl_ed25519_durable_signer_interface::{error::DurableSignerError, pda::DurableSignerPda},
+    wincode::{SchemaRead, SchemaWrite, config::DefaultConfig},
 };
 
 /// Domain-separation tag for the nonce derivation.
@@ -32,12 +31,16 @@ struct AuthorizedPdaSigner {
 }
 
 #[inline(never)]
-pub fn process_submit<V: Verifier>(
+pub fn process_submit<S: SigningScheme>(
     program_id: &Address,
     accounts: &mut [AccountView],
     instruction_data: &[u8],
-    transaction: VersionedTransaction,
-) -> ProgramResult {
+    submit: S::Submit,
+) -> ProgramResult
+where
+    SchemeState<S>: for<'de> SchemaRead<'de, DefaultConfig, Dst = SchemeState<S>>
+        + SchemaWrite<DefaultConfig, Src = SchemeState<S>>,
+{
     let [
         durable_signer_account,
         slot_hashes_account,
@@ -77,11 +80,10 @@ pub fn process_submit<V: Verifier>(
         return Err(DurableSignerError::OuterTxMustContainOnlySubmit.into());
     }
 
-    transaction
+    let message = S::message(&submit);
+    message
         .sanitize()
         .map_err(|_| ProgramError::from(DurableSignerError::InvalidWrappedTransaction))?;
-
-    let message = &transaction.message;
     let account_keys = message.static_account_keys();
 
     // Signed transaction config is not replayed by CPI, so fee and compute
@@ -104,20 +106,18 @@ pub fn process_submit<V: Verifier>(
     let signer_keys = account_keys.get(..signer_count).ok_or(ProgramError::from(
         DurableSignerError::InvalidWrappedTransaction,
     ))?;
-    let signatures = transaction
-        .signatures
-        .get(..signer_count)
-        .ok_or(ProgramError::from(
-            DurableSignerError::InvalidWrappedTransaction,
-        ))?;
-    let expected_remaining_accounts = signer_count
+    S::validate_submit(&submit, signer_count)?;
+
+    let authority_account_count = S::authority_account_count(signer_count)?;
+    let expected_remaining_accounts = authority_account_count
         .checked_add(account_keys.len())
         .ok_or(ProgramError::InvalidArgument)?;
     if remaining_accounts.len() != expected_remaining_accounts {
         return Err(DurableSignerError::WrappedMessageAccountsMismatch.into());
     }
 
-    let (authority_accounts, wrapped_accounts) = remaining_accounts.split_at(signer_count);
+    let (authority_accounts, wrapped_accounts) =
+        remaining_accounts.split_at(authority_account_count);
     verify_wrapped_accounts(wrapped_accounts, account_keys)?;
 
     if !durable_signer_account.owned_by(program_id) {
@@ -125,7 +125,7 @@ pub fn process_submit<V: Verifier>(
     }
 
     let data = durable_signer_account.try_borrow()?;
-    let mut state: DurableSignerAccount = wincode::deserialize_exact(&data)
+    let mut state: SchemeState<S> = wincode::deserialize_exact(&data)
         .map_err(|_| DurableSignerError::InvalidDurableSignerAccount)?;
     drop(data);
 
@@ -135,12 +135,12 @@ pub fn process_submit<V: Verifier>(
 
     let message_bytes = message.serialize();
 
-    let authorized_signers = authorize_required_signers::<V>(
+    let authorized_signers = authorize_required_signers::<S>(
         program_id,
         authority_accounts,
         signer_keys,
-        signatures,
         &state.authority,
+        &submit,
         &message_bytes,
     )?;
 
@@ -164,7 +164,7 @@ pub fn process_submit<V: Verifier>(
         message_hash.as_ref(),
     ]);
 
-    if durable_signer_account.data_len() != DurableSignerAccount::LEN {
+    if durable_signer_account.data_len() != S::STATE_LEN {
         return Err(ProgramError::InvalidAccountData);
     }
     let mut data = durable_signer_account.try_borrow_mut()?;
@@ -189,37 +189,37 @@ fn verify_wrapped_accounts(
     Ok(())
 }
 
-fn authorize_required_signers<V: Verifier>(
+fn authorize_required_signers<S: SigningScheme>(
     program_id: &Address,
     authority_accounts: &[AccountView],
     signer_keys: &[Address],
-    signatures: &[impl AsRef<[u8]>],
-    state_authority: &Address,
+    state_authority: &S::Authority,
+    submit: &S::Submit,
     message_bytes: &[u8],
 ) -> Result<Vec<AuthorizedPdaSigner>, ProgramError> {
-    if authority_accounts.len() != signer_keys.len() || signatures.len() != signer_keys.len() {
-        return Err(DurableSignerError::InvalidWrappedTransaction.into());
-    }
-
     let mut saw_state_authority = false;
     let mut authorized = Vec::with_capacity(signer_keys.len());
-    for ((authority_account, expected_pda), signature) in
-        authority_accounts.iter().zip(signer_keys).zip(signatures)
-    {
-        let authority = address_value(authority_account.address());
-        if &authority == state_authority {
+    for (signer_index, expected_pda) in signer_keys.iter().enumerate() {
+        let VerifiedSigner {
+            authority,
+            bump,
+            is_state_authority,
+        } = S::verify_signer(
+            program_id,
+            state_authority,
+            authority_accounts,
+            signer_index,
+            expected_pda,
+            submit,
+            message_bytes,
+        )?;
+        if is_state_authority {
             saw_state_authority = true;
         }
 
-        let (pda, bump) = DurableSignerPda::derive_address_and_bump(program_id, &authority);
-        if &pda != expected_pda {
-            return Err(DurableSignerError::IncorrectAuthorityPda.into());
-        }
-        V::verify(authority_account, signature.as_ref(), message_bytes)?;
-
         authorized.push(AuthorizedPdaSigner {
             authority,
-            signer_pda: pda,
+            signer_pda: *expected_pda,
             bump_seed: [bump],
         });
     }

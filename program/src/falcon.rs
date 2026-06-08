@@ -1,68 +1,184 @@
-//! Experimental post-quantum (Falcon-512) verifier.
+//! Falcon-512 signing scheme for the durable signer program.
 //!
-//! This is a **proof that the [`Verifier`] seam accommodates a quantum-resistant
-//! scheme with no changes to the rest of the program** — not a production,
-//! audited post-quantum implementation. It is not wired in by default; select it
-//! in [`crate::config`] to deploy a Falcon variant.
+//! Falcon cannot use the native Solana
+//! [`VersionedTransaction`](solana_transaction::versioned::VersionedTransaction)
+//! signature vector:
+//! Falcon public keys are 897 bytes and Falcon signatures are 666 bytes, while
+//! native transaction signatures are fixed at 64 bytes. The Falcon program
+//! variant therefore uses a scheme-specific submit envelope:
+//! [`FalconSubmit`].
 //!
-//! ## Why this needs no instruction-format change
+//! ## Authority binding
 //!
-//! A Falcon-512 public key (~897 B) and signature (~666 B) dwarf ed25519's
-//! 32/64 B. The wrapped transaction's signature slots are fixed at 64 bytes,
-//! and SIMD-0385 ("V1 transactions") raised the *total*
-//! transaction budget to 4 KB but did **not** widen those slots. So the Falcon
-//! credential cannot ride `transaction.signatures`; instead the caller supplies
-//! it in the **authority account's data** as `public_key ‖ signature`, which the
-//! verifier reads through `&AccountView`. The ~1.5 KB credential fits well inside
-//! SIMD-0385's 4 KB transaction budget.
+//! The durable signer PDA still needs a 32-byte seed. Falcon derives that seed
+//! from the public key:
 //!
-//! The durable signer's stored `authority` is that account's address, controlled
-//! by its owner — so the account vouches for its declared Falcon key the same way
-//! an ed25519 authority address *is* its key.
+//! ```text
+//! authority_id = sha256(FALCON_AUTHORITY_DERIVATION_TAG || falcon_public_key)
+//! durable_pda  = PDA("durable-signer", authority_id)
+//! ```
 //!
-//! ## What is still a stub
-//!
-//! [`falcon512_verify`] is a fail-closed placeholder: real Falcon verification is
-//! compute-heavy and would need a `no_std` verifier (e.g. FN-DSA) or a runtime
-//! precompile. It returns an error so this scheme can never silently accept a
-//! signature. The surrounding plumbing — credential transport and seam wiring —
-//! is real.
+//! The public key is supplied once during `Initialize`, hashed into the 32-byte
+//! authority id, and converted to `solana-falcon512`'s prepared form for
+//! lower-compute verification. Each `Submit` then carries only the Falcon
+//! signature for the wrapped message.
 
 use {
-    crate::verifier::Verifier,
-    pinocchio::{AccountView, ProgramResult, error::ProgramError},
-    spl_ed25519_durable_signer_interface::error::DurableSignerError,
+    crate::verifier::{ParsedInitializeAccounts, SigningScheme, VerifiedSigner},
+    pinocchio::{AccountView, Address, error::ProgramError},
+    solana_falcon512::{
+        FALCON_512_PREPARED_PUBKEY_LEN, FALCON_512_PUBKEY_LEN, FALCON_512_SIGNATURE_LEN,
+        Falcon512PreparedPubkey, Falcon512Pubkey, Falcon512Signature,
+    },
+    solana_transaction::VersionedMessage,
+    spl_ed25519_durable_signer_interface::{
+        error::DurableSignerError,
+        instruction::{
+            FALCON512_PUBLIC_KEY_LEN, FALCON512_SIGNATURE_LEN, FalconInitialize, FalconSubmit,
+        },
+        pda::DurableSignerPda,
+        state::{
+            FALCON512_PREPARED_PUBLIC_KEY_LEN, FalconAuthority, FalconDurableSignerAccount,
+            falcon_authority_id,
+        },
+    },
 };
 
-/// Falcon-512 public key length, in bytes.
-const FALCON512_PUBKEY_LEN: usize = 897;
+const _: () = assert!(
+    FALCON_512_PUBKEY_LEN == FALCON512_PUBLIC_KEY_LEN,
+    "interface and verifier public-key lengths must match",
+);
+const _: () = assert!(
+    FALCON_512_SIGNATURE_LEN == FALCON512_SIGNATURE_LEN,
+    "interface and verifier signature lengths must match",
+);
+const _: () = assert!(
+    FALCON_512_PREPARED_PUBKEY_LEN == FALCON512_PREPARED_PUBLIC_KEY_LEN,
+    "interface and verifier prepared-key lengths must match",
+);
 
-/// Post-quantum verifier. The credential rides the authority account's data;
-/// the 64-byte transaction signature slot is unused.
-pub struct FalconVerifier;
+/// Falcon-512 signing scheme.
+pub struct FalconScheme;
 
-impl Verifier for FalconVerifier {
-    fn verify(authority: &AccountView, _signature: &[u8], message_bytes: &[u8]) -> ProgramResult {
-        let credential = authority.try_borrow()?;
-        if credential.len() <= FALCON512_PUBKEY_LEN {
+impl SigningScheme for FalconScheme {
+    type Initialize = FalconInitialize;
+    type Submit = FalconSubmit;
+    type Authority = FalconAuthority;
+
+    const STATE_LEN: usize = FalconDurableSignerAccount::LEN;
+
+    fn parse_initialize_accounts<'a>(
+        accounts: &'a [AccountView],
+        initialize: &Self::Initialize,
+    ) -> Result<ParsedInitializeAccounts<'a, Self::Authority>, ProgramError> {
+        let [slot_hashes_account, ..] = accounts else {
+            return Err(ProgramError::NotEnoughAccountKeys);
+        };
+
+        let public_key = Falcon512Pubkey::try_from_slice(&initialize.public_key)
+            .map_err(|_| ProgramError::InvalidInstructionData)?;
+        let prepared = public_key
+            .try_prepare_pubkey()
+            .map_err(|_| ProgramError::InvalidInstructionData)?;
+
+        Ok(ParsedInitializeAccounts {
+            authority: FalconAuthority {
+                id: falcon_authority_id(&initialize.public_key),
+                prepared_public_key: *prepared.as_bytes(),
+            },
+            slot_hashes_account,
+        })
+    }
+
+    #[inline(always)]
+    fn message(submit: &Self::Submit) -> &VersionedMessage {
+        &submit.message
+    }
+
+    fn validate_submit(submit: &Self::Submit, signer_count: usize) -> Result<(), ProgramError> {
+        // This first Falcon variant stores one prepared public key in the
+        // durable signer account, so it can authorize exactly one required PDA
+        // signer. Multi-signer Falcon support should use authority/key accounts
+        // or a registry so each signer has distinct key material.
+        if signer_count != 1 || submit.signatures.len() != 1 {
+            return Err(DurableSignerError::InvalidWrappedTransaction.into());
+        }
+        Ok(())
+    }
+
+    fn authority_account_count(_signer_count: usize) -> Result<usize, ProgramError> {
+        Ok(0)
+    }
+
+    fn verify_signer(
+        program_id: &Address,
+        state_authority: &Self::Authority,
+        _authority_accounts: &[AccountView],
+        signer_index: usize,
+        expected_pda: &Address,
+        submit: &Self::Submit,
+        message_bytes: &[u8],
+    ) -> Result<VerifiedSigner, ProgramError> {
+        if signer_index != 0 {
+            return Err(DurableSignerError::InvalidWrappedTransaction.into());
+        }
+
+        let (pda, bump) =
+            DurableSignerPda::derive_address_and_bump(program_id, &state_authority.id);
+        if &pda != expected_pda {
+            return Err(DurableSignerError::IncorrectAuthorityPda.into());
+        }
+
+        let prepared =
+            Falcon512PreparedPubkey::try_from_slice(&state_authority.prepared_public_key)
+                .map_err(|_| ProgramError::InvalidAccountData)?;
+        let signature = submit
+            .signatures
+            .get(signer_index)
+            .ok_or(ProgramError::from(
+                DurableSignerError::InvalidWrappedTransaction,
+            ))?;
+        let signature = Falcon512Signature::try_from_slice(signature.as_ref())
+            .map_err(|_| ProgramError::from(DurableSignerError::MissingAuthorization))?;
+
+        if !signature.verify_with_prepared(message_bytes, prepared) {
             return Err(DurableSignerError::MissingAuthorization.into());
         }
-        let (public_key, signature) = credential.split_at(FALCON512_PUBKEY_LEN);
 
-        falcon512_verify(public_key, signature, message_bytes)
+        Ok(VerifiedSigner {
+            authority: state_authority.id,
+            bump,
+            is_state_authority: true,
+        })
     }
 }
 
-/// Verifies a Falcon-512 `signature` over `message` under `public_key`.
-///
-/// TODO(post-quantum): wire real Falcon-512 verification here. On-chain
-/// verification is compute-heavy, so a production deployment likely needs a
-/// runtime precompile rather than in-BPF verification. Until then this fails
-/// closed so the scheme can never accept an unverified signature.
-fn falcon512_verify(
-    _public_key: &[u8],
-    _signature: &[u8],
-    _message: &[u8],
-) -> Result<(), ProgramError> {
-    Err(DurableSignerError::MissingAuthorization.into())
+#[cfg(test)]
+mod tests {
+    use {
+        super::*,
+        pqcrypto_falcon::falcon512,
+        pqcrypto_traits::sign::{DetachedSignature, PublicKey},
+        solana_falcon512::Falcon512Pubkey,
+        spl_ed25519_durable_signer_interface::instruction::FalconSignature as InterfaceSignature,
+    };
+
+    fn padded_signature(raw: &[u8]) -> InterfaceSignature {
+        InterfaceSignature::try_from_compressed(raw).unwrap()
+    }
+
+    #[test]
+    fn pqclean_signature_verifies_with_prepared_key() {
+        let (pk, sk) = falcon512::keypair();
+        let message = b"durable signer falcon round-trip";
+        let detached = falcon512::detached_sign(message, &sk);
+        let signature = padded_signature(detached.as_bytes());
+
+        let public_key = Falcon512Pubkey::try_from_slice(pk.as_bytes()).unwrap();
+        let prepared = public_key.try_prepare_pubkey().unwrap();
+        let signature = Falcon512Signature::try_from_slice(signature.as_ref()).unwrap();
+
+        assert!(signature.verify_with_prepared(message, &prepared));
+        assert!(!signature.verify_with_prepared(b"a different message", &prepared));
+    }
 }

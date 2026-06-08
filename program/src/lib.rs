@@ -1,4 +1,8 @@
-//! Ed25519 Durable Signer program.
+//! Durable Signer program.
+//!
+//! The deployed binary selects one signing scheme at compile time. Default
+//! builds use native Solana Ed25519 transactions; `--features falcon` builds the
+//! same nonce/PDA/CPI processor with the Falcon-512 signing scheme.
 
 #![no_std]
 
@@ -6,8 +10,9 @@ extern crate alloc;
 
 mod config;
 mod entrypoint;
-pub mod falcon;
+#[cfg(feature = "falcon")]
+mod falcon;
 mod initialize;
 mod processor;
 mod submit;
-pub mod verifier;
+mod verifier;

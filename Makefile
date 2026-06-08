@@ -1,5 +1,6 @@
 RUST_TOOLCHAIN_NIGHTLY = nightly-2026-01-22
 SOLANA_CLI_VERSION = 3.1.8
+SBF_ERROR_PATTERN = 'Error: Function|Stack offset|overwrites values in the frame'
 
 nightly = +${RUST_TOOLCHAIN_NIGHTLY}
 
@@ -50,7 +51,14 @@ format-rust:
 	cargo $(nightly) fmt --all $(ARGS)
 
 build-sbf-%:
-	cargo build-sbf --manifest-path $(call make-path,$*)/Cargo.toml $(ARGS)
+	@mkdir -p target
+	@bash -o pipefail -c 'cargo build-sbf --manifest-path $(call make-path,$*)/Cargo.toml $(ARGS) 2>&1 | tee target/build-sbf-$*.log'
+	@! grep -E $(SBF_ERROR_PATTERN) target/build-sbf-$*.log
+
+build-sbf-program-falcon:
+	@mkdir -p target
+	@bash -o pipefail -c 'cargo build-sbf --manifest-path program/Cargo.toml -- --features falcon $(ARGS) 2>&1 | tee target/build-sbf-program-falcon.log'
+	@! grep -E $(SBF_ERROR_PATTERN) target/build-sbf-program-falcon.log
 
 build-doc-%:
 	RUSTDOCFLAGS="--cfg docsrs -D warnings" cargo $(nightly) doc --all-features --no-deps --manifest-path $(call make-path,$*)/Cargo.toml $(ARGS)
@@ -60,6 +68,9 @@ test-doc-%:
 
 test-%:
 	SBF_OUT_DIR=$(PWD)/target/deploy cargo $(nightly) test --manifest-path $(call make-path,$*)/Cargo.toml $(ARGS)
+
+test-program-falcon:
+	SBF_OUT_DIR=$(PWD)/target/deploy cargo $(nightly) test --manifest-path program/Cargo.toml --features falcon --test test_falcon_submit $(ARGS)
 
 generate-clients:
 	@echo "No clients to generate yet"

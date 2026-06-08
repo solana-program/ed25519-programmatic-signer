@@ -401,7 +401,7 @@ pub fn v1_message_bytes(message: &MessageV1) -> Vec<u8> {
     VersionedMessage::V1(message.clone()).serialize()
 }
 
-fn is_v1_maybe_writable(message: &MessageV1, index: usize) -> bool {
+pub fn is_v1_maybe_writable(message: &MessageV1, index: usize) -> bool {
     let required_signatures = usize::from(message.header.num_required_signatures);
     let readonly_signed = usize::from(message.header.num_readonly_signed_accounts);
     let readonly_unsigned = usize::from(message.header.num_readonly_unsigned_accounts);
