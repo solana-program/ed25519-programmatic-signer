@@ -18,7 +18,7 @@ solana-address = { version = "2.6.0", default-features = false }
 solana-hash = { version = "4.2.0", default-features = false }
 solana-instruction = { version = "3.3.0", default-features = false }
 solana-keypair = "3.1.2"
-solana-message = { version = "4.2.0", default-features = false, features = ["wincode"] }
+solana-message = { git = "https://github.com/anza-xyz/solana-sdk", rev = "170db8d2ce5ac51b41d9aaf669371b605c9a8f6a", default-features = false, features = ["wincode"] }
 solana-program-error = { version = "3.0.1", default-features = false }
 solana-rent = { version = "3.1.0", default-features = false }
 solana-sdk-ids = "3.1.0"
@@ -26,21 +26,34 @@ solana-sha256-hasher = { version = "3.1.0", default-features = false }
 solana-signature = { version = "3.3.0", default-features = false }
 solana-signer = "3.0.0"
 solana-system-interface = "2.0.0"
-solana-transaction = { version = "4.1.2", default-features = false, features = ["wincode"] }
+solana-transaction = { git = "https://github.com/anza-xyz/solana-sdk", rev = "170db8d2ce5ac51b41d9aaf669371b605c9a8f6a", default-features = false, features = ["wincode"] }
 spl-ed25519-durable-signer-client = { path = "client" }
 spl-ed25519-durable-signer-interface = { path = "interface" }
 wincode = { version = "0.5.5", default-features = false }
 
+# `solana-message` / `solana-transaction` are pinned (above) to the head of
+# anza-xyz/solana-sdk#749 ("transaction: no-std"), which the program needs to
+# parse the wrapped `VersionedTransaction` in `Submit` under `no_std`/SBF.
+#
+# That git branch ships its own `solana-address`, while pinocchio pulls
+# `solana-address` from crates.io. Same version (2.6.1), two sources => two
+# incompatible `Address` types. We can't fix this by patching `solana-message` /
+# `solana-transaction` themselves: the branch is 4.x but mollusk (dev-dep) pins
+# the 3.x line, and both majors must coexist.
+#
+# So we patch only the shared low-level crates to the same rev:
+#   - solana-address:  unifies `Address` across pinocchio and the #749 crates.
+#   - solana-sanitize: must move WITH it. mollusk's `solana-message 3.x` calls
+#     `Address::sanitize()`; if `Address` is from the branch but `Sanitize` is
+#     from crates.io `solana-sanitize`, the impl no longer matches and 3.x fails
+#     to compile. Pinning both keeps the (Address, Sanitize) pair on one source.
+#
+# If a future mollusk bump drags in another base crate that splits the same way,
+# add it here on the same rev for the same reason. Remove this whole block once
+# #749 is released to crates.io and the deps point at the published version.
 [patch.crates-io]
-solana-address = { path = "../solana-sdk/address" }
-solana-instruction-error = { path = "../solana-sdk/instruction-error" }
-solana-message = { path = "../solana-sdk/message" }
-solana-program-error = { path = "../solana-sdk/program-error" }
-solana-sanitize = { path = "../solana-sdk/sanitize" }
-solana-sdk-ids = { path = "../solana-sdk/sdk-ids" }
-solana-short-vec = { path = "../solana-sdk/short-vec" }
-solana-transaction = { path = "../solana-sdk/transaction" }
-solana-transaction-error = { path = "../solana-sdk/transaction-error" }
+solana-address = { git = "https://github.com/anza-xyz/solana-sdk", rev = "170db8d2ce5ac51b41d9aaf669371b605c9a8f6a" }
+solana-sanitize = { git = "https://github.com/anza-xyz/solana-sdk", rev = "170db8d2ce5ac51b41d9aaf669371b605c9a8f6a" }
 
 [workspace.lints.rust.unexpected_cfgs]
 level = "warn"

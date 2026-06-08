@@ -4,7 +4,10 @@
 
 extern crate alloc;
 
+mod config;
 mod entrypoint;
+pub mod falcon;
 mod initialize;
 mod processor;
 mod submit;
+pub mod verifier;

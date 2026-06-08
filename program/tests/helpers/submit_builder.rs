@@ -20,8 +20,9 @@ use {
     solana_sdk_ids::bpf_loader_upgradeable,
     solana_signer::Signer,
     solana_transaction::{
-        AccountMeta as WrappedAccountMeta, Hash as WrappedHash, Instruction as WrappedInstruction,
-        Signature as WrappedSignature, VersionedMessage, versioned::VersionedTransaction,
+        AccountMeta as WrappedAccountMeta, Address as WrappedAddress, Hash as WrappedHash,
+        Instruction as WrappedInstruction, Signature as WrappedSignature, VersionedMessage,
+        versioned::VersionedTransaction,
     },
     spl_ed25519_durable_signer_interface::{
         instruction::DurableSignerInstruction, pda::DurableSignerPda,
@@ -139,9 +140,12 @@ impl<'a> SubmitBuilder<'a> {
         let lifetime_specifier = wrapped_hash(self.lifetime_specifier.unwrap_or(state.nonce));
 
         let authority_pda = DurableSignerPda::derive_address(&program_id, &authority_address);
-        let message =
-            MessageV1::try_compile(&authority_pda, &self.inner_instructions, lifetime_specifier)
-                .expect("wrapped message should compile");
+        let message = MessageV1::try_compile(
+            &wrapped_address(authority_pda),
+            &self.inner_instructions,
+            lifetime_specifier,
+        )
+        .expect("wrapped message should compile");
         let signed = self.sign_message(&message);
         let submit_instruction = self.submit_instruction.take().unwrap_or_else(|| {
             submit_instruction_for_v1_message(program_id, durable_signer.0, &message, &signed)
@@ -201,7 +205,7 @@ impl<'a> SubmitBuilder<'a> {
             );
             let signer_index = message.account_keys[..signer_count]
                 .iter()
-                .position(|key| key == &pda)
+                .position(|key| key.as_array() == pda.as_array())
                 .expect("authority PDA must be in the required-signer prefix");
             signatures[signer_index] =
                 wrapped_signature(signer.try_sign_message(&message_bytes).unwrap());
@@ -263,7 +267,7 @@ impl<'a> SubmitBuilder<'a> {
             push_unique(*key, account.clone());
         }
         for key in &message.account_keys {
-            push_unique(*key, writable_system_account(0));
+            push_unique(unwrapped_address(*key), writable_system_account(0));
         }
         for instruction in chain {
             for meta in &instruction.accounts {
@@ -326,9 +330,9 @@ pub fn submit_instruction_for_v1_message(
     }
     for (index, key) in message.account_keys.iter().enumerate() {
         accounts.push(if is_v1_maybe_writable(message, index) {
-            AccountMeta::new(*key, false)
+            AccountMeta::new(unwrapped_address(*key), false)
         } else {
-            AccountMeta::new_readonly(*key, false)
+            AccountMeta::new_readonly(unwrapped_address(*key), false)
         });
     }
 
@@ -348,7 +352,7 @@ pub fn empty_v1_message(lifetime_specifier: Hash, signer: Address) -> MessageV1 
         },
         config: TransactionConfig::empty(),
         lifetime_specifier: wrapped_hash(lifetime_specifier),
-        account_keys: vec![signer],
+        account_keys: vec![wrapped_address(signer)],
         instructions: vec![],
     }
 }
@@ -363,12 +367,12 @@ pub fn wrapped_signature(signature: solana_signature::Signature) -> WrappedSigna
 
 fn wrapped_instruction(instruction: Instruction) -> WrappedInstruction {
     WrappedInstruction {
-        program_id: instruction.program_id,
+        program_id: wrapped_address(instruction.program_id),
         accounts: instruction
             .accounts
             .into_iter()
             .map(|meta| WrappedAccountMeta {
-                pubkey: meta.pubkey,
+                pubkey: wrapped_address(meta.pubkey),
                 is_signer: meta.is_signer,
                 is_writable: meta.is_writable,
             })
@@ -410,7 +414,7 @@ fn is_v1_maybe_writable(message: &MessageV1, index: usize) -> bool {
             || message
                 .account_keys
                 .iter()
-                .any(|key| key == &bpf_loader_upgradeable::ID))
+                .any(|key| key.as_array() == bpf_loader_upgradeable::ID.as_array()))
 }
 
 fn is_key_called_as_program(instructions: &[CompiledInstruction], key_index: usize) -> bool {
@@ -420,4 +424,12 @@ fn is_key_called_as_program(instructions: &[CompiledInstruction], key_index: usi
     instructions
         .iter()
         .any(|instruction| instruction.program_id_index == key_index)
+}
+
+pub fn wrapped_address(address: Address) -> WrappedAddress {
+    WrappedAddress::new_from_array(address.to_bytes())
+}
+
+pub fn unwrapped_address(address: WrappedAddress) -> Address {
+    Address::new_from_array(address.to_bytes())
 }

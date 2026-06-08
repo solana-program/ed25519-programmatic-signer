@@ -6,7 +6,8 @@ use {
         },
         submit_builder::{
             SignedV1Message, SubmitBuilder, compiled_transfer_instruction, empty_v1_message,
-            submit_instruction_for_v1_message, v1_message_bytes, wrapped_hash, wrapped_signature,
+            submit_instruction_for_v1_message, v1_message_bytes, wrapped_address, wrapped_hash,
+            wrapped_signature,
         },
     },
     mollusk_svm::result::Check,
@@ -188,7 +189,7 @@ fn submit_rejects_wrapped_transaction_config() {
             ..TransactionConfig::empty()
         },
         lifetime_specifier: wrapped_hash(nonce),
-        account_keys: vec![authority_pda],
+        account_keys: vec![wrapped_address(authority_pda)],
         instructions: vec![],
     };
     let message_bytes = v1_message_bytes(&message);
@@ -314,7 +315,12 @@ fn submit_rejects_non_pda_signer_even_when_authority_is_not_first() {
         },
         config: TransactionConfig::empty(),
         lifetime_specifier: wrapped_hash(nonce),
-        account_keys: vec![other.pubkey(), authority_pda, recipient, system_program],
+        account_keys: vec![
+            wrapped_address(other.pubkey()),
+            wrapped_address(authority_pda),
+            wrapped_address(recipient),
+            wrapped_address(system_program),
+        ],
         instructions: vec![compiled_transfer_instruction(1, 2, 3, 1)],
     };
     let message_bytes = v1_message_bytes(&message);
@@ -367,11 +373,11 @@ fn submit_rejects_wrapped_submit_cpi() {
         config: TransactionConfig::empty(),
         lifetime_specifier: wrapped_hash(nonce),
         account_keys: vec![
-            authority_pda,
-            durable_signer.0,
-            solana_sdk_ids::sysvar::slot_hashes::ID,
-            solana_sdk_ids::sysvar::instructions::ID,
-            program_id,
+            wrapped_address(authority_pda),
+            wrapped_address(durable_signer.0),
+            wrapped_address(solana_sdk_ids::sysvar::slot_hashes::ID),
+            wrapped_address(solana_sdk_ids::sysvar::instructions::ID),
+            wrapped_address(program_id),
         ],
         instructions: vec![CompiledInstruction {
             program_id_index: 4,

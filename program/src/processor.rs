@@ -1,11 +1,11 @@
 use {
-    crate::{initialize::process_initialize, submit::process_submit},
+    crate::{initialize::process_initialize, submit::process_submit, verifier::Verifier},
     pinocchio::{AccountView, Address, ProgramResult, error::ProgramError},
     spl_ed25519_durable_signer_interface::instruction::DurableSignerInstruction,
 };
 
 #[inline(always)]
-pub fn process_instruction(
+pub fn process_instruction<V: Verifier>(
     program_id: &Address,
     accounts: &mut [AccountView],
     instruction_data: &[u8],
@@ -13,7 +13,7 @@ pub fn process_instruction(
     match DurableSignerInstruction::try_from_bytes(instruction_data)? {
         DurableSignerInstruction::Initialize => process_initialize(program_id, accounts),
         DurableSignerInstruction::Submit(transaction) => {
-            process_submit(program_id, accounts, instruction_data, transaction)
+            process_submit::<V>(program_id, accounts, instruction_data, transaction)
         }
         DurableSignerInstruction::Close => Err(ProgramError::InvalidInstructionData),
     }
@@ -23,6 +23,7 @@ pub fn process_instruction(
 mod tests {
     use {
         super::*,
+        crate::verifier::Ed25519Verifier,
         alloc::vec,
         solana_transaction::{Message, VersionedMessage, versioned::VersionedTransaction},
     };
@@ -63,7 +64,8 @@ mod tests {
         let mut accounts = [];
 
         assert_eq!(
-            process_instruction(&Address::default(), &mut accounts, &[2]).unwrap_err(),
+            process_instruction::<Ed25519Verifier>(&Address::default(), &mut accounts, &[2])
+                .unwrap_err(),
             ProgramError::InvalidInstructionData
         );
     }

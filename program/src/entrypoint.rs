@@ -12,5 +12,9 @@ fn process_instruction(
     accounts: &mut [AccountView],
     instruction_data: &[u8],
 ) -> ProgramResult {
-    crate::processor::process_instruction(program_id, accounts, instruction_data)
+    crate::processor::process_instruction::<crate::config::ActiveVerifier>(
+        program_id,
+        accounts,
+        instruction_data,
+    )
 }

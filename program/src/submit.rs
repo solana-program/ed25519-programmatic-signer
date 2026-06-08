@@ -1,8 +1,8 @@
 #[cfg(target_os = "solana")]
 use solana_instruction::{TRANSACTION_LEVEL_STACK_HEIGHT, syscalls::get_stack_height};
 use {
+    crate::verifier::Verifier,
     alloc::vec::Vec,
-    brine_ed25519::{hasher::Sha512, verify},
     pinocchio::{
         AccountView, Address, ProgramResult,
         cpi::{Seed, Signer, invoke_signed_with_bounds},
@@ -32,7 +32,7 @@ struct AuthorizedPdaSigner {
 }
 
 #[inline(never)]
-pub fn process_submit(
+pub fn process_submit<V: Verifier>(
     program_id: &Address,
     accounts: &mut [AccountView],
     instruction_data: &[u8],
@@ -135,7 +135,7 @@ pub fn process_submit(
 
     let message_bytes = message.serialize();
 
-    let authorized_signers = authorize_required_signers(
+    let authorized_signers = authorize_required_signers::<V>(
         program_id,
         authority_accounts,
         signer_keys,
@@ -189,7 +189,7 @@ fn verify_wrapped_accounts(
     Ok(())
 }
 
-fn authorize_required_signers(
+fn authorize_required_signers<V: Verifier>(
     program_id: &Address,
     authority_accounts: &[AccountView],
     signer_keys: &[Address],
@@ -215,8 +215,7 @@ fn authorize_required_signers(
         if &pda != expected_pda {
             return Err(DurableSignerError::IncorrectAuthorityPda.into());
         }
-        verify_wrapped_signature(&authority, signature.as_ref(), message_bytes)
-            .map_err(|_| ProgramError::from(DurableSignerError::MissingAuthorization))?;
+        V::verify(authority_account, signature.as_ref(), message_bytes)?;
 
         authorized.push(AuthorizedPdaSigner {
             authority,
@@ -230,22 +229,6 @@ fn authorize_required_signers(
     }
 
     Ok(authorized)
-}
-
-fn verify_wrapped_signature(
-    pubkey: &Address,
-    signature: &[u8],
-    message_bytes: &[u8],
-) -> Result<(), ProgramError> {
-    let pubkey: &[u8; 32] = pubkey
-        .as_ref()
-        .try_into()
-        .map_err(|_| ProgramError::from(DurableSignerError::MissingAuthorization))?;
-    let signature: &[u8; 64] = signature
-        .try_into()
-        .map_err(|_| ProgramError::from(DurableSignerError::MissingAuthorization))?;
-
-    verify::<Sha512>(pubkey, signature, &[message_bytes])
 }
 
 fn execute_wrapped_message(
