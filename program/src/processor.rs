@@ -1,7 +1,7 @@
 use {
     crate::initialize::process_initialize,
     pinocchio::{AccountView, Address, ProgramResult},
-    spl_ed25519_durable_signer_interface::instruction::DurableSignerInstruction,
+    spl_ed25519_programmatic_signer_interface::instruction::ProgrammaticSignerInstruction,
 };
 
 #[inline(always)]
@@ -10,8 +10,10 @@ pub fn process_instruction(
     accounts: &mut [AccountView],
     instruction_data: &[u8],
 ) -> ProgramResult {
-    match DurableSignerInstruction::try_from_bytes(instruction_data)? {
-        DurableSignerInstruction::Initialize => process_initialize(program_id, accounts),
-        DurableSignerInstruction::Submit | DurableSignerInstruction::Close => unimplemented!(),
+    match ProgrammaticSignerInstruction::try_from_bytes(instruction_data)? {
+        ProgrammaticSignerInstruction::Initialize => process_initialize(program_id, accounts),
+        ProgrammaticSignerInstruction::Submit | ProgrammaticSignerInstruction::Close => {
+            unimplemented!()
+        }
     }
 }

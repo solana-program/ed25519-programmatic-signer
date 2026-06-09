@@ -2914,17 +2914,17 @@ dependencies = [
 ]
 
 [[package]]
-name = "spl-ed25519-durable-signer-client"
+name = "spl-ed25519-programmatic-signer-client"
 version = "0.1.0"
 dependencies = [
  "solana-address 2.6.0",
  "solana-instruction",
  "solana-sdk-ids",
- "spl-ed25519-durable-signer-interface",
+ "spl-ed25519-programmatic-signer-interface",
 ]
 
 [[package]]
-name = "spl-ed25519-durable-signer-interface"
+name = "spl-ed25519-programmatic-signer-interface"
 version = "0.1.0"
 dependencies = [
  "solana-address 2.6.0",
@@ -2934,7 +2934,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "spl-ed25519-durable-signer-program"
+name = "spl-ed25519-programmatic-signer-program"
 version = "0.1.0"
 dependencies = [
  "mollusk-svm",
@@ -2946,8 +2946,8 @@ dependencies = [
  "solana-program-error",
  "solana-rent",
  "solana-sha256-hasher",
- "spl-ed25519-durable-signer-client",
- "spl-ed25519-durable-signer-interface",
+ "spl-ed25519-programmatic-signer-client",
+ "spl-ed25519-programmatic-signer-interface",
  "wincode",
 ]
 

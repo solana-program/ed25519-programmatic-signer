@@ -1,27 +1,27 @@
 use {
     solana_account::Account, solana_address::Address, solana_rent::Rent,
-    spl_ed25519_durable_signer_interface::state::DurableSignerAccount,
+    spl_ed25519_programmatic_signer_interface::state::ProgrammaticSignerAccount,
 };
 
-pub struct DurableSignerAccountBuilder {
+pub struct ProgrammaticSignerAccountBuilder {
     key: Address,
     owner: Address,
     lamports: Option<u64>,
     data: Option<Vec<u8>>,
 }
 
-impl Default for DurableSignerAccountBuilder {
+impl Default for ProgrammaticSignerAccountBuilder {
     fn default() -> Self {
         Self {
             key: Address::from([1; 32]),
-            owner: spl_ed25519_durable_signer_interface::id(),
+            owner: spl_ed25519_programmatic_signer_interface::id(),
             lamports: None,
             data: None,
         }
     }
 }
 
-impl DurableSignerAccountBuilder {
+impl ProgrammaticSignerAccountBuilder {
     pub fn new() -> Self {
         Self::default()
     }
@@ -50,7 +50,7 @@ impl DurableSignerAccountBuilder {
         let data = self
             .data
             // Default to program-owned, zero-filled account (waiting to be initialized)
-            .unwrap_or_else(|| vec![0; DurableSignerAccount::LEN]);
+            .unwrap_or_else(|| vec![0; ProgrammaticSignerAccount::LEN]);
         let lamports = self
             .lamports
             .unwrap_or_else(|| Rent::default().minimum_balance(data.len()));
