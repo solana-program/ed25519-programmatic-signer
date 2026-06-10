@@ -9,7 +9,7 @@ use {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, SchemaRead, SchemaWrite)]
 #[wincode(tag_encoding = "u8")]
 pub enum Instruction {
-    /// Initializes a programmatic signer account for an authority.
+    /// Initializes a signer nonce account for an authority.
     ///
     /// The caller must first create and fund the account. Recommended to include
     /// `solana_system_interface::instruction::create_account` and `Initialize` in the same
@@ -18,45 +18,45 @@ pub enum Instruction {
     /// On success, the program:
     /// 1. Verifies the account is uninitialized, rent-exempt, and owned by this program.
     /// 2. Derives the initial `nonce` as
-    ///    `sha256("spl-ed25519-programmatic-signer::init-v1" ‖ programmatic_signer_account_address ‖ slot_hashes[0])`.
-    /// 3. Writes `ProgrammaticSignerAccount { nonce, authority }` into the account data.
+    ///    `sha256("spl-ed25519-programmatic-signer::init-v1" ‖ signer_nonce_account_address ‖ slot_hashes[0])`.
+    /// 3. Writes `SignerNonceAccount { nonce, authority }` into the account data.
     ///
     /// Instruction data: instruction discriminator only
     ///
     /// Accounts required:
-    /// - `[writable]` Programmatic signer account
-    /// - `[]` Authority to store in the programmatic signer account
+    /// - `[writable]` Signer nonce account
+    /// - `[]` Authority to store in the signer nonce account
     /// - `[]` `SlotHashes` sysvar
     Initialize,
 
     /// Authorizes and executes a wrapped Solana transaction whose required signers are
-    /// `ProgrammaticSignerPda` accounts.
+    /// `ProgrammaticSigner` accounts.
     ///
     /// Instruction data: instruction discriminator followed by a serialized
     /// `solana_transaction::versioned::VersionedTransaction`.
     /// All message variants supported by `VersionedTransaction` are accepted.
     ///
     /// Wrapped required signers are paired by index:
-    /// - `message.account_keys[i]`: `ProgrammaticSignerPda` promoted during CPI.
+    /// - `message.account_keys[i]`: `ProgrammaticSigner` promoted during CPI.
     /// - `tx.signatures[i]`: wrapped-message signature from the matching authority address.
     ///
     /// On success, the program:
     /// 1. Deserializes the transaction and sanitizes the wrapped message.
-    /// 2. Reads the authority stored in the programmatic signer account.
-    /// 3. Checks the passed programmatic signer account's authority signed the wrapped message.
+    /// 2. Reads the authority stored in the signer nonce account.
+    /// 3. Checks the passed signer nonce account's authority signed the wrapped message.
     /// 4. Checks the wrapped message's lifetime / recent blockhash field equals the account's
     ///    `nonce`.
     /// 5. Verifies the outer transaction's only top-level instruction is `Submit`.
     /// 6. Iterates over the outer authority accounts in order. For each `authority_i`, requires
-    ///    `ProgrammaticSignerPda(authority_i) == message.account_keys[i]` and verifies
+    ///    `ProgrammaticSigner(authority_i) == message.account_keys[i]` and verifies
     ///    `tx.signatures[i]` over the wrapped message with `authority_i`.
     /// 7. Executes each `message.instructions` entry by CPI, using `invoke_signed` to promote
-    ///    each authorized signer's corresponding `ProgrammaticSignerPda`.
+    ///    each authorized signer's corresponding `ProgrammaticSigner`.
     /// 8. Derives and stores the next nonce as
-    ///    `sha256("spl-ed25519-programmatic-signer::v1" ‖ programmatic_signer_account ‖ old_nonce ‖ slot_hashes[0] ‖ sha256(signed_message_bytes))`
+    ///    `sha256("spl-ed25519-programmatic-signer::v1" ‖ signer_nonce_account ‖ old_nonce ‖ slot_hashes[0] ‖ sha256(signed_message_bytes))`
     ///
     /// Accounts required:
-    /// - `[writable]` Programmatic signer account whose nonce is consumed and advanced
+    /// - `[writable]` Signer nonce account whose nonce is consumed and advanced
     /// - `[]` `SlotHashes` sysvar
     /// - `[]` `Instructions` sysvar
     /// - Authority addresses, ordered to match the wrapped message's required signers.
@@ -64,16 +64,16 @@ pub enum Instruction {
     ///   must match the wrapped message.
     Submit,
 
-    /// Closes a programmatic signer account and refunds its lamports.
+    /// Closes a signer nonce account and refunds its lamports.
     ///
     /// Instruction data: instruction discriminator followed by [`CloseData`].
     ///
     /// Runs only as an inner instruction of a wrapped transaction submitted through `Submit`
-    /// because nothing outside this program can sign for `ProgrammaticSignerPda`.
+    /// because nothing outside this program can sign for `ProgrammaticSigner`.
     ///
     /// Accounts required:
-    /// - `[signer]` `ProgrammaticSignerPda`
-    /// - `[writable]` Programmatic signer account
+    /// - `[signer]` `ProgrammaticSigner`
+    /// - `[writable]` Signer nonce account
     /// - `[writable]` Lamport recipient
     Close,
 }
@@ -81,7 +81,7 @@ pub enum Instruction {
 /// Data for [`Instruction::Close`].
 #[derive(Clone, Debug, PartialEq, Eq, SchemaRead, SchemaWrite)]
 pub struct CloseData {
-    /// Address that receives all lamports from the closed programmatic signer account.
+    /// Address that receives all lamports from the closed signer nonce account.
     pub recipient: Address,
 }
 
