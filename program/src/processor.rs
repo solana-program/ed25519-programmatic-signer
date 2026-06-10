@@ -1,7 +1,7 @@
 use {
     crate::initialize::process_initialize,
     pinocchio::{AccountView, Address, ProgramResult},
-    spl_ed25519_programmatic_signer_interface::instruction::Instruction,
+    spl_ed25519_programmatic_signer_legacy_interface::instruction::Instruction,
 };
 
 #[inline(always)]

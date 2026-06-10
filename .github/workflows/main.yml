@@ -6,10 +6,10 @@ on:
   pull_request:
 
 env:
-  RUST_PACKAGES: "['client', 'interface', 'program']"
-  SBPF_PROGRAM_PACKAGES: "['program']"
+  RUST_PACKAGES: "['client', 'interface', 'program', 'signer-client', 'signer-interface', 'signer-program']"
+  SBPF_PROGRAM_PACKAGES: "['program', 'signer-program']"
   NO_STD_CORE_PACKAGES: "['interface', 'program']"
-  NO_STD_ALLOC_PACKAGES: "['client']"
+  NO_STD_ALLOC_PACKAGES: "['client', 'signer-client', 'signer-interface', 'signer-program']"
 
 jobs:
   set_env:

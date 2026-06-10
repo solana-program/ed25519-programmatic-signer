@@ -1,12 +1,12 @@
 use {
     mollusk_svm::Mollusk, solana_account::Account,
-    spl_ed25519_programmatic_signer_interface::state::SignerContext,
+    spl_ed25519_programmatic_signer_legacy_interface::state::SignerContext,
 };
 
 pub fn init_mollusk() -> Mollusk {
     Mollusk::new(
-        &spl_ed25519_programmatic_signer_interface::id(),
-        "spl_ed25519_programmatic_signer_program",
+        &spl_ed25519_programmatic_signer_legacy_interface::id(),
+        "spl_ed25519_programmatic_signer_legacy_program",
     )
 }
 
