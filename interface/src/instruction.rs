@@ -4,12 +4,12 @@ use {
     wincode::{SchemaRead, SchemaWrite},
 };
 
-/// Instructions supported by the SPL Ed25519 Durable Signer program.
+/// Instructions supported by the SPL Ed25519 Programmatic Signer program.
 #[repr(u8)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, SchemaRead, SchemaWrite)]
 #[wincode(tag_encoding = "u8")]
-pub enum DurableSignerInstruction {
-    /// Initializes a durable signer account for an authority.
+pub enum ProgrammaticSignerInstruction {
+    /// Initializes a programmatic signer account for an authority.
     ///
     /// The caller must first create and fund the account. Recommended to include
     /// `solana_system_interface::instruction::create_account` and `Initialize` in the same
@@ -18,45 +18,45 @@ pub enum DurableSignerInstruction {
     /// On success, the program:
     /// 1. Verifies the account is uninitialized, rent-exempt, and owned by this program.
     /// 2. Derives the initial `nonce` as
-    ///    `sha256("spl-ed25519-durable-signer::init-v1" ‖ durable_signer_account_address ‖ slot_hashes[0])`.
-    /// 3. Writes `DurableSignerAccount { nonce, authority }` into the account data.
+    ///    `sha256("spl-ed25519-programmatic-signer::init-v1" ‖ programmatic_signer_account_address ‖ slot_hashes[0])`.
+    /// 3. Writes `ProgrammaticSignerAccount { nonce, authority }` into the account data.
     ///
     /// Instruction data: instruction discriminator only
     ///
     /// Accounts required:
-    /// - `[writable]` Durable signer account
-    /// - `[]` Authority to store in the durable signer account
+    /// - `[writable]` Programmatic signer account
+    /// - `[]` Authority to store in the programmatic signer account
     /// - `[]` `SlotHashes` sysvar
     Initialize,
 
     /// Authorizes and executes a wrapped Solana transaction whose required signers are
-    /// `DurableSignerPda` accounts.
+    /// `ProgrammaticSignerPda` accounts.
     ///
     /// Instruction data: instruction discriminator followed by a serialized
     /// `solana_transaction::versioned::VersionedTransaction`.
     /// All message variants supported by `VersionedTransaction` are accepted.
     ///
     /// Wrapped required signers are paired by index:
-    /// - `message.account_keys[i]`: `DurableSignerPda` promoted during CPI.
+    /// - `message.account_keys[i]`: `ProgrammaticSignerPda` promoted during CPI.
     /// - `tx.signatures[i]`: wrapped-message signature from the matching authority address.
     ///
     /// On success, the program:
     /// 1. Deserializes the transaction and sanitizes the wrapped message.
-    /// 2. Reads the authority stored in the durable signer account.
-    /// 3. Checks the passed durable signer account's authority signed the wrapped message.
+    /// 2. Reads the authority stored in the programmatic signer account.
+    /// 3. Checks the passed programmatic signer account's authority signed the wrapped message.
     /// 4. Checks the wrapped message's lifetime / recent blockhash field equals the account's
     ///    `nonce`.
     /// 5. Verifies the outer transaction's only top-level instruction is `Submit`.
     /// 6. Iterates over the outer authority accounts in order. For each `authority_i`, requires
-    ///    `DurableSignerPda(authority_i) == message.account_keys[i]` and verifies
+    ///    `ProgrammaticSignerPda(authority_i) == message.account_keys[i]` and verifies
     ///    `tx.signatures[i]` over the wrapped message with `authority_i`.
     /// 7. Executes each `message.instructions` entry by CPI, using `invoke_signed` to promote
-    ///    each authorized signer's corresponding `DurableSignerPda`.
+    ///    each authorized signer's corresponding `ProgrammaticSignerPda`.
     /// 8. Derives and stores the next nonce as
-    ///    `sha256("spl-ed25519-durable-signer::v1" ‖ durable_signer_account ‖ old_nonce ‖ slot_hashes[0] ‖ sha256(signed_message_bytes))`
+    ///    `sha256("spl-ed25519-programmatic-signer::v1" ‖ programmatic_signer_account ‖ old_nonce ‖ slot_hashes[0] ‖ sha256(signed_message_bytes))`
     ///
     /// Accounts required:
-    /// - `[writable]` Durable signer account whose nonce is consumed and advanced
+    /// - `[writable]` Programmatic signer account whose nonce is consumed and advanced
     /// - `[]` `SlotHashes` sysvar
     /// - `[]` `Instructions` sysvar
     /// - Authority addresses, ordered to match the wrapped message's required signers.
@@ -64,28 +64,28 @@ pub enum DurableSignerInstruction {
     ///   must match the wrapped message.
     Submit,
 
-    /// Closes a durable signer account and refunds its lamports.
+    /// Closes a programmatic signer account and refunds its lamports.
     ///
     /// Instruction data: instruction discriminator followed by [`CloseData`].
     ///
     /// Runs only as an inner instruction of a wrapped transaction submitted through `Submit`
-    /// because nothing outside this program can sign for `DurableSignerPda`.
+    /// because nothing outside this program can sign for `ProgrammaticSignerPda`.
     ///
     /// Accounts required:
-    /// - `[signer]` `DurableSignerPda`
-    /// - `[writable]` Durable signer account
+    /// - `[signer]` `ProgrammaticSignerPda`
+    /// - `[writable]` Programmatic signer account
     /// - `[writable]` Lamport recipient
     Close,
 }
 
-/// Data for [`DurableSignerInstruction::Close`].
+/// Data for [`ProgrammaticSignerInstruction::Close`].
 #[derive(Clone, Debug, PartialEq, Eq, SchemaRead, SchemaWrite)]
 pub struct CloseData {
-    /// Address that receives all lamports from the closed durable signer account.
+    /// Address that receives all lamports from the closed programmatic signer account.
     pub recipient: Address,
 }
 
-impl DurableSignerInstruction {
+impl ProgrammaticSignerInstruction {
     #[inline(always)]
     pub fn try_from_bytes(instruction_data: &[u8]) -> Result<Self, ProgramError> {
         wincode::deserialize_exact(instruction_data)
@@ -95,9 +95,9 @@ impl DurableSignerInstruction {
 
 #[cfg(test)]
 mod tests {
-    use super::DurableSignerInstruction;
+    use super::ProgrammaticSignerInstruction;
 
-    fn instruction_bytes(instruction: DurableSignerInstruction) -> [u8; 1] {
+    fn instruction_bytes(instruction: ProgrammaticSignerInstruction) -> [u8; 1] {
         let mut bytes = [0];
         wincode::serialize_into(bytes.as_mut_slice(), &instruction).unwrap();
         bytes
@@ -105,14 +105,20 @@ mod tests {
 
     #[test]
     fn instruction_tags_match_wire_format() {
-        assert_eq!(instruction_bytes(DurableSignerInstruction::Initialize), [0]);
-        assert_eq!(instruction_bytes(DurableSignerInstruction::Submit), [1]);
-        assert_eq!(instruction_bytes(DurableSignerInstruction::Close), [2]);
+        assert_eq!(
+            instruction_bytes(ProgrammaticSignerInstruction::Initialize),
+            [0]
+        );
+        assert_eq!(
+            instruction_bytes(ProgrammaticSignerInstruction::Submit),
+            [1]
+        );
+        assert_eq!(instruction_bytes(ProgrammaticSignerInstruction::Close), [2]);
     }
 
     #[test]
     fn try_from_bytes_rejects_unknown() {
-        assert!(DurableSignerInstruction::try_from_bytes(&[4]).is_err());
-        assert!(DurableSignerInstruction::try_from_bytes(&[255]).is_err());
+        assert!(ProgrammaticSignerInstruction::try_from_bytes(&[4]).is_err());
+        assert!(ProgrammaticSignerInstruction::try_from_bytes(&[255]).is_err());
     }
 }

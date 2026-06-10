@@ -10,16 +10,16 @@ use {
 };
 
 /// Tag for the initial nonce derivation.
-pub const INIT_NONCE_DERIVATION_TAG: &[u8] = b"spl-ed25519-durable-signer::init-v1";
+pub const INIT_NONCE_DERIVATION_TAG: &[u8] = b"spl-ed25519-programmatic-signer::init-v1";
 
-/// On-chain data for a caller-created durable signer account.
+/// On-chain data for a caller-created programmatic signer account.
 ///
-/// One authority can control any number of independent durable signer accounts. This is useful for
+/// One authority can control any number of independent programmatic signer accounts. This is useful for
 /// when that authority wants to prepare or submit more than one transaction concurrently. Each
 /// account carries its own nonce, so consuming one nonce does not advance or invalidate
-/// transactions prepared against another nonce state account.
+/// transactions prepared against another programmatic signer account.
 #[derive(Clone, Debug, PartialEq, Eq, SchemaRead, SchemaWrite)]
-pub struct DurableSignerAccount {
+pub struct ProgrammaticSignerAccount {
     /// Single-use value that prevents a signed message from being replayed. `Submit` requires this
     /// to match the wrapped message's lifetime field: `lifetime_specifier` for `v1` messages or
     /// `recent_blockhash` for `legacy` and `v0` messages. On success, `Submit` advances it to a
@@ -31,7 +31,7 @@ pub struct DurableSignerAccount {
     pub authority: Address,
 }
 
-impl DurableSignerAccount {
+impl ProgrammaticSignerAccount {
     /// Serialized account size: a 32-byte nonce followed by a 32-byte authority address.
     pub const LEN: usize = HASH_BYTES + ADDRESS_BYTES;
 }
@@ -71,18 +71,18 @@ unsafe impl<'de, C: Config> SchemaRead<'de, C> for HashBytes {
 
 #[cfg(test)]
 mod tests {
-    use super::{Address, DurableSignerAccount, Hash};
+    use super::{Address, Hash, ProgrammaticSignerAccount};
 
     #[test]
     fn len_matches_wincode_serialized_size() {
-        let account = DurableSignerAccount {
+        let account = ProgrammaticSignerAccount {
             nonce: Hash::new_from_array([1; 32]),
             authority: Address::new_from_array([2; 32]),
         };
 
         assert_eq!(
             wincode::serialized_size(&account).unwrap() as usize,
-            DurableSignerAccount::LEN
+            ProgrammaticSignerAccount::LEN
         );
     }
 }

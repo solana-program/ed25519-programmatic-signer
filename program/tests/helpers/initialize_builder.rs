@@ -1,6 +1,6 @@
 use {
     crate::helpers::{
-        common::init_mollusk, durable_signer_account_builder::DurableSignerAccountBuilder,
+        common::init_mollusk, signer_account_builder::ProgrammaticSignerAccountBuilder,
     },
     mollusk_svm::{
         Mollusk,
@@ -8,12 +8,12 @@ use {
     },
     solana_account::Account,
     solana_address::Address,
-    spl_ed25519_durable_signer_client::instruction::initialize,
+    spl_ed25519_programmatic_signer_client::instruction::initialize,
 };
 
 pub struct InitializeBuilder<'a> {
     mollusk: Mollusk,
-    durable_signer: Option<(Address, Account)>,
+    programmatic_signer: Option<(Address, Account)>,
     authority_address: Option<Address>,
     instruction_data: Option<Vec<u8>>,
     checks: Vec<Check<'a>>,
@@ -23,7 +23,7 @@ impl Default for InitializeBuilder<'_> {
     fn default() -> Self {
         Self {
             mollusk: init_mollusk(),
-            durable_signer: None,
+            programmatic_signer: None,
             authority_address: None,
             instruction_data: None,
             checks: vec![],
@@ -32,8 +32,8 @@ impl Default for InitializeBuilder<'_> {
 }
 
 impl<'a> InitializeBuilder<'a> {
-    pub fn durable_signer(mut self, durable_signer: (Address, Account)) -> Self {
-        self.durable_signer = Some(durable_signer);
+    pub fn programmatic_signer(mut self, programmatic_signer: (Address, Account)) -> Self {
+        self.programmatic_signer = Some(programmatic_signer);
         self
     }
 
@@ -53,21 +53,21 @@ impl<'a> InitializeBuilder<'a> {
     }
 
     pub fn execute(mut self) -> InstructionResult {
-        let durable_signer = self
-            .durable_signer
-            .unwrap_or_else(|| DurableSignerAccountBuilder::default().build());
+        let programmatic_signer = self
+            .programmatic_signer
+            .unwrap_or_else(|| ProgrammaticSignerAccountBuilder::default().build());
         let authority_address = self
             .authority_address
             .unwrap_or_else(|| Address::from([2; 32]));
         let slot_hashes = self.mollusk.sysvars.keyed_account_for_slot_hashes_sysvar();
 
-        let mut instruction = initialize(&durable_signer.0, &authority_address);
+        let mut instruction = initialize(&programmatic_signer.0, &authority_address);
         if let Some(instruction_data) = self.instruction_data {
             instruction.data = instruction_data;
         }
 
         let accounts = vec![
-            durable_signer,
+            programmatic_signer,
             (authority_address, Account::default()),
             slot_hashes,
         ];

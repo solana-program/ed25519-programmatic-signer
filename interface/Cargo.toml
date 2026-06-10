@@ -1,7 +1,7 @@
 [package]
-name = "spl-ed25519-durable-signer-interface"
+name = "spl-ed25519-programmatic-signer-interface"
 version = "0.1.0"
-description = "Interface for the SPL Ed25519 Durable Signer program"
+description = "Interface for the SPL Ed25519 Programmatic Signer program"
 authors = { workspace = true }
 repository = { workspace = true }
 homepage = { workspace = true }

@@ -1,4 +1,4 @@
-//! Off-chain client helpers for the Ed25519 Durable Signer program.
+//! Off-chain client helpers for the Ed25519 Programmatic Signer program.
 #![no_std]
 
 extern crate alloc;

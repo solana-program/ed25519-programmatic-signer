@@ -20,8 +20,8 @@ solana-program-error = { version = "3.0.1", default-features = false }
 solana-rent = { version = "3.1.0", default-features = false }
 solana-sdk-ids = "3.1.0"
 solana-sha256-hasher = { version = "3.1.0", default-features = false }
-spl-ed25519-durable-signer-client = { path = "client" }
-spl-ed25519-durable-signer-interface = { path = "interface" }
+spl-ed25519-programmatic-signer-client = { path = "client" }
+spl-ed25519-programmatic-signer-interface = { path = "interface" }
 wincode = { version = "0.5.5", default-features = false }
 
 [workspace.lints.rust.unexpected_cfgs]

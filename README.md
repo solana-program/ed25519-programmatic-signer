@@ -1,3 +1,3 @@
-# Ed25519 Durable Signer Program
+# Ed25519 Programmatic Signer Program
 
 Under construction 🚧

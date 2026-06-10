@@ -1,4 +1,4 @@
-//! Interface for the Ed25519 Durable Signer program.
+//! Interface for the Ed25519 Programmatic Signer program.
 #![no_std]
 
 pub mod instruction;

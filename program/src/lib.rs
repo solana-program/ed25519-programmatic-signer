@@ -1,4 +1,4 @@
-//! Ed25519 Durable Signer program.
+//! Ed25519 Programmatic Signer program.
 
 #![no_std]
 

@@ -1,15 +1,15 @@
 use {
     mollusk_svm::Mollusk, solana_account::Account,
-    spl_ed25519_durable_signer_interface::state::DurableSignerAccount,
+    spl_ed25519_programmatic_signer_interface::state::ProgrammaticSignerAccount,
 };
 
 pub fn init_mollusk() -> Mollusk {
     Mollusk::new(
-        &spl_ed25519_durable_signer_interface::id(),
-        "spl_ed25519_durable_signer_program",
+        &spl_ed25519_programmatic_signer_interface::id(),
+        "spl_ed25519_programmatic_signer_program",
     )
 }
 
-pub fn decode_state(account: &Account) -> DurableSignerAccount {
+pub fn decode_state(account: &Account) -> ProgrammaticSignerAccount {
     wincode::deserialize_exact(&account.data).unwrap()
 }
