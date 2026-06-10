@@ -8,7 +8,7 @@ use {
 #[repr(u8)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, SchemaRead, SchemaWrite)]
 #[wincode(tag_encoding = "u8")]
-pub enum ProgrammaticSignerInstruction {
+pub enum Instruction {
     /// Initializes a programmatic signer account for an authority.
     ///
     /// The caller must first create and fund the account. Recommended to include
@@ -78,14 +78,14 @@ pub enum ProgrammaticSignerInstruction {
     Close,
 }
 
-/// Data for [`ProgrammaticSignerInstruction::Close`].
+/// Data for [`Instruction::Close`].
 #[derive(Clone, Debug, PartialEq, Eq, SchemaRead, SchemaWrite)]
 pub struct CloseData {
     /// Address that receives all lamports from the closed programmatic signer account.
     pub recipient: Address,
 }
 
-impl ProgrammaticSignerInstruction {
+impl Instruction {
     #[inline(always)]
     pub fn try_from_bytes(instruction_data: &[u8]) -> Result<Self, ProgramError> {
         wincode::deserialize_exact(instruction_data)
@@ -95,9 +95,9 @@ impl ProgrammaticSignerInstruction {
 
 #[cfg(test)]
 mod tests {
-    use super::ProgrammaticSignerInstruction;
+    use super::Instruction;
 
-    fn instruction_bytes(instruction: ProgrammaticSignerInstruction) -> [u8; 1] {
+    fn instruction_bytes(instruction: Instruction) -> [u8; 1] {
         let mut bytes = [0];
         wincode::serialize_into(bytes.as_mut_slice(), &instruction).unwrap();
         bytes
@@ -105,20 +105,14 @@ mod tests {
 
     #[test]
     fn instruction_tags_match_wire_format() {
-        assert_eq!(
-            instruction_bytes(ProgrammaticSignerInstruction::Initialize),
-            [0]
-        );
-        assert_eq!(
-            instruction_bytes(ProgrammaticSignerInstruction::Submit),
-            [1]
-        );
-        assert_eq!(instruction_bytes(ProgrammaticSignerInstruction::Close), [2]);
+        assert_eq!(instruction_bytes(Instruction::Initialize), [0]);
+        assert_eq!(instruction_bytes(Instruction::Submit), [1]);
+        assert_eq!(instruction_bytes(Instruction::Close), [2]);
     }
 
     #[test]
     fn try_from_bytes_rejects_unknown() {
-        assert!(ProgrammaticSignerInstruction::try_from_bytes(&[4]).is_err());
-        assert!(ProgrammaticSignerInstruction::try_from_bytes(&[255]).is_err());
+        assert!(Instruction::try_from_bytes(&[4]).is_err());
+        assert!(Instruction::try_from_bytes(&[255]).is_err());
     }
 }
