@@ -12,14 +12,14 @@ use {
 /// Tag for the initial nonce derivation.
 pub const INIT_NONCE_DERIVATION_TAG: &[u8] = b"spl-ed25519-programmatic-signer::init-v1";
 
-/// On-chain data for a caller-created signer nonce account.
+/// On-chain data for a caller-created signer context account.
 ///
-/// One authority can control any number of independent signer nonce accounts. This is useful for
+/// One authority can control any number of independent signer context accounts. This is useful for
 /// when that authority wants to prepare or submit more than one transaction concurrently. Each
 /// account carries its own nonce, so consuming one nonce does not advance or invalidate
-/// transactions prepared against another signer nonce account.
+/// transactions prepared against another signer context account.
 #[derive(Clone, Debug, PartialEq, Eq, SchemaRead, SchemaWrite)]
-pub struct SignerNonceAccount {
+pub struct SignerContext {
     /// Single-use value that prevents a signed message from being replayed. `Submit` requires this
     /// to match the wrapped message's lifetime field: `lifetime_specifier` for `v1` messages or
     /// `recent_blockhash` for `legacy` and `v0` messages. On success, `Submit` advances it to a
@@ -31,7 +31,7 @@ pub struct SignerNonceAccount {
     pub authority: Address,
 }
 
-impl SignerNonceAccount {
+impl SignerContext {
     /// Serialized account size: a 32-byte nonce followed by a 32-byte authority address.
     pub const LEN: usize = HASH_BYTES + ADDRESS_BYTES;
 }
@@ -71,18 +71,18 @@ unsafe impl<'de, C: Config> SchemaRead<'de, C> for HashBytes {
 
 #[cfg(test)]
 mod tests {
-    use super::{Address, Hash, SignerNonceAccount};
+    use super::{Address, Hash, SignerContext};
 
     #[test]
     fn len_matches_wincode_serialized_size() {
-        let account = SignerNonceAccount {
+        let account = SignerContext {
             nonce: Hash::new_from_array([1; 32]),
             authority: Address::new_from_array([2; 32]),
         };
 
         assert_eq!(
             wincode::serialized_size(&account).unwrap() as usize,
-            SignerNonceAccount::LEN
+            SignerContext::LEN
         );
     }
 }

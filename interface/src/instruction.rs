@@ -9,7 +9,7 @@ use {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, SchemaRead, SchemaWrite)]
 #[wincode(tag_encoding = "u8")]
 pub enum Instruction {
-    /// Initializes a signer nonce account for an authority.
+    /// Initializes a signer context account for an authority.
     ///
     /// The caller must first create and fund the account. Recommended to include
     /// `solana_system_interface::instruction::create_account` and `Initialize` in the same
@@ -18,14 +18,14 @@ pub enum Instruction {
     /// On success, the program:
     /// 1. Verifies the account is uninitialized, rent-exempt, and owned by this program.
     /// 2. Derives the initial `nonce` as
-    ///    `sha256("spl-ed25519-programmatic-signer::init-v1" ‖ signer_nonce_account_address ‖ slot_hashes[0])`.
-    /// 3. Writes `SignerNonceAccount { nonce, authority }` into the account data.
+    ///    `sha256("spl-ed25519-programmatic-signer::init-v1" ‖ signer_context_address ‖ slot_hashes[0])`.
+    /// 3. Writes `SignerContext { nonce, authority }` into the account data.
     ///
     /// Instruction data: instruction discriminator only
     ///
     /// Accounts required:
-    /// - `[writable]` Signer nonce account
-    /// - `[]` Authority to store in the signer nonce account
+    /// - `[writable]` Signer context account
+    /// - `[]` Authority to store in the signer context account
     /// - `[]` `SlotHashes` sysvar
     Initialize,
 
@@ -42,8 +42,8 @@ pub enum Instruction {
     ///
     /// On success, the program:
     /// 1. Deserializes the transaction and sanitizes the wrapped message.
-    /// 2. Reads the authority stored in the signer nonce account.
-    /// 3. Checks the passed signer nonce account's authority signed the wrapped message.
+    /// 2. Reads the authority stored in the signer context account.
+    /// 3. Checks the passed signer context account's authority signed the wrapped message.
     /// 4. Checks the wrapped message's lifetime / recent blockhash field equals the account's
     ///    `nonce`.
     /// 5. Verifies the outer transaction's only top-level instruction is `Submit`.
@@ -53,10 +53,10 @@ pub enum Instruction {
     /// 7. Executes each `message.instructions` entry by CPI, using `invoke_signed` to promote
     ///    each authorized signer's corresponding `ProgrammaticSigner`.
     /// 8. Derives and stores the next nonce as
-    ///    `sha256("spl-ed25519-programmatic-signer::v1" ‖ signer_nonce_account ‖ old_nonce ‖ slot_hashes[0] ‖ sha256(signed_message_bytes))`
+    ///    `sha256("spl-ed25519-programmatic-signer::v1" ‖ signer_context ‖ old_nonce ‖ slot_hashes[0] ‖ sha256(signed_message_bytes))`
     ///
     /// Accounts required:
-    /// - `[writable]` Signer nonce account whose nonce is consumed and advanced
+    /// - `[writable]` Signer context account whose nonce is consumed and advanced
     /// - `[]` `SlotHashes` sysvar
     /// - `[]` `Instructions` sysvar
     /// - Authority addresses, ordered to match the wrapped message's required signers.
@@ -64,7 +64,7 @@ pub enum Instruction {
     ///   must match the wrapped message.
     Submit,
 
-    /// Closes a signer nonce account and refunds its lamports.
+    /// Closes a signer context account and refunds its lamports.
     ///
     /// Instruction data: instruction discriminator followed by [`CloseData`].
     ///
@@ -73,7 +73,7 @@ pub enum Instruction {
     ///
     /// Accounts required:
     /// - `[signer]` `ProgrammaticSigner`
-    /// - `[writable]` Signer nonce account
+    /// - `[writable]` Signer context account
     /// - `[writable]` Lamport recipient
     Close,
 }
@@ -81,7 +81,7 @@ pub enum Instruction {
 /// Data for [`Instruction::Close`].
 #[derive(Clone, Debug, PartialEq, Eq, SchemaRead, SchemaWrite)]
 pub struct CloseData {
-    /// Address that receives all lamports from the closed signer nonce account.
+    /// Address that receives all lamports from the closed signer context account.
     pub recipient: Address,
 }
 

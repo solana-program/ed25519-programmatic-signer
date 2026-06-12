@@ -1,16 +1,16 @@
 use {
     solana_account::Account, solana_address::Address, solana_rent::Rent,
-    spl_ed25519_programmatic_signer_interface::state::SignerNonceAccount,
+    spl_ed25519_programmatic_signer_interface::state::SignerContext,
 };
 
-pub struct SignerNonceAccountBuilder {
+pub struct SignerContextBuilder {
     key: Address,
     owner: Address,
     lamports: Option<u64>,
     data: Option<Vec<u8>>,
 }
 
-impl Default for SignerNonceAccountBuilder {
+impl Default for SignerContextBuilder {
     fn default() -> Self {
         Self {
             key: Address::from([1; 32]),
@@ -21,7 +21,7 @@ impl Default for SignerNonceAccountBuilder {
     }
 }
 
-impl SignerNonceAccountBuilder {
+impl SignerContextBuilder {
     pub fn new() -> Self {
         Self::default()
     }
@@ -50,7 +50,7 @@ impl SignerNonceAccountBuilder {
         let data = self
             .data
             // Default to program-owned, zero-filled account (waiting to be initialized)
-            .unwrap_or_else(|| vec![0; SignerNonceAccount::LEN]);
+            .unwrap_or_else(|| vec![0; SignerContext::LEN]);
         let lamports = self
             .lamports
             .unwrap_or_else(|| Rent::default().minimum_balance(data.len()));

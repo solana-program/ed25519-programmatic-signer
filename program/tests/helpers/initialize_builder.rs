@@ -1,5 +1,5 @@
 use {
-    crate::helpers::{common::init_mollusk, signer_account_builder::SignerNonceAccountBuilder},
+    crate::helpers::{common::init_mollusk, signer_context_builder::SignerContextBuilder},
     mollusk_svm::{
         Mollusk,
         result::{Check, InstructionResult},
@@ -11,7 +11,7 @@ use {
 
 pub struct InitializeBuilder<'a> {
     mollusk: Mollusk,
-    signer_nonce_account: Option<(Address, Account)>,
+    signer_context: Option<(Address, Account)>,
     authority_address: Option<Address>,
     instruction_data: Option<Vec<u8>>,
     checks: Vec<Check<'a>>,
@@ -21,7 +21,7 @@ impl Default for InitializeBuilder<'_> {
     fn default() -> Self {
         Self {
             mollusk: init_mollusk(),
-            signer_nonce_account: None,
+            signer_context: None,
             authority_address: None,
             instruction_data: None,
             checks: vec![],
@@ -30,8 +30,8 @@ impl Default for InitializeBuilder<'_> {
 }
 
 impl<'a> InitializeBuilder<'a> {
-    pub fn signer_nonce_account(mut self, signer_nonce_account: (Address, Account)) -> Self {
-        self.signer_nonce_account = Some(signer_nonce_account);
+    pub fn signer_context(mut self, signer_context: (Address, Account)) -> Self {
+        self.signer_context = Some(signer_context);
         self
     }
 
@@ -51,21 +51,21 @@ impl<'a> InitializeBuilder<'a> {
     }
 
     pub fn execute(mut self) -> InstructionResult {
-        let signer_nonce_account = self
-            .signer_nonce_account
-            .unwrap_or_else(|| SignerNonceAccountBuilder::default().build());
+        let signer_context = self
+            .signer_context
+            .unwrap_or_else(|| SignerContextBuilder::default().build());
         let authority_address = self
             .authority_address
             .unwrap_or_else(|| Address::from([2; 32]));
         let slot_hashes = self.mollusk.sysvars.keyed_account_for_slot_hashes_sysvar();
 
-        let mut instruction = initialize(&signer_nonce_account.0, &authority_address);
+        let mut instruction = initialize(&signer_context.0, &authority_address);
         if let Some(instruction_data) = self.instruction_data {
             instruction.data = instruction_data;
         }
 
         let accounts = vec![
-            signer_nonce_account,
+            signer_context,
             (authority_address, Account::default()),
             slot_hashes,
         ];

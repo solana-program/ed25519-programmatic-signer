@@ -7,11 +7,11 @@ use {
 };
 
 /// Creates an `Initialize` instruction.
-pub fn initialize(signer_nonce_account: &Address, authority: &Address) -> SolanaInstruction {
+pub fn initialize(signer_context: &Address, authority: &Address) -> SolanaInstruction {
     SolanaInstruction {
         program_id: spl_ed25519_programmatic_signer_interface::id(),
         accounts: vec![
-            AccountMeta::new(*signer_nonce_account, false),
+            AccountMeta::new(*signer_context, false),
             AccountMeta::new_readonly(*authority, false),
             AccountMeta::new_readonly(slot_hashes::id(), false),
         ],
