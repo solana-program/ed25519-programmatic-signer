@@ -1,6 +1,6 @@
 use {
     mollusk_svm::Mollusk, solana_account::Account,
-    spl_ed25519_programmatic_signer_interface::state::ProgrammaticSignerAccount,
+    spl_ed25519_programmatic_signer_interface::state::SignerContext,
 };
 
 pub fn init_mollusk() -> Mollusk {
@@ -10,6 +10,6 @@ pub fn init_mollusk() -> Mollusk {
     )
 }
 
-pub fn decode_state(account: &Account) -> ProgrammaticSignerAccount {
+pub fn decode_state(account: &Account) -> SignerContext {
     wincode::deserialize_exact(&account.data).unwrap()
 }
