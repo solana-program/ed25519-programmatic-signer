@@ -27,7 +27,6 @@ wincode = { workspace = true }
 mollusk-svm = { workspace = true }
 solana-account = { workspace = true }
 solana-address = { workspace = true }
-solana-hash = { workspace = true }
 solana-instruction = { workspace = true }
 solana-program-error = { workspace = true }
 solana-rent = { workspace = true }

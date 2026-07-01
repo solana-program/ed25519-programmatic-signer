@@ -1,8 +1,6 @@
 use {
-    alloc::vec::Vec,
-    solana_address::Address,
     solana_program_error::ProgramError,
-    solana_signature::Signature,
+    solana_transaction::versioned::VersionedTransaction,
     wincode::{SchemaRead, SchemaWrite},
 };
 
@@ -10,57 +8,32 @@ use {
 #[derive(Clone, Debug, PartialEq, Eq, SchemaRead, SchemaWrite)]
 #[wincode(tag_encoding = "u8")]
 pub enum Instruction {
-    /// Verifies authority signatures over an opaque executor payload, then CPIs to the
-    /// executor program promoting each authority's `ProgrammaticSigner` to a signer.
+    /// Verifies authority signatures over a Solana `VersionedTransaction`, then CPIs to the program
+    /// of its single executor instruction, promoting `ProgrammaticSigner` PDAs to a signer.
     ///
-    /// Instruction data: instruction discriminator followed by a serialized `SubmitEnvelope`.
+    /// Instruction data: instruction discriminator followed by a serialized `Submit(VersionedTransaction)`.
     ///
     /// On success, the program:
-    /// 1. Verifies `payload.signer_program_id` is this program's id.
-    /// 2. Verifies each `signatures[i]` is authority account `i`'s Ed25519 signature over
-    ///    the serialized `payload`.
-    /// 3. Verifies the executor program account matches `payload.executor_program_id`.
-    /// 4. Invokes the executor with `payload.executor_instruction_data` and the remaining
-    ///    accounts, preserving their privileges and additionally signing for each
-    ///    authority's `ProgrammaticSigner`.
+    /// 1. Verifies the message contains exactly one executor instruction.
+    /// 2. Verifies each `signatures[i]` is `account_keys[i]`'s Ed25519 signature over that message.
+    /// 3. Verifies submitted account keys match the message's account keys in order.
+    /// 4. CPIs to the executor instruction's program using exactly the accounts referenced by the
+    ///    executor instruction's account index list, promoting any referenced authority-derived
+    ///    `ProgrammaticSigner` PDAs to a signer.
     ///
     /// Trust assumptions:
-    /// - This program guarantees only that the authorities signed the payload. What the
-    ///   payload does is entirely up to the executor it names.
-    /// - Signatures cover only the payload, never the accounts. The executor must validate them
-    ///   against its instruction data.
-    /// - This program is stateless. Replay protection belongs to the executor.
+    /// - This program only validates authority signatures, accounts, and flags within wrapped transaction.
+    /// - The inner signed transaction is an authorization envelope. Only the single executor
+    ///   instruction is invoked.
+    /// - The executor instruction data is opaque to this program.
+    /// - This program is stateless. Replay protection belongs to the executor program.
     ///
     /// Accounts required:
-    /// - `[]` Authority accounts, one per envelope signature, in order.
-    /// - `[]` Executor program
-    /// - Remaining accounts forwarded to the executor, in the order it expects.
-    Submit(SubmitEnvelope),
-}
-
-/// Authority signatures over a `SubmitPayload`, paired by index with the authority
-/// accounts passed to `Instruction::Submit`.
-#[derive(Clone, Debug, PartialEq, Eq, SchemaRead, SchemaWrite)]
-pub struct SubmitEnvelope {
-    pub signatures: Vec<Signature>,
-    pub payload: SubmitPayload,
-}
-
-/// What an authority signs: the signer program it targets, the executor to invoke, and
-/// the exact instruction data to invoke it with.
-#[derive(Clone, Debug, PartialEq, Eq, SchemaRead, SchemaWrite)]
-pub struct SubmitPayload {
-    pub signer_program_id: Address,
-    pub executor_program_id: Address,
-    pub executor_instruction_data: Vec<u8>,
-}
-
-impl SubmitPayload {
-    /// The bytes an authority signs: the wincode-serialized payload. The leading
-    /// `signer_program_id` doubles as the signing domain separator.
-    pub fn signing_bytes(&self) -> wincode::WriteResult<Vec<u8>> {
-        wincode::serialize(self)
-    }
+    /// - One account for each key in the wrapped message's `account_keys` list, in the same order.
+    ///   At every index, the submitted account key and writable flag must match the wrapped message.
+    ///   V0 address table lookups are not resolved. The executor instruction must reference only
+    ///   static `account_keys` indices.
+    Submit(VersionedTransaction),
 }
 
 impl Instruction {
@@ -74,77 +47,46 @@ impl Instruction {
 #[cfg(test)]
 mod tests {
     use {
-        super::{Instruction, SubmitEnvelope, SubmitPayload},
-        alloc::vec,
-        solana_address::Address,
-        solana_signature::Signature,
+        super::Instruction, solana_program_error::ProgramError,
+        solana_transaction::versioned::VersionedTransaction,
     };
-
-    fn example_envelope() -> SubmitEnvelope {
-        SubmitEnvelope {
-            signatures: vec![Signature::from([7; 64])],
-            payload: SubmitPayload {
-                signer_program_id: crate::id(),
-                executor_program_id: Address::new_from_array([1; 32]),
-                executor_instruction_data: vec![2, 3],
-            },
-        }
-    }
 
     #[test]
     fn instruction_tags_match_wire_format() {
         assert_eq!(
-            wincode::serialize(&Instruction::Submit(example_envelope())).unwrap()[0],
+            wincode::serialize(&Instruction::Submit(VersionedTransaction::default())).unwrap()[0],
             0
         );
     }
 
     #[test]
     fn submit_round_trips() {
-        let bytes = wincode::serialize(&Instruction::Submit(example_envelope())).unwrap();
+        let instruction = Instruction::Submit(VersionedTransaction::default());
+        let bytes = wincode::serialize(&instruction).unwrap();
+        assert_eq!(Instruction::try_from_bytes(&bytes).unwrap(), instruction);
+    }
+
+    #[test]
+    fn submit_rejects_trailing_data() {
+        let mut bytes =
+            wincode::serialize(&Instruction::Submit(VersionedTransaction::default())).unwrap();
+        bytes.extend_from_slice(&[1, 2, 3]);
+
         assert_eq!(
-            Instruction::try_from_bytes(&bytes).unwrap(),
-            Instruction::Submit(example_envelope())
+            Instruction::try_from_bytes(&bytes),
+            Err(ProgramError::InvalidInstructionData)
         );
     }
 
     #[test]
     fn try_from_bytes_rejects_unknown() {
-        assert!(Instruction::try_from_bytes(&[1]).is_err());
-        assert!(Instruction::try_from_bytes(&[255]).is_err());
-    }
-
-    #[test]
-    fn signing_bytes_are_serialized_payload() {
-        let payload = example_envelope().payload;
         assert_eq!(
-            payload.signing_bytes().unwrap(),
-            wincode::serialize(&payload).unwrap()
+            Instruction::try_from_bytes(&[1]),
+            Err(ProgramError::InvalidInstructionData)
         );
-        // The signed bytes begin with the signer program id
-        assert!(
-            payload
-                .signing_bytes()
-                .unwrap()
-                .starts_with(crate::id().as_ref())
+        assert_eq!(
+            Instruction::try_from_bytes(&[255]),
+            Err(ProgramError::InvalidInstructionData)
         );
-    }
-
-    // test locking the exact signed wire layout
-    #[test]
-    fn submit_payload_wire_format_is_frozen() {
-        let payload = SubmitPayload {
-            signer_program_id: Address::new_from_array([1; 32]),
-            executor_program_id: Address::new_from_array([2; 32]),
-            executor_instruction_data: vec![0xAA, 0xBB],
-        };
-
-        let mut expected = vec![];
-        expected.extend_from_slice(&[1u8; 32]); // signer_program_id
-        expected.extend_from_slice(&[2u8; 32]); // executor_program_id
-        expected.extend_from_slice(&2u64.to_le_bytes()); // Vec<u8> length: u64 little-endian
-        expected.extend_from_slice(&[0xAA, 0xBB]); // executor_instruction_data
-
-        assert_eq!(payload.signing_bytes().unwrap(), expected);
     }
 }

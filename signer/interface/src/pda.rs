@@ -4,7 +4,7 @@ use solana_address::Address;
 ///
 /// Program-owned runtime signer. `Submit` promotes it to `is_signer=true` via
 /// `invoke_signed` wherever the executor CPI references it, after the corresponding
-/// authority has signed the submitted payload.
+/// authority has signed the wrapped transaction message.
 ///
 /// Seeds: `["programmatic-signer", authority, bump]`
 pub struct ProgrammaticSigner;

@@ -6,14 +6,18 @@ use solana_program_error::ProgramError;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(u32)]
 pub enum Error {
-    /// The executor program account does not match the signed payload's `executor_program_id`.
-    ExecutorMismatch,
-    /// A provided signature failed to verify against its authority.
-    InvalidSignature,
-    /// The envelope carried no signatures, so it authorizes nothing.
-    NoSignatures,
-    /// The signed payload's `signer_program_id` is not this program's id.
-    SignerProgramMismatch,
+    /// The wrapped transaction carried no required authority signatures.
+    NoSignatures = 0,
+    /// The wrapped transaction failed sanitization.
+    InvalidWrappedTransaction = 1,
+    /// The wrapped transaction must contain exactly one executor instruction.
+    InvalidExecutorInstructionCount = 2,
+    /// A Submit account does not match the wrapped message account key at the same index.
+    AccountKeyMismatch = 3,
+    /// An authority signature failed verification against the wrapped message.
+    InvalidSignature = 4,
+    /// The executor instruction references an account index that is not a static wrapped account key.
+    InvalidExecutorAccountIndex = 5,
 }
 
 impl From<Error> for ProgramError {

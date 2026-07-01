@@ -4,10 +4,7 @@
 extern crate alloc;
 
 pub mod instruction;
+pub mod message;
 pub mod signing;
 
-pub use spl_ed25519_signer_interface::{
-    ID, id,
-    instruction::{SubmitEnvelope, SubmitPayload},
-    pda::ProgrammaticSigner,
-};
+pub use spl_ed25519_signer_interface::{ID, id, pda::ProgrammaticSigner};

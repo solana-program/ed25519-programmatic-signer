@@ -2326,7 +2326,9 @@ dependencies = [
  "solana-instruction",
  "solana-sanitize",
  "solana-sdk-ids",
+ "solana-short-vec",
  "solana-transaction-error",
+ "wincode",
 ]
 
 [[package]]
@@ -2600,6 +2602,15 @@ dependencies = [
  "sha2 0.10.9",
  "solana-define-syscall 5.1.0",
  "solana-hash-512",
+]
+
+[[package]]
+name = "solana-short-vec"
+version = "3.2.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7d8250a4495aad49ad20556a607da53bdcb20de78da10b65afbf918b7f1de647"
+dependencies = [
+ "wincode",
 ]
 
 [[package]]
@@ -2885,8 +2896,11 @@ dependencies = [
  "solana-message",
  "solana-sanitize",
  "solana-sdk-ids",
+ "solana-short-vec",
  "solana-signature",
+ "solana-signer",
  "solana-transaction-error",
+ "wincode",
 ]
 
 [[package]]
@@ -2955,7 +2969,6 @@ dependencies = [
  "pinocchio",
  "solana-account",
  "solana-address 2.6.1",
- "solana-hash",
  "solana-instruction",
  "solana-program-error",
  "solana-rent",
@@ -2970,8 +2983,12 @@ name = "spl-ed25519-signer-client"
 version = "0.1.0"
 dependencies = [
  "solana-address 2.6.1",
+ "solana-hash",
  "solana-instruction",
+ "solana-message",
+ "solana-sdk-ids",
  "solana-signer",
+ "solana-transaction",
  "spl-ed25519-signer-interface",
 ]
 
@@ -2981,7 +2998,7 @@ version = "0.1.0"
 dependencies = [
  "solana-address 2.6.1",
  "solana-program-error",
- "solana-signature",
+ "solana-transaction",
  "wincode",
 ]
 
@@ -2994,14 +3011,18 @@ dependencies = [
  "pinocchio",
  "solana-account",
  "solana-address 2.6.1",
+ "solana-hash",
  "solana-instruction",
  "solana-keypair",
+ "solana-message",
  "solana-program-error",
- "solana-signature",
+ "solana-sdk-ids",
  "solana-signer",
  "solana-system-interface",
+ "solana-transaction",
  "spl-ed25519-signer-client",
  "spl-ed25519-signer-interface",
+ "test-case",
 ]
 
 [[package]]
@@ -3043,6 +3064,39 @@ name = "tap"
 version = "1.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "55937e1799185b12863d447f42597ed69d9928686b8d88a1df17376a097d8369"
+
+[[package]]
+name = "test-case"
+version = "3.3.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "eb2550dd13afcd286853192af8601920d959b14c401fcece38071d53bf0768a8"
+dependencies = [
+ "test-case-macros",
+]
+
+[[package]]
+name = "test-case-core"
+version = "3.3.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "adcb7fd841cd518e279be3d5a3eb0636409487998a4aff22f3de87b81e88384f"
+dependencies = [
+ "cfg-if",
+ "proc-macro2",
+ "quote",
+ "syn 2.0.117",
+]
+
+[[package]]
+name = "test-case-macros"
+version = "3.3.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5c89e72a01ed4c579669add59014b9a524d609c0c88c6a585ce37485879f6ffb"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.117",
+ "test-case-core",
+]
 
 [[package]]
 name = "thiserror"

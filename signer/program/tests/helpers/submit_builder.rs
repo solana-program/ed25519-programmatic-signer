@@ -3,92 +3,137 @@ use {
     mollusk_svm::result::{Check, InstructionResult},
     solana_account::Account,
     solana_address::Address,
+    solana_instruction::Instruction as SolanaInstruction,
     solana_keypair::Keypair,
+    solana_message::{VersionedMessage, legacy::Message},
     solana_program_error::ProgramError,
-    solana_signature::Signature,
-    solana_signer::{Signer, signers::Signers as _},
+    solana_signer::Signer as _,
     solana_system_interface::instruction::transfer,
-    spl_ed25519_signer_client::instruction::submit,
-    spl_ed25519_signer_interface::{
-        instruction::{SubmitEnvelope, SubmitPayload},
-        pda::ProgrammaticSigner,
-    },
-    std::iter::once,
+    solana_transaction::versioned::VersionedTransaction,
+    spl_ed25519_signer_client::{instruction::submit, message::wrapped_message},
+    spl_ed25519_signer_interface::pda::ProgrammaticSigner,
 };
 
-pub const DEFAULT_PDA_LAMPORTS: u64 = 100_000_000;
 pub const DEFAULT_TRANSFER_LAMPORTS: u64 = 1_000_000;
 
-pub struct SubmitBuilder<'a> {
-    authority: Keypair,
-    additional_authorities: Vec<Keypair>,
+type IxMutation = Box<dyn FnOnce(&mut SolanaInstruction)>;
+type MessageMutation = Box<dyn FnOnce(&mut Message)>;
+type TransactionTamper = Box<dyn FnOnce(&mut VersionedTransaction)>;
+
+pub fn funded_account() -> Account {
+    Account {
+        lamports: 100_000_000,
+        ..Account::default()
+    }
+}
+
+struct SubmitContext {
+    authorities: Vec<Address>,
+    programmatic_signer: Address,
     recipient: Address,
-    signer_program_id: Option<Address>,
-    executor_program_id: Option<Address>,
-    tampered_executor_data: Option<Vec<u8>>,
-    sign_overrides: Vec<(usize, Keypair)>,
-    signatures_override: Option<Vec<Signature>>,
-    executor: Option<(Address, Account)>,
-    authority_accounts_only: bool,
+}
+
+/// Builds, signs, and submits a wrapped transaction through Mollusk.
+///
+/// The system program stands in for the executor role. A transfer from the promoted
+/// `ProgrammaticSigner` consumes the promotion, so success proves the verify, promote, and
+/// CPI chain. These fixtures carry no replay protection.
+pub struct SubmitBuilder<'a> {
+    authorities: Vec<Keypair>,
+    recipient: Address,
+    executor_instruction: Option<SolanaInstruction>,
+    message_override: Option<VersionedMessage>,
+    executor_instruction_mutations: Vec<IxMutation>,
+    message_mutations: Vec<MessageMutation>,
+    message_tampers: Vec<MessageMutation>,
+    transaction_tampers: Vec<TransactionTamper>,
+    submit_instruction_mutations: Vec<IxMutation>,
+    account_overrides: Vec<(Address, Account)>,
     checks: Vec<Check<'a>>,
 }
 
-impl Default for SubmitBuilder<'_> {
-    fn default() -> Self {
+impl<'a> SubmitBuilder<'a> {
+    pub fn default_transfer() -> Self {
+        Self::default_transfer_with_authority(Keypair::new())
+    }
+
+    pub fn default_transfer_with_authority(authority: Keypair) -> Self {
         Self {
-            authority: Keypair::new(),
-            additional_authorities: vec![],
+            authorities: vec![authority],
             recipient: Address::new_unique(),
-            signer_program_id: None,
-            executor_program_id: None,
-            tampered_executor_data: None,
-            sign_overrides: vec![],
-            signatures_override: None,
-            executor: None,
-            authority_accounts_only: false,
+            executor_instruction: None,
+            message_override: None,
+            executor_instruction_mutations: vec![],
+            message_mutations: vec![],
+            message_tampers: vec![],
+            transaction_tampers: vec![],
+            submit_instruction_mutations: vec![],
+            account_overrides: vec![],
             checks: vec![],
         }
     }
-}
 
-impl<'a> SubmitBuilder<'a> {
     pub fn additional_authority(mut self, authority: Keypair) -> Self {
-        self.additional_authorities.push(authority);
+        self.authorities.push(authority);
         self
     }
 
-    pub fn signer_program_id(mut self, id: Address) -> Self {
-        self.signer_program_id = Some(id);
+    pub fn recipient(mut self, recipient: Address) -> Self {
+        self.recipient = recipient;
         self
     }
 
-    pub fn executor_program_id(mut self, id: Address) -> Self {
-        self.executor_program_id = Some(id);
+    pub fn executor_instruction(mut self, ix: SolanaInstruction) -> Self {
+        self.executor_instruction = Some(ix);
         self
     }
 
-    pub fn unsigned_executor_data(mut self, data: Vec<u8>) -> Self {
-        self.tampered_executor_data = Some(data);
+    pub fn message(mut self, message: VersionedMessage) -> Self {
+        self.message_override = Some(message);
         self
     }
 
-    pub fn signed_by(mut self, index: usize, key: Keypair) -> Self {
-        self.sign_overrides.push((index, key));
+    /// Mutates the executor instruction before signing, so the authorities sign the change.
+    pub fn mutate_executor_instruction(
+        mut self,
+        mutation: impl FnOnce(&mut SolanaInstruction) + 'static,
+    ) -> Self {
+        self.executor_instruction_mutations.push(Box::new(mutation));
         self
     }
 
-    pub fn signatures(mut self, signatures: Vec<Signature>) -> Self {
-        self.signatures_override = Some(signatures);
+    /// Mutates the wrapped message before signing, so the authorities sign the change.
+    pub fn mutate_message(mut self, mutation: impl FnOnce(&mut Message) + 'static) -> Self {
+        self.message_mutations.push(Box::new(mutation));
         self
     }
 
-    pub fn executor(mut self, address: Address, account: Account) -> Self {
-        self.executor = Some((address, account));
+    /// Tampers with the wrapped message after signing, so signatures no longer cover it.
+    pub fn tamper_message(mut self, tamper: impl FnOnce(&mut Message) + 'static) -> Self {
+        self.message_tampers.push(Box::new(tamper));
         self
     }
 
-    pub fn authority_accounts_only(mut self) -> Self {
-        self.authority_accounts_only = true;
+    /// Tampers with the signed transaction after signing, so signatures no longer cover it.
+    pub fn tamper_transaction(
+        mut self,
+        tamper: impl FnOnce(&mut VersionedTransaction) + 'static,
+    ) -> Self {
+        self.transaction_tampers.push(Box::new(tamper));
+        self
+    }
+
+    /// Mutates the outer `Submit` instruction the relayer sends.
+    pub fn mutate_submit_ix(
+        mut self,
+        mutation: impl FnOnce(&mut SolanaInstruction) + 'static,
+    ) -> Self {
+        self.submit_instruction_mutations.push(Box::new(mutation));
+        self
+    }
+
+    pub fn account(mut self, address: Address, account: Account) -> Self {
+        self.account_overrides.push((address, account));
         self
     }
 
@@ -102,132 +147,115 @@ impl<'a> SubmitBuilder<'a> {
     }
 
     pub fn execute(mut self) -> SubmitResult {
-        let signers: Vec<&Keypair> = once(&self.authority)
-            .chain(self.additional_authorities.iter())
-            .collect();
-        let programmatic_signer = ProgrammaticSigner::derive_address(
-            &spl_ed25519_signer_interface::id(),
-            &self.authority.pubkey(),
-        );
+        let context = self.context();
 
-        let executor_address = self
-            .executor
-            .as_ref()
-            .map(|(address, _)| *address)
-            .unwrap_or_else(solana_system_interface::program::id);
-        let mut executor_instruction = transfer(
-            &programmatic_signer,
-            &self.recipient,
-            DEFAULT_TRANSFER_LAMPORTS,
-        );
-        executor_instruction.program_id = executor_address;
+        let message = match self.message_override.take() {
+            Some(message) => message,
+            None => {
+                let mut executor_instruction =
+                    self.executor_instruction.take().unwrap_or_else(|| {
+                        transfer(
+                            &context.programmatic_signer,
+                            &context.recipient,
+                            DEFAULT_TRANSFER_LAMPORTS,
+                        )
+                    });
+                for mutation in self.executor_instruction_mutations.drain(..) {
+                    mutation(&mut executor_instruction);
+                }
 
-        let signed_data = executor_instruction.data.clone();
-
-        let signed_payload = SubmitPayload {
-            signer_program_id: self
-                .signer_program_id
-                .unwrap_or(spl_ed25519_signer_interface::id()),
-            executor_program_id: self.executor_program_id.unwrap_or(executor_address),
-            executor_instruction_data: signed_data.clone(),
+                let mut message = wrapped_message(&executor_instruction, &context.authorities);
+                let VersionedMessage::Legacy(legacy_message) = &mut message else {
+                    panic!("expected legacy message");
+                };
+                for mutation in self.message_mutations.drain(..) {
+                    mutation(legacy_message);
+                }
+                message
+            }
         };
 
-        let signatures = self.assemble_signatures(&signers, &signed_payload);
-        let authority_pubkeys: Vec<Address> =
-            signers.iter().map(|signer| signer.pubkey()).collect();
+        let signers = self.authorities.iter().collect::<Vec<_>>();
+        let mut transaction = VersionedTransaction::try_new(message, &signers).unwrap();
 
-        let envelope = SubmitEnvelope {
-            signatures,
-            payload: SubmitPayload {
-                executor_instruction_data: self
-                    .tampered_executor_data
-                    .clone()
-                    .unwrap_or(signed_data),
-                ..signed_payload.clone()
-            },
-        };
-        let mut instruction = submit(envelope, &authority_pubkeys, &executor_instruction.accounts);
-
-        // The client derives the executor account meta from the payload, so the
-        // payload/account mismatch must be recreated by hand.
-        if self.executor_program_id.is_some() {
-            instruction.accounts[authority_pubkeys.len()].pubkey = executor_address;
+        if !self.message_tampers.is_empty() {
+            let VersionedMessage::Legacy(msg) = &mut transaction.message else {
+                panic!("tamper_message requires a legacy wrapped message");
+            };
+            for tamper in self.message_tampers.drain(..) {
+                tamper(msg);
+            }
+        }
+        for tamper in self.transaction_tampers.drain(..) {
+            tamper(&mut transaction);
         }
 
-        if self.authority_accounts_only {
-            instruction.accounts.truncate(authority_pubkeys.len());
+        let mut ix = submit(transaction);
+        for mutation in self.submit_instruction_mutations.drain(..) {
+            mutation(&mut ix);
         }
 
-        let accounts = self.assemble_accounts(&signers, programmatic_signer);
+        let accounts = ix
+            .accounts
+            .iter()
+            .map(|meta| self.default_account_for(meta.pubkey, &context))
+            .collect::<Vec<_>>();
         if self.checks.is_empty() {
             self.checks.push(Check::success());
         }
-        let raw =
-            init_mollusk().process_and_validate_instruction(&instruction, &accounts, &self.checks);
+        let raw = init_mollusk().process_and_validate_instruction(&ix, &accounts, &self.checks);
 
         SubmitResult {
-            programmatic_signer,
-            recipient: self.recipient,
+            programmatic_signer: context.programmatic_signer,
+            recipient: context.recipient,
+            instruction: ix,
             raw,
         }
     }
 
-    fn assemble_signatures(
-        &self,
-        signers: &[&Keypair],
-        signed_payload: &SubmitPayload,
-    ) -> Vec<Signature> {
-        if let Some(signatures) = &self.signatures_override {
-            return signatures.clone();
-        }
-        // Each authority signs its own slot, unless a `signed_by` override substitutes
-        // a different key.
-        let effective: Vec<&dyn Signer> = signers
+    fn context(&self) -> SubmitContext {
+        let authorities = self
+            .authorities
             .iter()
-            .enumerate()
-            .map(|(index, default_signer)| {
-                self.sign_overrides
-                    .iter()
-                    .find(|(slot, _)| *slot == index)
-                    .map_or(*default_signer, |(_, key)| key) as &dyn Signer
-            })
-            .collect();
-
-        effective
-            .try_sign_message(&signed_payload.signing_bytes().unwrap())
-            .unwrap()
+            .map(|authority| authority.pubkey())
+            .collect::<Vec<_>>();
+        let programmatic_signer = ProgrammaticSigner::derive_address(
+            &spl_ed25519_signer_interface::id(),
+            &authorities[0],
+        );
+        SubmitContext {
+            authorities,
+            programmatic_signer,
+            recipient: self.recipient,
+        }
     }
 
-    fn assemble_accounts(
-        &self,
-        signers: &[&Keypair],
-        programmatic_signer: Address,
-    ) -> Vec<(Address, Account)> {
-        let mut accounts: Vec<(Address, Account)> = signers
+    fn default_account_for(&self, key: Address, context: &SubmitContext) -> (Address, Account) {
+        if let Some((_, account)) = self
+            .account_overrides
             .iter()
-            .map(|signer| (signer.pubkey(), Account::default()))
-            .collect();
-        accounts.push(
-            self.executor
-                .clone()
-                .unwrap_or_else(mollusk_svm::program::keyed_account_for_system_program),
-        );
-        accounts.push((
-            programmatic_signer,
-            Account {
-                lamports: DEFAULT_PDA_LAMPORTS,
-                ..Account::default()
-            },
-        ));
-        accounts.push((self.recipient, Account::default()));
-        accounts
+            .rev()
+            .find(|(address, _)| *address == key)
+        {
+            return (key, account.clone());
+        }
+        if key == solana_system_interface::program::id() {
+            return mollusk_svm::program::keyed_account_for_system_program();
+        }
+        // Only the first authority's programmatic signer is prefunded. Promotion tests that
+        // create accounts at later programmatic signers need those to start empty.
+        if key == context.programmatic_signer {
+            return (key, funded_account());
+        }
+        (key, Account::default())
     }
 }
 
 pub struct SubmitResult {
     pub programmatic_signer: Address,
     pub recipient: Address,
-    pub raw: InstructionResult,
+    pub instruction: SolanaInstruction,
+    raw: InstructionResult,
 }
 
 impl SubmitResult {
