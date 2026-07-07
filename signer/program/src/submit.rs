@@ -47,44 +47,81 @@ pub fn process_submit(
         return Err(Error::InvalidExecutorInstructionCount.into());
     };
 
-    // Executor account indexes must resolve to this signed static account key list.
-    // The relayer must supply the same accounts in the same outer `Submit` order.
-    validate_accounts_match(accounts, message)?;
+    let executor_instruction =
+        CheckedExecutorInstruction::try_new(accounts, message, executor_instruction)?;
 
-    // Verify authorities signed the wrapped message
     let authorities = verify_authority_signatures(&transaction)?;
 
-    // Only ProgrammaticSigner PDAs derived from signed authorities can be promoted
     let authorized_signers =
-        collect_authorized_signers(program_id, message, executor_instruction, authorities)?;
+        collect_authorized_signers(program_id, &executor_instruction, authorities);
 
-    invoke_executor_instruction(accounts, message, executor_instruction, &authorized_signers)
+    invoke_executor_instruction(message, &executor_instruction, &authorized_signers)
 }
 
-/// Validates the outer `Submit` accounts match the wrapped message's account key list.
-fn validate_accounts_match(
-    outer_accounts: &[AccountView],
-    wrapped_message: &VersionedMessage,
-) -> ProgramResult {
-    let wrapped_account_keys = wrapped_message.static_account_keys();
+/// The executor instruction resolved against outer `Submit` accounts proven to mirror the
+/// wrapped message's static account keys.
+struct CheckedExecutorInstruction<'a> {
+    program_id: &'a Address,
+    accounts: Vec<ExecutorAccount<'a>>,
+    data: &'a [u8],
+}
 
-    if outer_accounts.len() < wrapped_account_keys.len() {
-        return Err(ProgramError::NotEnoughAccountKeys);
-    }
+/// An executor account resolved to its outer `Submit` account and its signed message index.
+struct ExecutorAccount<'a> {
+    account: &'a AccountView,
+    index: usize,
+}
 
-    if outer_accounts.len() > wrapped_account_keys.len() {
-        return Err(Error::AccountKeyMismatch.into());
-    }
+impl<'a> CheckedExecutorInstruction<'a> {
+    fn try_new(
+        outer_accounts: &'a [AccountView],
+        message: &'a VersionedMessage,
+        executor_instruction: &'a CompiledInstruction,
+    ) -> Result<Self, ProgramError> {
+        let wrapped_account_keys = message.static_account_keys();
 
-    for (index, wrapped_key) in wrapped_account_keys.iter().enumerate() {
-        let outer_account = &outer_accounts[index];
+        // The relayer must supply the wrapped message's account keys in signed order, so
+        // executor account indexes resolve to the accounts the authorities signed.
+        if outer_accounts.len() < wrapped_account_keys.len() {
+            return Err(ProgramError::NotEnoughAccountKeys);
+        }
 
-        if outer_account.address() != wrapped_key {
+        if outer_accounts.len() > wrapped_account_keys.len() {
             return Err(Error::AccountKeyMismatch.into());
         }
-    }
 
-    Ok(())
+        for (outer_account, wrapped_key) in outer_accounts.iter().zip(wrapped_account_keys) {
+            if outer_account.address() != wrapped_key {
+                return Err(Error::AccountKeyMismatch.into());
+            }
+        }
+
+        // The executor program is selected by the signed message, not by a separate `Submit`
+        // account. Infallible: sanitization guarantees the index hits the static account keys.
+        let program_id = wrapped_account_keys
+            .get(usize::from(executor_instruction.program_id_index))
+            .unwrap();
+
+        // V0 address table lookups are never resolved, so every executor account index must
+        // hit the static account keys, which the outer accounts mirror one-to-one.
+        let accounts = executor_instruction
+            .accounts
+            .iter()
+            .map(|account_index| {
+                let index = usize::from(*account_index);
+                let account = outer_accounts
+                    .get(index)
+                    .ok_or(Error::InvalidExecutorAccountIndex)?;
+                Ok(ExecutorAccount { account, index })
+            })
+            .collect::<Result<Vec<_>, ProgramError>>()?;
+
+        Ok(Self {
+            program_id,
+            accounts,
+            data: &executor_instruction.data,
+        })
+    }
 }
 
 fn verify_authority_signatures(
@@ -119,11 +156,9 @@ fn verify_authority_signatures(
 
 fn collect_authorized_signers(
     program_id: &Address,
-    message: &VersionedMessage,
-    executor_instruction: &CompiledInstruction,
+    executor_instruction: &CheckedExecutorInstruction,
     authorities: &[Address],
-) -> Result<Vec<AuthorizedSigner>, ProgramError> {
-    let account_keys = message.static_account_keys();
+) -> Vec<AuthorizedSigner> {
     let mut authorized = Vec::<AuthorizedSigner>::new();
 
     // Cold authorities sign as normal Ed25519 keys. PDA signer promotion is allowed only for a
@@ -132,33 +167,23 @@ fn collect_authorized_signers(
         let (programmatic_signer, bump) =
             ProgrammaticSigner::derive_address_and_bump(program_id, authority);
 
-        for account_index in &executor_instruction.accounts {
-            let account_index = usize::from(*account_index);
-
-            // V0 address table lookups are never resolved, so every executor account index must
-            // hit the static account keys
-            let account_key = account_keys
-                .get(account_index)
-                .ok_or(Error::InvalidExecutorAccountIndex)?;
-
-            // Promote the signed authority's PDA referenced by the executor
-            if *account_key == programmatic_signer {
+        for executor_account in &executor_instruction.accounts {
+            if executor_account.account.address() == &programmatic_signer {
                 authorized.push(AuthorizedSigner {
                     authority: *authority,
-                    programmatic_signer_index: account_index,
+                    programmatic_signer_index: executor_account.index,
                     bump_seed: [bump],
                 });
             }
         }
     }
 
-    Ok(authorized)
+    authorized
 }
 
 fn invoke_executor_instruction(
-    accounts: &[AccountView],
     message: &VersionedMessage,
-    executor_instruction: &CompiledInstruction,
+    executor_instruction: &CheckedExecutorInstruction,
     authorized_signers: &[AuthorizedSigner],
 ) -> ProgramResult {
     // The PDA seeds that authorize `invoke_signed` to sign as each programmatic signer.
@@ -174,45 +199,33 @@ fn invoke_executor_instruction(
         .collect();
     let cpi_signers: Vec<Signer> = signer_seeds.iter().map(Signer::from).collect();
 
-    // The executor program is selected by the signed message, not by a separate `Submit` account.
-    // Infallible: sanitization guarantees the program id index hits the static account keys.
-    let executor_program_id = message
-        .static_account_keys()
-        .get(usize::from(executor_instruction.program_id_index))
-        .unwrap();
-
     // The CPI receives only the accounts named by the executor instruction, in signed index order.
     let mut instruction_accounts = Vec::with_capacity(executor_instruction.accounts.len());
     let mut account_views = Vec::with_capacity(executor_instruction.accounts.len());
 
-    for account_index in &executor_instruction.accounts {
-        let account_index = usize::from(*account_index);
-
-        // Infallible: `collect_authorized_signers` bounds-checked every executor account index
-        // and `validate_accounts_match` proved outer accounts mirror the static keys one-to-one.
-        let account = accounts.get(account_index).unwrap();
-
+    for executor_account in &executor_instruction.accounts {
         let is_promoted = authorized_signers
             .iter()
-            .any(|signer| signer.programmatic_signer_index == account_index);
+            .any(|signer| signer.programmatic_signer_index == executor_account.index);
 
         // Real outer signers, such as a relayer co-signer, can be forwarded to the executor
-        let is_forwarded_outer_signer = message.is_signer(account_index) && account.is_signer();
+        let is_forwarded_outer_signer =
+            message.is_signer(executor_account.index) && executor_account.account.is_signer();
 
         // CPI privileges come from the wrapped message plus authorized PDA promotion.
         // Outer over-grants are not forwarded. Under-grants fail runtime privilege checks.
         instruction_accounts.push(InstructionAccount::new(
-            account.address(),
-            is_message_account_writable(account_index, message),
+            executor_account.account.address(),
+            is_message_account_writable(executor_account.index, message),
             is_promoted || is_forwarded_outer_signer,
         ));
-        account_views.push(account);
+        account_views.push(executor_account.account);
     }
 
     let view = InstructionView {
-        program_id: executor_program_id,
+        program_id: executor_instruction.program_id,
         accounts: &instruction_accounts,
-        data: &executor_instruction.data,
+        data: executor_instruction.data,
     };
     invoke_signed_with_slice::<&AccountView>(&view, &account_views, &cpi_signers)?;
 
