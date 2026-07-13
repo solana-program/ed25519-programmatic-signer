@@ -34,7 +34,7 @@ fn submit_rejects_no_required_signatures() {
     init_mollusk().process_and_validate_instruction(
         &ix,
         &[],
-        &[Check::err(Error::NoSignatures.into())],
+        &[Check::err(Error::InvalidWrappedTransaction.into())],
     );
 }
 

@@ -30,13 +30,6 @@ pub fn process_submit(
 ) -> ProgramResult {
     let message = &transaction.message;
 
-    // In a Solana message, the leading required signer keys are the signing authorities.
-    // At least one authority must sign
-    let required_signatures = usize::from(message.header().num_required_signatures);
-    if required_signatures == 0 {
-        return Err(Error::NoSignatures.into());
-    }
-
     // Sanitize signature counts and message invariants
     transaction
         .sanitize()
