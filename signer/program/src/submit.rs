@@ -159,7 +159,7 @@ fn collect_authorized_signers(
     executor_instruction: &CheckedExecutorInstruction,
     authorities: &[Address],
 ) -> Vec<AuthorizedSigner> {
-    let mut authorized = Vec::<AuthorizedSigner>::new();
+    let mut authorized = Vec::<AuthorizedSigner>::with_capacity(authorities.len());
 
     // Cold authorities sign as normal Ed25519 keys. PDA signer promotion is allowed only for a
     // matching ProgrammaticSigner PDA that appears in the executor's signed account index list.
