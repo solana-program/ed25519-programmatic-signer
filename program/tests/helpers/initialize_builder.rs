@@ -6,7 +6,7 @@ use {
     },
     solana_account::Account,
     solana_address::Address,
-    spl_ed25519_programmatic_signer_client::instruction::initialize,
+    spl_ed25519_programmatic_signer_legacy_client::instruction::initialize,
 };
 
 pub struct InitializeBuilder<'a> {

@@ -1,6 +1,6 @@
 use {
     solana_account::Account, solana_address::Address, solana_rent::Rent,
-    spl_ed25519_programmatic_signer_interface::state::SignerContext,
+    spl_ed25519_programmatic_signer_legacy_interface::state::SignerContext,
 };
 
 pub struct SignerContextBuilder {
@@ -14,7 +14,7 @@ impl Default for SignerContextBuilder {
     fn default() -> Self {
         Self {
             key: Address::from([1; 32]),
-            owner: spl_ed25519_programmatic_signer_interface::id(),
+            owner: spl_ed25519_programmatic_signer_legacy_interface::id(),
             lamports: None,
             data: None,
         }

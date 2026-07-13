@@ -1,5 +1,5 @@
 [package]
-name = "spl-ed25519-programmatic-signer-client"
+name = "spl-ed25519-programmatic-signer-legacy-client"
 version = "0.1.0"
 description = "Off-chain client helpers for the SPL Ed25519 Programmatic Signer program"
 authors = { workspace = true }
@@ -18,4 +18,4 @@ workspace = true
 solana-address = { workspace = true }
 solana-instruction = { workspace = true }
 solana-sdk-ids = { workspace = true }
-spl-ed25519-programmatic-signer-interface = { workspace = true }
+spl-ed25519-programmatic-signer-legacy-interface = { workspace = true }

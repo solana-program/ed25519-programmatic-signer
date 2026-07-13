@@ -1,7 +1,7 @@
 [package]
-name = "spl-ed25519-programmatic-signer-legacy-interface"
+name = "spl-ed25519-signer-interface"
 version = "0.1.0"
-description = "Interface for the SPL Ed25519 Programmatic Signer program"
+description = "Interface for the SPL Ed25519 Signer program"
 authors = { workspace = true }
 repository = { workspace = true }
 homepage = { workspace = true }
@@ -19,6 +19,6 @@ workspace = true
 
 [dependencies]
 solana-address = { workspace = true, features = ["curve25519", "decode", "wincode"] }
-solana-hash = { workspace = true }
 solana-program-error = { workspace = true }
-wincode = { workspace = true, features = ["derive"] }
+solana-transaction = { workspace = true, features = ["wincode"] }
+wincode = { workspace = true, features = ["alloc", "derive"] }

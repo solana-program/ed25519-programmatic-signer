@@ -1,5 +1,5 @@
 [package]
-name = "spl-ed25519-programmatic-signer-program"
+name = "spl-ed25519-programmatic-signer-legacy-program"
 version = "0.1.0"
 description = "SPL Ed25519 Programmatic Signer program"
 authors = {workspace = true}
@@ -20,15 +20,14 @@ workspace = true
 [dependencies]
 pinocchio = { workspace = true }
 solana-sha256-hasher = { workspace = true, features = ["sha2"] }
-spl-ed25519-programmatic-signer-interface = { workspace = true }
+spl-ed25519-programmatic-signer-legacy-interface = { workspace = true }
 wincode = { workspace = true }
 
 [dev-dependencies]
 mollusk-svm = { workspace = true }
 solana-account = { workspace = true }
 solana-address = { workspace = true }
-solana-hash = { workspace = true }
 solana-instruction = { workspace = true }
 solana-program-error = { workspace = true }
 solana-rent = { workspace = true }
-spl-ed25519-programmatic-signer-client = { workspace = true }
+spl-ed25519-programmatic-signer-legacy-client = { workspace = true }

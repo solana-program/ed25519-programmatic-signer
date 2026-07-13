@@ -10,8 +10,10 @@ use {
     solana_instruction::AccountMeta,
     solana_program_error::ProgramError,
     solana_rent::Rent,
-    spl_ed25519_programmatic_signer_client::instruction::initialize,
-    spl_ed25519_programmatic_signer_interface::state::{INIT_NONCE_DERIVATION_TAG, SignerContext},
+    spl_ed25519_programmatic_signer_legacy_client::instruction::initialize,
+    spl_ed25519_programmatic_signer_legacy_interface::state::{
+        INIT_NONCE_DERIVATION_TAG, SignerContext,
+    },
 };
 
 pub mod helpers;
