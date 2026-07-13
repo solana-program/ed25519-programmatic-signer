@@ -3,14 +3,6 @@ SOLANA_CLI_VERSION = 3.1.8
 
 nightly = +${RUST_TOOLCHAIN_NIGHTLY}
 
-# This is a bit tricky -- findstring returns the found string, so we're looking
-# for "directory-", returning that, and replacing "-" with "/" to change the
-# first "-" to a "/". But if it isn't found, we replace "" with "", which works
-# in the case where there is no subdirectory.
-pattern-dir = $(firstword $(subst -, ,$1))
-find-pattern-dir = $(findstring $(call pattern-dir,$1)-,$1)
-make-path = $(subst $(call find-pattern-dir,$1),$(subst -,/,$(call find-pattern-dir,$1)),$1)
-
 rust-toolchain-nightly:
 	@echo ${RUST_TOOLCHAIN_NIGHTLY}
 
@@ -30,7 +22,7 @@ spellcheck:
 	cargo spellcheck --code 1 $(ARGS)
 
 clippy-%:
-	cargo $(nightly) clippy --manifest-path $(call make-path,$*)/Cargo.toml \
+	cargo $(nightly) clippy --package $* \
 	  --all-targets \
 	  --all-features \
 		-- \
@@ -41,25 +33,25 @@ clippy-%:
 		--deny=clippy::used_underscore_binding $(ARGS)
 
 format-check-%:
-	cargo $(nightly) fmt --check --manifest-path $(call make-path,$*)/Cargo.toml $(ARGS)
+	cargo $(nightly) fmt --check --package $* $(ARGS)
 
 powerset-%:
-	cargo $(nightly) hack check --feature-powerset --all-targets --manifest-path $(call make-path,$*)/Cargo.toml $(ARGS)
+	cargo $(nightly) hack check --feature-powerset --all-targets --package $* $(ARGS)
 
 format-rust:
 	cargo $(nightly) fmt --all $(ARGS)
 
 build-sbf-%:
-	cargo build-sbf --manifest-path $(call make-path,$*)/Cargo.toml $(ARGS)
+	cargo build-sbf $(ARGS) -- --package $*
 
 build-doc-%:
-	RUSTDOCFLAGS="--cfg docsrs -D warnings" cargo $(nightly) doc --all-features --no-deps --manifest-path $(call make-path,$*)/Cargo.toml $(ARGS)
+	RUSTDOCFLAGS="--cfg docsrs -D warnings" cargo $(nightly) doc --all-features --no-deps --package $* $(ARGS)
 
 test-doc-%:
-	cargo $(nightly) test --doc --all-features --manifest-path $(call make-path,$*)/Cargo.toml $(ARGS)
+	cargo $(nightly) test --doc --all-features --package $* $(ARGS)
 
 test-%:
-	SBF_OUT_DIR=$(PWD)/target/deploy cargo $(nightly) test --manifest-path $(call make-path,$*)/Cargo.toml $(ARGS)
+	SBF_OUT_DIR=$(PWD)/target/deploy cargo $(nightly) test --package $* $(ARGS)
 
 generate-clients:
 	@echo "No clients to generate yet"
@@ -68,7 +60,7 @@ check-no-std-core-%:
 	cargo $(nightly) hack check \
 		--target bpfel-unknown-none \
 		--each-feature \
-		--manifest-path $(call make-path,$*)/Cargo.toml \
+		--package $* \
 		-Zbuild-std=core \
 		$(ARGS)
 
@@ -76,6 +68,6 @@ check-no-std-alloc-%:
 	cargo $(nightly) hack check \
 		--target bpfel-unknown-none \
 		--each-feature \
-		--manifest-path $(call make-path,$*)/Cargo.toml \
+		--package $* \
 		-Zbuild-std=alloc,core \
 		$(ARGS)

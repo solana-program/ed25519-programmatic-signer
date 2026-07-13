@@ -6,10 +6,24 @@ on:
   pull_request:
 
 env:
-  RUST_PACKAGES: "['client', 'interface', 'program', 'signer-client', 'signer-interface', 'signer-program']"
-  SBPF_PROGRAM_PACKAGES: "['program', 'signer-program']"
-  NO_STD_CORE_PACKAGES: "['interface', 'program']"
-  NO_STD_ALLOC_PACKAGES: "['client', 'signer-client', 'signer-interface', 'signer-program']"
+  RUST_PACKAGES: >-
+    ['spl-ed25519-programmatic-signer-legacy-client',
+    'spl-ed25519-programmatic-signer-legacy-interface',
+    'spl-ed25519-programmatic-signer-legacy-program',
+    'spl-ed25519-signer-client',
+    'spl-ed25519-signer-interface',
+    'spl-ed25519-signer-program']
+  SBPF_PROGRAM_PACKAGES: >-
+    ['spl-ed25519-programmatic-signer-legacy-program',
+    'spl-ed25519-signer-program']
+  NO_STD_CORE_PACKAGES: >-
+    ['spl-ed25519-programmatic-signer-legacy-interface',
+    'spl-ed25519-programmatic-signer-legacy-program']
+  NO_STD_ALLOC_PACKAGES: >-
+    ['spl-ed25519-programmatic-signer-legacy-client',
+    'spl-ed25519-signer-client',
+    'spl-ed25519-signer-interface',
+    'spl-ed25519-signer-program']
 
 jobs:
   set_env:
