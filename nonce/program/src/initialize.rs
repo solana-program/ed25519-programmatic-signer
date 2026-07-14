@@ -1,67 +1,55 @@
 use {
+    crate::nonce::recent_slot_hash,
     pinocchio::{
         AccountView, Address, ProgramResult,
         error::ProgramError,
-        sysvars::{Sysvar, rent::Rent, slot_hashes::SlotHashes},
+        sysvars::{Sysvar, rent::Rent},
     },
-    spl_ed25519_programmatic_signer_legacy_interface::state::{
-        INIT_NONCE_DERIVATION_TAG, SignerContext,
-    },
+    spl_nonce_interface::state::Nonce,
 };
 
-/// Turns a caller-created, program-owned account into a [`SignerContext`]
-/// bound to `authority` with a fresh nonce.
+/// Turns a caller-created, program-owned account into a [`Nonce`]
+/// bound to `authority` with a fresh nonce value.
 #[inline(always)]
 pub fn process_initialize(program_id: &Address, accounts: &mut [AccountView]) -> ProgramResult {
-    let [signer_context, authority, slot_hashes_account, ..] = accounts else {
+    let [nonce_account, authority, slot_hashes_account, ..] = accounts else {
         return Err(ProgramError::NotEnoughAccountKeys);
     };
 
     // Caller must ensure account is pre-created with authority set to the program
-    if !signer_context.owned_by(program_id) {
+    if !nonce_account.owned_by(program_id) {
         return Err(ProgramError::IllegalOwner);
     }
 
     // Ensure's the precise length matches the layout
-    if signer_context.data_len() != SignerContext::LEN {
+    if nonce_account.data_len() != Nonce::LEN {
         return Err(ProgramError::InvalidAccountData);
     }
 
     // A fresh account is zero-filled. Any nonzero byte means it is already initialized.
-    let data = signer_context.try_borrow()?;
+    let data = nonce_account.try_borrow()?;
     if data.iter().any(|byte| *byte != 0) {
         return Err(ProgramError::AccountAlreadyInitialized);
     }
     drop(data);
 
-    let rent_required = Rent::get()?.try_minimum_balance(SignerContext::LEN)?;
-    if signer_context.lamports() < rent_required {
+    let rent_required = Rent::get()?.try_minimum_balance(Nonce::LEN)?;
+    if nonce_account.lamports() < rent_required {
         return Err(ProgramError::AccountNotRentExempt);
     }
 
     // Read the most recent slot hash to feed the nonce derivation
-    let slot_hashes = SlotHashes::from_account_view(slot_hashes_account)?;
-    let recent_entry = slot_hashes
-        .get_entry(0)
-        .ok_or(ProgramError::InvalidArgument)?;
+    let recent_slot_hash = recent_slot_hash(slot_hashes_account)?;
+    let initial_nonce =
+        Nonce::derive_initial_value(program_id, nonce_account.address(), &recent_slot_hash);
 
-    let initial_nonce = solana_sha256_hasher::hashv(&[
-        // separates this from `Submit`'s derivation, so an initial nonce
-        // can never equal an advanced one.
-        INIT_NONCE_DERIVATION_TAG,
-        // so multiple accounts initialized in the same slot don't share the same nonce
-        signer_context.address().as_ref(),
-        // chain entropy the caller can't choose
-        &recent_entry.hash,
-    ]);
-
-    let state = SignerContext {
+    let state = Nonce {
         nonce: initial_nonce,
         authority: Address::from(authority.address()),
     };
 
     // Write data into the account
-    let mut data = signer_context.try_borrow_mut()?;
+    let mut data = nonce_account.try_borrow_mut()?;
     wincode::serialize_into(&mut *data, &state)
         .map_err(|_| ProgramError::InvalidInstructionData)?;
 
