@@ -1,9 +1,9 @@
 [workspace]
 resolver = "2"
 members = [
-    "client",
-    "interface",
-    "program",
+    "nonce/client",
+    "nonce/interface",
+    "nonce/program",
     "signer/client",
     "signer/interface",
     "signer/program",
@@ -38,10 +38,8 @@ wincode = { version = "0.5.5", default-features = false }
 
 spl-ed25519-signer-client = { path = "signer/client" }
 spl-ed25519-signer-interface = { path = "signer/interface" }
-
-# TODO: remove after migrating to new executor system design
-spl-ed25519-programmatic-signer-legacy-client = { path = "client" }
-spl-ed25519-programmatic-signer-legacy-interface = { path = "interface" }
+spl-nonce-client = { path = "nonce/client" }
+spl-nonce-interface = { path = "nonce/interface" }
 
 [workspace.lints.rust.unexpected_cfgs]
 level = "warn"
