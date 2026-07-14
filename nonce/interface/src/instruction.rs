@@ -1,88 +1,62 @@
 use {
-    solana_address::Address,
+    solana_hash::Hash,
     solana_program_error::ProgramError,
     wincode::{SchemaRead, SchemaWrite},
 };
 
-/// Instructions supported by the SPL Ed25519 Programmatic Signer program.
-#[repr(u8)]
-#[derive(Clone, Copy, Debug, PartialEq, Eq, SchemaRead, SchemaWrite)]
+/// Instructions supported by the SPL Nonce program.
+#[derive(Clone, Debug, PartialEq, Eq, SchemaRead, SchemaWrite)]
 #[wincode(tag_encoding = "u8")]
 pub enum Instruction {
-    /// Initializes a signer context account for an authority.
+    /// Initializes a nonce account for an authority.
     ///
     /// The caller must first create and fund the account. Recommended to include
-    /// `solana_system_interface::instruction::create_account` and `Initialize` in the same
-    /// transaction so no other transaction can initialize the account first.
+    /// the system `CreateAccount` instruction and `Initialize` in the same transaction so no
+    /// other transaction can initialize the account first.
     ///
     /// On success, the program:
     /// 1. Verifies the account is uninitialized, rent-exempt, and owned by this program.
-    /// 2. Derives the initial `nonce` as
-    ///    `sha256("spl-ed25519-programmatic-signer::init-v1" ‖ signer_context_address ‖ slot_hashes[0])`.
-    /// 3. Writes `SignerContext { nonce, authority }` into the account data.
+    /// 2. Derives the initial `nonce` by hashing the initialization tag, nonce account
+    ///    address, program id, and latest slot hash.
+    /// 3. Writes `Nonce { nonce, authority }` into the account data.
     ///
-    /// Instruction data: instruction discriminator only
+    /// Instruction data is the discriminator only.
     ///
-    /// Accounts required:
-    /// - `[writable]` Signer context account
-    /// - `[]` Authority to store in the signer context account
+    /// Required accounts.
+    /// - `[writable]` Nonce account
+    /// - `[]` Authority to store in the nonce account
     /// - `[]` `SlotHashes` sysvar
     Initialize,
 
-    /// Authorizes and executes a wrapped Solana transaction whose required signers are
-    /// `ProgrammaticSigner` accounts.
+    /// Consumes the stored nonce and advances it to a fresh value.
     ///
-    /// Instruction data: instruction discriminator followed by a serialized
-    /// `solana_transaction::versioned::VersionedTransaction`.
-    /// All message variants supported by `VersionedTransaction` are accepted.
+    /// Consumers verify the stored nonce by reading the account, then invoke this instruction
+    /// via CPI after their work succeeds. `current_nonce` is re-checked here so the
+    /// nonce cannot be consumed twice within one transaction.
     ///
-    /// Wrapped required signers are paired by index:
-    /// - `message.account_keys[i]`: `ProgrammaticSigner` promoted during CPI.
-    /// - `tx.signatures[i]`: wrapped-message signature from the matching authority address.
+    /// Instruction data is the discriminator followed by a serialized [`AdvanceNonceArgs`].
     ///
     /// On success, the program:
-    /// 1. Deserializes the transaction and sanitizes the wrapped message.
-    /// 2. Reads the authority stored in the signer context account.
-    /// 3. Checks the passed signer context account's authority signed the wrapped message.
-    /// 4. Checks the wrapped message's lifetime / recent blockhash field equals the account's
-    ///    `nonce`.
-    /// 5. Verifies the outer transaction's only top-level instruction is `Submit`.
-    /// 6. Iterates over the outer authority accounts in order. For each `authority_i`, requires
-    ///    `ProgrammaticSigner(authority_i) == message.account_keys[i]` and verifies
-    ///    `tx.signatures[i]` over the wrapped message with `authority_i`.
-    /// 7. Executes each `message.instructions` entry by CPI, using `invoke_signed` to promote
-    ///    each authorized signer's corresponding `ProgrammaticSigner`.
-    /// 8. Derives and stores the next nonce as
-    ///    `sha256("spl-ed25519-programmatic-signer::v1" ‖ signer_context ‖ old_nonce ‖ slot_hashes[0] ‖ sha256(signed_message_bytes))`
+    /// 1. Verifies the stored authority matches the authority account, which must carry
+    ///    runtime signer privilege.
+    /// 2. Verifies the stored nonce equals `current_nonce`.
+    /// 3. Stores the next nonce by hashing the advancement tag, program id, nonce account
+    ///    address, old nonce, and latest slot hash.
     ///
-    /// Accounts required:
-    /// - `[writable]` Signer context account whose nonce is consumed and advanced
+    /// Required accounts.
+    /// - `[signer]` Authority stored in the nonce account
+    /// - `[writable]` Nonce account
     /// - `[]` `SlotHashes` sysvar
-    /// - `[]` `Instructions` sysvar
-    /// - Authority addresses, ordered to match the wrapped message's required signers.
-    /// - Remaining accounts referenced by the wrapped message, in order. Writable flags
-    ///   must match the wrapped message.
-    Submit,
+    Advance(AdvanceNonceArgs),
 
-    /// Closes a signer context account and refunds its lamports.
-    ///
-    /// Instruction data: instruction discriminator followed by [`CloseData`].
-    ///
-    /// Runs only as an inner instruction of a wrapped transaction submitted through `Submit`
-    /// because nothing outside this program can sign for `ProgrammaticSigner`.
-    ///
-    /// Accounts required:
-    /// - `[signer]` `ProgrammaticSigner`
-    /// - `[writable]` Signer context account
-    /// - `[writable]` Lamport recipient
+    /// Closes a nonce account. Not yet implemented.
     Close,
 }
 
-/// Data for [`Instruction::Close`].
+/// Payload for nonce advancement.
 #[derive(Clone, Debug, PartialEq, Eq, SchemaRead, SchemaWrite)]
-pub struct CloseData {
-    /// Address that receives all lamports from the closed signer context account.
-    pub recipient: Address,
+pub struct AdvanceNonceArgs {
+    pub current_nonce: Hash,
 }
 
 impl Instruction {
@@ -95,24 +69,50 @@ impl Instruction {
 
 #[cfg(test)]
 mod tests {
-    use super::Instruction;
+    use {
+        super::{AdvanceNonceArgs, Hash, Instruction},
+        solana_program_error::ProgramError,
+        test_case::test_case,
+    };
 
-    fn instruction_bytes(instruction: Instruction) -> [u8; 1] {
-        let mut bytes = [0];
-        wincode::serialize_into(bytes.as_mut_slice(), &instruction).unwrap();
-        bytes
+    const ADVANCE_IX: Instruction = Instruction::Advance(AdvanceNonceArgs {
+        current_nonce: Hash::new_from_array([1; 32]),
+    });
+
+    #[test_case(Instruction::Initialize, 0)]
+    #[test_case(ADVANCE_IX, 1)]
+    #[test_case(Instruction::Close, 2)]
+    fn instruction_tag_matches_wire_format(instruction: Instruction, expected: u8) {
+        assert_eq!(wincode::serialize(&instruction).unwrap()[0], expected);
     }
 
-    #[test]
-    fn instruction_tags_match_wire_format() {
-        assert_eq!(instruction_bytes(Instruction::Initialize), [0]);
-        assert_eq!(instruction_bytes(Instruction::Submit), [1]);
-        assert_eq!(instruction_bytes(Instruction::Close), [2]);
+    #[test_case(Instruction::Initialize)]
+    #[test_case(ADVANCE_IX)]
+    #[test_case(Instruction::Close)]
+    fn instruction_round_trips(instruction: Instruction) {
+        let bytes = wincode::serialize(&instruction).unwrap();
+        assert_eq!(Instruction::try_from_bytes(&bytes).unwrap(), instruction);
     }
 
-    #[test]
-    fn try_from_bytes_rejects_unknown() {
-        assert!(Instruction::try_from_bytes(&[4]).is_err());
-        assert!(Instruction::try_from_bytes(&[255]).is_err());
+    #[test_case(Instruction::Initialize)]
+    #[test_case(ADVANCE_IX)]
+    #[test_case(Instruction::Close)]
+    fn instruction_rejects_trailing_data(instruction: Instruction) {
+        let mut bytes = wincode::serialize(&instruction).unwrap();
+        bytes.extend_from_slice(&[1, 2, 3]);
+
+        assert_eq!(
+            Instruction::try_from_bytes(&bytes),
+            Err(ProgramError::InvalidInstructionData)
+        );
+    }
+
+    #[test_case(3; "next tag")]
+    #[test_case(u8::MAX; "maximum tag")]
+    fn try_from_bytes_rejects_unknown(tag: u8) {
+        assert_eq!(
+            Instruction::try_from_bytes(&[tag]),
+            Err(ProgramError::InvalidInstructionData)
+        );
     }
 }
