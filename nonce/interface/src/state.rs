@@ -32,9 +32,9 @@ impl Nonce {
         recent_slot_hash: &Hash,
     ) -> Hash {
         hashv(&[
-            NONCE_INIT_TAG, // domain-separates initialization from advancement
-            &program_id.to_bytes(), // binds the derivation to the program address
-            &nonce_account.to_bytes(), // binds the initial value to the nonce-account address
+            NONCE_INIT_TAG,               // domain-separates initialization from advancement
+            &program_id.to_bytes(),       // binds the derivation to the program address
+            &nonce_account.to_bytes(),    // binds the initial value to the nonce-account address
             &recent_slot_hash.to_bytes(), // makes reinitialization differ when the latest slot hash changes
         ])
     }
@@ -47,10 +47,10 @@ impl Nonce {
         recent_slot_hash: &Hash,
     ) -> Hash {
         hashv(&[
-            NONCE_STEP_TAG, // domain-separates advancement from initialization
-            &program_id.to_bytes(), // binds the derivation to the program address
-            &nonce_account.to_bytes(), // binds each successor to the nonce-account address
-            &self.nonce.to_bytes(), // makes the successor depend on the current nonce
+            NONCE_STEP_TAG,               // domain-separates advancement from initialization
+            &program_id.to_bytes(),       // binds the derivation to the program address
+            &nonce_account.to_bytes(),    // binds each successor to the nonce-account address
+            &self.nonce.to_bytes(),       // makes the successor depend on the current nonce
             &recent_slot_hash.to_bytes(), // makes the successor depend on the recent slot hash
         ])
     }
