@@ -19,7 +19,6 @@ solana-address = { workspace = true }
 solana-hash = { workspace = true }
 solana-instruction = { workspace = true, features = ["wincode"] }
 solana-message = { workspace = true, features = ["wincode"] }
-solana-sdk-ids = { workspace = true }
 solana-signer = { workspace = true }
 solana-transaction = { workspace = true, features = ["wincode"] }
 spl-ed25519-signer-interface = { workspace = true }

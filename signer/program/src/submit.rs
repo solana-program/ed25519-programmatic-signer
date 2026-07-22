@@ -2,7 +2,7 @@
 //! while signing for explicitly authorized programmatic signers.
 
 use {
-    alloc::vec::Vec,
+    alloc::{collections::BTreeSet, vec::Vec},
     brine_ed25519::hasher::Sha512,
     pinocchio::{
         AccountView, Address, ProgramResult,
@@ -205,11 +205,16 @@ fn invoke_executor_instruction(
         let is_forwarded_outer_signer =
             message.is_signer(executor_account.index) && executor_account.account.is_signer();
 
+        let is_writable = message.is_maybe_writable_with_reserved_addresses(
+            executor_account.index,
+            None::<&BTreeSet<_>>,
+        );
+
         // CPI privileges come from the wrapped message plus authorized PDA promotion.
         // Outer over-grants are not forwarded. Under-grants fail runtime privilege checks.
         instruction_accounts.push(InstructionAccount::new(
             executor_account.account.address(),
-            is_message_account_writable(executor_account.index, message),
+            is_writable,
             is_promoted || is_forwarded_outer_signer,
         ));
         account_views.push(executor_account.account);
@@ -223,23 +228,4 @@ fn invoke_executor_instruction(
     invoke_signed_with_slice::<&AccountView>(&view, &account_views, &cpi_signers)?;
 
     Ok(())
-}
-
-// TODO: Replace when no-std version of: https://github.com/anza-xyz/solana-sdk/blob/042f3451979cc8e31a45a09a5627a387ac12a067/message/src/lib.rs#L155-L235
-fn is_message_account_writable(index: usize, message: &VersionedMessage) -> bool {
-    // [writable signers | readonly signers | writable unsigned | readonly unsigned]
-    let header = message.header();
-    let account_keys = message.static_account_keys();
-    let required_signatures = usize::from(header.num_required_signatures);
-    let writable_signers_end =
-        required_signatures.saturating_sub(usize::from(header.num_readonly_signed_accounts));
-    let writable_unsigned_end = account_keys
-        .len()
-        .saturating_sub(usize::from(header.num_readonly_unsigned_accounts));
-    let is_writable_index = index < writable_signers_end
-        || (required_signatures..writable_unsigned_end).contains(&index);
-
-    is_writable_index
-        && (!message.is_invoked(index)
-            || account_keys.contains(&solana_sdk_ids::bpf_loader_upgradeable::id()))
 }
