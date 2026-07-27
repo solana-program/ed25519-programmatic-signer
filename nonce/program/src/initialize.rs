@@ -42,7 +42,7 @@ pub fn process_initialize(program_id: &Address, accounts: &mut [AccountView]) ->
     // Read the most recent slot hash to feed the nonce derivation
     let recent_slot_hash = recent_slot_hash(slot_hashes_account)?;
     let initial_nonce =
-        Nonce::derive_initial_value(program_id, nonce_account.address(), &recent_slot_hash);
+        Nonce::derive_initial_nonce(program_id, nonce_account.address(), &recent_slot_hash);
 
     // Write data into the account
     let mut data = nonce_account.try_borrow_mut()?;

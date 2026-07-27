@@ -28,7 +28,7 @@ impl Nonce {
     pub const LEN: usize = HASH_BYTES + ADDRESS_BYTES;
 
     /// Derives the value for a newly initialized nonce account.
-    pub fn derive_initial_value(
+    pub fn derive_initial_nonce(
         program_id: &Address,
         nonce_account: &Address,
         recent_slot_hash: &Hash,
@@ -42,7 +42,7 @@ impl Nonce {
     }
 
     /// Derives the value that follows this nonce for the given recent slot hash.
-    pub fn derive_next_value(
+    pub fn derive_next_nonce(
         &self,
         program_id: &Address,
         nonce_account: &Address,
@@ -82,7 +82,7 @@ mod tests {
         let recent_slot_hash = Hash::from([3; 32]);
 
         assert_eq!(
-            Nonce::derive_initial_value(&program_id, &nonce_account, &recent_slot_hash),
+            Nonce::derive_initial_nonce(&program_id, &nonce_account, &recent_slot_hash),
             "vDVVCR9vGGZ7RKg1RHT3Bgtn8VgaBEexvVfvniSZ4xc"
                 .parse::<Hash>()
                 .unwrap()
@@ -95,7 +95,7 @@ mod tests {
             authority: Address::default(),
         };
         assert_eq!(
-            state.derive_next_value(&program_id, &nonce_account, &recent_slot_hash),
+            state.derive_next_nonce(&program_id, &nonce_account, &recent_slot_hash),
             "8Sh5B8dWH6xhSmHdwxLPWVifNFRXdGrd8nA9G7RMcVg4"
                 .parse::<Hash>()
                 .unwrap()
