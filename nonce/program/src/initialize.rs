@@ -6,6 +6,7 @@ use {
         sysvars::{Sysvar, rent::Rent},
     },
     spl_nonce_interface::state::Nonce,
+    wincode::ZeroCopy,
 };
 
 /// Turns a caller-created, program-owned account into a [`Nonce`]
@@ -43,15 +44,11 @@ pub fn process_initialize(program_id: &Address, accounts: &mut [AccountView]) ->
     let initial_nonce =
         Nonce::derive_initial_value(program_id, nonce_account.address(), &recent_slot_hash);
 
-    let state = Nonce {
-        nonce: initial_nonce,
-        authority: Address::from(authority.address()),
-    };
-
     // Write data into the account
     let mut data = nonce_account.try_borrow_mut()?;
-    wincode::serialize_into(&mut *data, &state)
-        .map_err(|_| ProgramError::InvalidInstructionData)?;
+    let state = Nonce::from_bytes_mut(&mut data).map_err(|_| ProgramError::InvalidAccountData)?;
+    state.nonce = initial_nonce;
+    state.authority.clone_from(authority.address());
 
     Ok(())
 }

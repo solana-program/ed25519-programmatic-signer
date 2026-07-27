@@ -13,6 +13,8 @@ pub const NONCE_STEP_TAG: &[u8] = b"spl-nonce::step::v1";
 /// One authority can control any number of independent nonce accounts. This is useful for
 /// when that authority wants to prepare or submit more than one transaction concurrently.
 #[derive(Clone, Debug, PartialEq, Eq, SchemaRead, SchemaWrite)]
+#[wincode(assert_zero_copy)]
+#[repr(C)]
 pub struct Nonce {
     /// Single-use value that prevents a signed message from being replayed. `Advance`
     /// requires the caller to present this value and the stored authority's signer

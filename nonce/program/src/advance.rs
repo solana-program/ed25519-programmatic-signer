@@ -2,6 +2,7 @@ use {
     crate::nonce::recent_slot_hash,
     pinocchio::{AccountView, Address, ProgramResult, error::ProgramError},
     spl_nonce_interface::{error::Error, instruction::AdvanceNonceArgs, state::Nonce},
+    wincode::ZeroCopy,
 };
 
 /// Consumes the stored nonce and advances it to a fresh value.
@@ -22,16 +23,17 @@ pub fn process_advance(
         return Err(Error::InvalidNonceAccount.into());
     }
 
+    // Clone view so address later can be borrowed off the original
+    let mut view = nonce_account.clone();
+
     // A caller-created nonce account remains zero-filled until initialized.
     // Because both `Nonce` fields accept any 32-byte value, wincode accepts
     // the zero-filled data as a valid value. Reject the uninitialized state.
-    let data = nonce_account.try_borrow()?;
+    let mut data = view.try_borrow_mut()?;
     if data.iter().all(|byte| *byte == 0) {
         return Err(Error::InvalidNonceAccount.into());
     }
-    let mut state: Nonce =
-        wincode::deserialize_exact(&data).map_err(|_| Error::InvalidNonceAccount)?;
-    drop(data);
+    let state = Nonce::from_bytes_mut(&mut data).map_err(|_| Error::InvalidNonceAccount)?;
 
     if authority.address() != &state.authority {
         return Err(Error::AuthorityMismatch.into());
@@ -47,11 +49,7 @@ pub fn process_advance(
     }
 
     let recent_slot_hash = recent_slot_hash(slot_hashes_account)?;
-    state.nonce = state.derive_next_value(program_id, nonce_account.address(), &recent_slot_hash);
-
-    let mut data = nonce_account.try_borrow_mut()?;
-    wincode::serialize_into(&mut *data, &state)
-        .map_err(|_| ProgramError::InvalidInstructionData)?;
+    state.nonce = state.derive_next_nonce(program_id, nonce_account.address(), &recent_slot_hash);
 
     Ok(())
 }
