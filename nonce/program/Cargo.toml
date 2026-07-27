@@ -2,11 +2,11 @@
 name = "spl-nonce-program"
 version = "0.1.0"
 description = "SPL Nonce program"
-authors = {workspace = true}
-repository = {workspace = true}
-homepage = {workspace = true}
-license = {workspace = true}
-edition = {workspace = true}
+authors = { workspace = true }
+repository = { workspace = true }
+homepage = { workspace = true }
+license = { workspace = true }
+edition = { workspace = true }
 
 [lib]
 crate-type = ["cdylib"]
