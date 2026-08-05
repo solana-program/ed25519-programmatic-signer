@@ -1,0 +1,118 @@
+use {
+    solana_hash::Hash,
+    solana_program_error::ProgramError,
+    wincode::{SchemaRead, SchemaWrite},
+};
+
+/// Instructions supported by the SPL Nonce program.
+#[derive(Clone, Debug, PartialEq, Eq, SchemaRead, SchemaWrite)]
+#[wincode(tag_encoding = "u8")]
+pub enum Instruction {
+    /// Initializes a nonce account for an authority.
+    ///
+    /// The caller must first create and fund the account. Recommended to include
+    /// the system `CreateAccount` instruction and `Initialize` in the same transaction so no
+    /// other transaction can initialize the account first.
+    ///
+    /// On success, the program:
+    /// 1. Verifies the account is uninitialized, rent-exempt, and owned by this program.
+    /// 2. Derives the initial `nonce` by hashing the initialization tag, nonce account
+    ///    address, program id, and latest slot hash.
+    /// 3. Writes `Nonce { nonce, authority }` into the account data.
+    ///
+    /// Instruction data is the discriminator only.
+    ///
+    /// Required accounts.
+    /// - `[writable]` Nonce account
+    /// - `[]` Authority to store in the nonce account
+    /// - `[]` `SlotHashes` sysvar
+    Initialize,
+
+    /// Consumes the stored nonce and advances it to a fresh value.
+    ///
+    /// Consumers verify the stored nonce by reading the account, then invoke this instruction
+    /// via CPI after their work succeeds. `current_nonce` is re-checked here so the
+    /// nonce cannot be consumed twice within one transaction.
+    ///
+    /// Instruction data is the discriminator followed by a serialized [`AdvanceNonceArgs`].
+    ///
+    /// On success, the program:
+    /// 1. Verifies the stored authority matches the authority account, which must carry
+    ///    runtime signer privilege.
+    /// 2. Verifies the stored nonce equals `current_nonce`.
+    /// 3. Stores the next nonce by hashing the advancement tag, program id, nonce account
+    ///    address, old nonce, and latest slot hash.
+    ///
+    /// Required accounts.
+    /// - `[signer]` Authority stored in the nonce account
+    /// - `[writable]` Nonce account
+    /// - `[]` `SlotHashes` sysvar
+    Advance(AdvanceNonceArgs),
+
+    /// Closes a nonce account. Not yet implemented.
+    Close,
+}
+
+/// Payload for nonce advancement.
+#[derive(Clone, Debug, PartialEq, Eq, SchemaRead, SchemaWrite)]
+pub struct AdvanceNonceArgs {
+    pub current_nonce: Hash,
+}
+
+impl Instruction {
+    #[inline(always)]
+    pub fn try_from_bytes(instruction_data: &[u8]) -> Result<Self, ProgramError> {
+        wincode::deserialize_exact(instruction_data)
+            .map_err(|_| ProgramError::InvalidInstructionData)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use {
+        super::{AdvanceNonceArgs, Hash, Instruction},
+        solana_program_error::ProgramError,
+        test_case::test_case,
+    };
+
+    const ADVANCE_IX: Instruction = Instruction::Advance(AdvanceNonceArgs {
+        current_nonce: Hash::new_from_array([1; 32]),
+    });
+
+    #[test_case(Instruction::Initialize, 0)]
+    #[test_case(ADVANCE_IX, 1)]
+    #[test_case(Instruction::Close, 2)]
+    fn instruction_tag_matches_wire_format(instruction: Instruction, expected: u8) {
+        assert_eq!(wincode::serialize(&instruction).unwrap()[0], expected);
+    }
+
+    #[test_case(Instruction::Initialize)]
+    #[test_case(ADVANCE_IX)]
+    #[test_case(Instruction::Close)]
+    fn instruction_round_trips(instruction: Instruction) {
+        let bytes = wincode::serialize(&instruction).unwrap();
+        assert_eq!(Instruction::try_from_bytes(&bytes).unwrap(), instruction);
+    }
+
+    #[test_case(Instruction::Initialize)]
+    #[test_case(ADVANCE_IX)]
+    #[test_case(Instruction::Close)]
+    fn instruction_rejects_trailing_data(instruction: Instruction) {
+        let mut bytes = wincode::serialize(&instruction).unwrap();
+        bytes.extend_from_slice(&[1, 2, 3]);
+
+        assert_eq!(
+            Instruction::try_from_bytes(&bytes),
+            Err(ProgramError::InvalidInstructionData)
+        );
+    }
+
+    #[test_case(3; "next tag")]
+    #[test_case(u8::MAX; "maximum tag")]
+    fn try_from_bytes_rejects_unknown(tag: u8) {
+        assert_eq!(
+            Instruction::try_from_bytes(&[tag]),
+            Err(ProgramError::InvalidInstructionData)
+        );
+    }
+}

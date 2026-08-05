@@ -1,7 +1,7 @@
 use {
-    crate::initialize::process_initialize,
+    crate::{advance::process_advance, initialize::process_initialize},
     pinocchio::{AccountView, Address, ProgramResult},
-    spl_ed25519_programmatic_signer_legacy_interface::instruction::Instruction,
+    spl_nonce_interface::instruction::Instruction,
 };
 
 #[inline(always)]
@@ -12,6 +12,7 @@ pub fn process_instruction(
 ) -> ProgramResult {
     match Instruction::try_from_bytes(instruction_data)? {
         Instruction::Initialize => process_initialize(program_id, accounts),
-        Instruction::Submit | Instruction::Close => unimplemented!(),
+        Instruction::Advance(advance) => process_advance(program_id, accounts, advance),
+        Instruction::Close => unimplemented!(),
     }
 }
