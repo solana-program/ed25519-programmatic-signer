@@ -52,11 +52,16 @@ format-rust:
 build-sbf-%:
 	cargo build-sbf --manifest-path $(call make-path,$*)/Cargo.toml $(ARGS)
 
+build-%:
+	cargo $(nightly) build --manifest-path $(call make-path,$*)/Cargo.toml $(ARGS)
+
 build-doc-%:
 	RUSTDOCFLAGS="--cfg docsrs -D warnings" cargo $(nightly) doc --all-features --no-deps --manifest-path $(call make-path,$*)/Cargo.toml $(ARGS)
 
 test-doc-%:
 	cargo $(nightly) test --doc --all-features --manifest-path $(call make-path,$*)/Cargo.toml $(ARGS)
+
+test-clients-rust: build-sbf-nonce-program build-sbf-signer-program build-sbf-executor-program
 
 test-%:
 	SBF_OUT_DIR=$(PWD)/target/deploy cargo $(nightly) test --manifest-path $(call make-path,$*)/Cargo.toml $(ARGS)

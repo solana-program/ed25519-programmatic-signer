@@ -1,0 +1,45 @@
+[package]
+name = "psigner"
+version = "0.1.0"
+description = "Command-line client for SPL programmatic signer artifacts"
+authors = { workspace = true }
+repository = { workspace = true }
+homepage = { workspace = true }
+license = { workspace = true }
+edition = { workspace = true }
+
+[[bin]]
+name = "psigner"
+path = "src/main.rs"
+
+[lints]
+workspace = true
+
+[dependencies]
+anyhow = { workspace = true }
+base64 = { workspace = true }
+clap = { workspace = true, features = ["derive"] }
+serde = { workspace = true }
+serde_json = { workspace = true }
+solana-address = { workspace = true }
+solana-derivation-path = { workspace = true }
+solana-hash = { workspace = true }
+solana-instruction = { workspace = true, features = ["wincode"] }
+solana-keypair = { workspace = true }
+solana-message = { workspace = true, features = ["wincode"] }
+solana-remote-wallet = { workspace = true }
+solana-signature = { workspace = true }
+solana-signer = { workspace = true }
+solana-system-interface = { workspace = true, features = ["wincode"] }
+solana-transaction = { workspace = true, features = ["verify", "wincode"] }
+spl-ed25519-signer-interface = { workspace = true }
+spl-nonce-interface = { workspace = true }
+spl-programmatic-signer-rust = { workspace = true }
+ureq = { workspace = true, features = ["json"] }
+uriparse = { workspace = true }
+wincode = { workspace = true, features = ["alloc"] }
+
+[dev-dependencies]
+assert_cmd = { workspace = true }
+predicates = { workspace = true }
+tempfile = { workspace = true }
