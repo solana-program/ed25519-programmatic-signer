@@ -4,7 +4,9 @@ use {
         output::OutputFormat,
     },
     clap::{Args, Parser, Subcommand, ValueHint},
-    solana_clap_v3_utils::input_parsers::parse_url_or_moniker,
+    solana_clap_v3_utils::{
+        input_parsers::parse_url_or_moniker, keypair::SKIP_SEED_PHRASE_VALIDATION_ARG,
+    },
     solana_commitment_config::CommitmentConfig,
     std::path::PathBuf,
 };
@@ -24,6 +26,18 @@ pub struct Cli {
 
     #[clap(flatten)]
     pub(crate) client: ClientArgs,
+
+    /// Skip validation of seed phrases. Use this if your phrase does not use the BIP39 official
+    /// English word list.
+    //
+    // Note: signer_from_path resolves prompt:// and ASK sources by looking this
+    // argument up in ArgMatches and fails if it is not defined.
+    #[clap(
+        name = SKIP_SEED_PHRASE_VALIDATION_ARG.name,
+        long = SKIP_SEED_PHRASE_VALIDATION_ARG.long,
+        global = true
+    )]
+    pub(crate) skip_seed_phrase_validation: bool,
 
     #[clap(subcommand)]
     pub(crate) command: Command,
@@ -55,6 +69,15 @@ pub(crate) struct ClientArgs {
     /// Uses Solana CLI config when omitted.
     #[clap(long, global = true)]
     pub(crate) commitment: Option<CommitmentConfig>,
+
+    /// Fee payer signer source: a keypair file, usb:// URL, prompt:// URL, or the ASK keyword.
+    /// Uses Solana CLI config when omitted.
+    #[clap(long, global = true)]
+    pub(crate) fee_payer: Option<String>,
+
+    /// Skip the preflight check when sending transactions.
+    #[clap(long, global = true)]
+    pub(crate) skip_preflight: bool,
 }
 
 #[derive(Debug, Subcommand)]

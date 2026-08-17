@@ -1,3 +1,4 @@
+mod create;
 mod show;
 
 use {
@@ -16,6 +17,8 @@ pub(crate) struct NonceCommand {
 pub(crate) enum NonceSubcommand {
     /// Show the nonce, authority, owner, and balance of an SPL Nonce account.
     Show(show::ShowCommand),
+    /// Create and initialize an SPL Nonce account for a nonce authority.
+    Create(create::CreateCommand),
 }
 
 pub(crate) async fn run(
@@ -25,5 +28,6 @@ pub(crate) async fn run(
 ) -> Result<String> {
     match command.command {
         NonceSubcommand::Show(command) => show::run(command, client, output).await,
+        NonceSubcommand::Create(command) => create::run(command, client, output).await,
     }
 }

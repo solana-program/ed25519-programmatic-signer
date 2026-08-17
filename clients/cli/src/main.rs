@@ -3,12 +3,17 @@ mod client;
 mod commands;
 mod output;
 
-use {anyhow::Result, clap::Parser, cli::Cli};
+use {
+    anyhow::Result,
+    clap::{CommandFactory, FromArgMatches},
+    cli::Cli,
+};
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    let cli = Cli::parse();
-    let output = commands::run(cli).await?;
+    let matches = Cli::command().get_matches();
+    let cli = Cli::from_arg_matches(&matches).unwrap_or_else(|error| error.exit());
+    let output = commands::run(cli, matches).await?;
     println!("{output}");
     Ok(())
 }
