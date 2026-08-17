@@ -174,7 +174,9 @@ fn execute_rejects_readonly_message_writable_account() {
     ExecuteBuilder::default()
         .inner_instruction(transfer(&DEFAULT_AUTHORITY, &Address::new_unique(), 1))
         .mutate_execute_ix(|ix| ix.accounts[4].is_writable = false)
-        .check_err(MessageExecutorError::MessageAccountsMismatch)
+        .check(Check::instruction_err(
+            InstructionError::PrivilegeEscalation,
+        ))
         .execute();
 }
 
@@ -182,7 +184,9 @@ fn execute_rejects_readonly_message_writable_account() {
 fn execute_rejects_missing_required_signer_privilege() {
     ExecuteBuilder::default()
         .mutate_execute_ix(|ix| ix.accounts[3].is_signer = false)
-        .check_err(MessageExecutorError::MissingRequiredSigner)
+        .check(Check::instruction_err(
+            InstructionError::PrivilegeEscalation,
+        ))
         .execute();
 }
 

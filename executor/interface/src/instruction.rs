@@ -17,8 +17,7 @@ pub enum Instruction {
     /// On success, the program:
     /// 1. Deserializes and sanitizes the wrapped message.
     /// 2. Verifies that the message's lifetime specifier matches the nonce account's stored nonce.
-    /// 3. Verifies that each supplied account matches the message account at the same index,
-    ///    with sufficient writable and signer privileges for that message account.
+    /// 3. Verifies that each supplied account matches the message account at the same index.
     /// 4. Verifies that the nonce account's authority is a required signer of the message.
     /// 5. Advances the nonce via CPI to the Nonce program.
     /// 6. Executes each message instruction via CPI. All changes roll back on failure.

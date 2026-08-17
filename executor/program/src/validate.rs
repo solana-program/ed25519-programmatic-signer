@@ -1,7 +1,6 @@
 //! Validates the wrapped message and the runtime accounts used to replay it.
 
 use {
-    alloc::collections::BTreeSet,
     pinocchio::{AccountView, Address, error::ProgramError},
     solana_message::{VersionedMessage, v1::TransactionConfig},
     spl_message_executor_interface::error::Error,
@@ -44,6 +43,10 @@ fn has_duplicate_addresses(mut addresses: &[Address]) -> bool {
     false
 }
 
+/// Validates the supplied accounts against the wrapped message and returns the nonce authority.
+///
+/// Note: The CPI runtime rejects writable and signer privilege escalation during instruction
+/// execution.
 pub fn validate_replay_accounts<'a>(
     replay_accounts: &'a [AccountView],
     wrapped_message: &VersionedMessage,
@@ -65,22 +68,8 @@ pub fn validate_replay_accounts<'a>(
             return Err(Error::MessageAccountsMismatch.into());
         }
 
-        let is_writable =
-            wrapped_message.is_maybe_writable_with_reserved_addresses(index, None::<&BTreeSet<_>>);
-        let is_signer = wrapped_message.is_signer(index);
-
-        // CPI cannot escalate privileges, so each account must be received
-        // with at least those the message requests
-        if is_writable && !account.is_writable() {
-            return Err(Error::MessageAccountsMismatch.into());
-        }
-
-        if is_signer && !account.is_signer() {
-            return Err(Error::MissingRequiredSigner.into());
-        }
-
         // The stored authority must sign the message to authorize the nonce advance
-        if is_signer && account.address() == stored_nonce_authority {
+        if wrapped_message.is_signer(index) && account.address() == stored_nonce_authority {
             nonce_authority_account = Some(account);
         }
     }

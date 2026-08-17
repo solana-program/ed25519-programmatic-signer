@@ -8,14 +8,12 @@ pub enum Error {
     InvalidNonceAccount = 0,
     /// The message has an unsupported shape, fails sanitization, or contains duplicate keys.
     InvalidMessage = 1,
-    /// The passed accounts do not match the wrapped message's account keys or writability.
+    /// The passed accounts do not match the wrapped message's account keys.
     MessageAccountsMismatch = 2,
-    /// A wrapped message required signer was passed without signer privilege.
-    MissingRequiredSigner = 3,
     /// The nonce account's stored authority is not a required message signer.
-    MissingNonceAuthoritySigner = 4,
+    MissingNonceAuthoritySigner = 3,
     /// The message's lifetime specifier does not match the stored nonce.
-    NonceMismatch = 5,
+    NonceMismatch = 4,
 }
 
 impl From<Error> for ProgramError {
