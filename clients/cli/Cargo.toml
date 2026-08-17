@@ -1,0 +1,24 @@
+[package]
+name = "psigner"
+version = "0.1.0"
+description = "Command-line setup client for SPL programmatic signers"
+authors = { workspace = true }
+repository = { workspace = true }
+homepage = { workspace = true }
+license = { workspace = true }
+edition = { workspace = true }
+
+[[bin]]
+name = "psigner"
+path = "src/main.rs"
+
+[lints]
+workspace = true
+
+[dependencies]
+anyhow = { workspace = true }
+clap = { workspace = true, features = ["derive"] }
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+solana-address = { workspace = true }
+spl-ed25519-signer-client = { workspace = true }
