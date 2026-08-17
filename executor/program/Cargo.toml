@@ -1,0 +1,38 @@
+[package]
+name = "spl-message-executor-program"
+version = "0.1.0"
+description = "SPL Message Executor program"
+authors = { workspace = true }
+repository = { workspace = true }
+homepage = { workspace = true }
+license = { workspace = true }
+edition = { workspace = true }
+
+[lib]
+crate-type = ["cdylib"]
+
+[package.metadata.solana]
+program-id = "ExecxgyHYsAXB4c5dZodV1zJZ9hqfsDCYkRDRATrpkFR"
+
+[lints]
+workspace = true
+
+[dependencies]
+pinocchio = { workspace = true, features = ["alloc", "cpi"] }
+solana-message = { workspace = true }
+solana-sdk-ids = { workspace = true }
+spl-message-executor-interface = { workspace = true }
+spl-nonce-client = { workspace = true, features = ["cpi"] }
+spl-nonce-interface = { workspace = true }
+wincode = { workspace = true }
+
+[dev-dependencies]
+mollusk-svm = { workspace = true }
+solana-account = { workspace = true }
+solana-address = { workspace = true }
+solana-hash = { workspace = true }
+solana-instruction = { workspace = true }
+solana-rent = { workspace = true }
+solana-program-error = { workspace = true }
+solana-system-interface = { workspace = true, features = ["wincode"] }
+spl-message-executor-client = { workspace = true }
