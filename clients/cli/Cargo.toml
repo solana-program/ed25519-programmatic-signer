@@ -20,5 +20,14 @@ anyhow = { workspace = true }
 clap = { workspace = true, features = ["derive"] }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
+solana-account = { workspace = true }
 solana-address = { workspace = true }
+solana-clap-v3-utils = { workspace = true, features = ["agave-unstable-api"] }
+solana-cli-config = { workspace = true, features = ["agave-unstable-api"] }
+solana-commitment-config = { workspace = true }
+solana-native-token = { workspace = true }
+solana-rpc-client = { workspace = true, features = ["agave-unstable-api"] }
 spl-ed25519-signer-client = { workspace = true }
+spl-nonce-client = { workspace = true }
+spl-nonce-interface = { workspace = true }
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }

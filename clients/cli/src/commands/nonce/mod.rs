@@ -1,0 +1,29 @@
+mod show;
+
+use {
+    crate::{client::Client, output::OutputFormat},
+    anyhow::Result,
+    clap::{Args, Subcommand},
+};
+
+#[derive(Debug, Args)]
+pub(crate) struct NonceCommand {
+    #[clap(subcommand)]
+    pub(crate) command: NonceSubcommand,
+}
+
+#[derive(Debug, Subcommand)]
+pub(crate) enum NonceSubcommand {
+    /// Show the nonce, authority, owner, and balance of an SPL Nonce account.
+    Show(show::ShowCommand),
+}
+
+pub(crate) async fn run(
+    command: NonceCommand,
+    client: &Client,
+    output: OutputFormat,
+) -> Result<String> {
+    match command.command {
+        NonceSubcommand::Show(command) => show::run(command, client, output).await,
+    }
+}
