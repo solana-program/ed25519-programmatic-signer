@@ -1,6 +1,6 @@
 use {
     crate::{
-        cpi::replay_instructions,
+        cpi::invoke_instructions,
         validate::{validate_replay_accounts, validate_wrapped_message},
     },
     pinocchio::{AccountView, ProgramResult, error::ProgramError},
@@ -50,5 +50,5 @@ pub fn process_execute(
     // The advance rolls back if any replayed instruction fails.
     spl_nonce_client::cpi::advance(nonce_authority_account, nonce_account, slot_hashes, nonce)?;
 
-    replay_instructions(replay_accounts, &wrapped_message)
+    invoke_instructions(replay_accounts, &wrapped_message)
 }

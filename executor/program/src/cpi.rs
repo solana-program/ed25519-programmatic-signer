@@ -9,7 +9,7 @@ use {
     spl_message_executor_interface::error::Error,
 };
 
-pub fn replay_instructions(
+pub fn invoke_instructions(
     replay_accounts: &[AccountView],
     wrapped_message: &VersionedMessage,
 ) -> ProgramResult {
