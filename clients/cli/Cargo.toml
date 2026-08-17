@@ -36,3 +36,13 @@ spl-ed25519-signer-client = { workspace = true }
 spl-nonce-client = { workspace = true }
 spl-nonce-interface = { workspace = true }
 tokio = { workspace = true, features = ["macros", "rt-multi-thread", "time"] }
+
+[dev-dependencies]
+libtest-mimic = { workspace = true }
+solana-keypair = { workspace = true }
+solana-test-validator = { workspace = true, features = ["dev-context-only-utils"] }
+tempfile = { workspace = true }
+
+[[test]]
+name = "runner"
+harness = false
