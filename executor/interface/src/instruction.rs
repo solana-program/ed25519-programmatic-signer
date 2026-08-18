@@ -1,6 +1,7 @@
 #[cfg(feature = "codama")]
 use codama_macros::CodamaInstructions;
 use {
+    solana_hash::Hash,
     solana_message::VersionedMessage,
     solana_program_error::ProgramError,
     wincode::{SchemaRead, SchemaWrite},
@@ -67,6 +68,13 @@ pub enum Instruction {
     ),
 }
 
+/// Derives the transition commitment for a wrapped message as SHA-256 of its wire encoding.
+/// Each nonce advancement commits to the exact message executed, so altering a message
+/// invalidates every successor precomputed from the original.
+pub fn derive_transition_commitment(message: &VersionedMessage) -> Hash {
+    solana_sha256_hasher::hash(&message.serialize())
+}
+
 impl Instruction {
     #[inline(always)]
     pub fn try_from_bytes(instruction_data: &[u8]) -> Result<Self, ProgramError> {
@@ -78,7 +86,8 @@ impl Instruction {
 #[cfg(test)]
 mod tests {
     use {
-        super::Instruction,
+        super::{Instruction, derive_transition_commitment},
+        solana_hash::Hash,
         solana_message::{Message, VersionedMessage},
         solana_program_error::ProgramError,
     };
@@ -124,6 +133,17 @@ mod tests {
         assert_eq!(
             Instruction::try_from_bytes(&[255]),
             Err(ProgramError::InvalidInstructionData)
+        );
+    }
+
+    #[test]
+    fn transition_commitment_matches_snapshot() {
+        let message = VersionedMessage::Legacy(Message::default());
+        assert_eq!(
+            derive_transition_commitment(&message),
+            "CX5984hat3eK4NK1B9p8wdidmffPKjeDVkYNZihXTdZh"
+                .parse::<Hash>()
+                .unwrap()
         );
     }
 }

@@ -3200,8 +3200,10 @@ version = "0.1.0"
 dependencies = [
  "codama-macros",
  "solana-address 2.6.1",
+ "solana-hash",
  "solana-message",
  "solana-program-error",
+ "solana-sha256-hasher",
  "wincode",
 ]
 
