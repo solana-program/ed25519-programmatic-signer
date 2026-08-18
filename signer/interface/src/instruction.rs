@@ -22,17 +22,18 @@ pub enum Instruction {
     ///
     /// On success, the program:
     /// 1. Verifies the message contains exactly one executor instruction.
-    /// 2. Verifies each `signatures[i]` is `account_keys[i]`'s Ed25519 signature over that message.
-    /// 3. Verifies submitted account keys match the message's account keys in order.
-    /// 4. CPIs to the executor instruction's program using exactly the accounts referenced by the
+    /// 2. Verifies the executor program and instruction discriminator are present in the allow list.
+    /// 3. Verifies each `signatures[i]` is `account_keys[i]`'s Ed25519 signature over that message.
+    /// 4. Verifies submitted account keys match the message's account keys in order.
+    /// 5. CPIs to the executor instruction's program using exactly the accounts referenced by the
     ///    executor instruction's account index list, promoting any referenced authority-derived
     ///    `ProgrammaticSigner` PDAs to a signer.
     ///
     /// Trust assumptions:
-    /// - This program only validates authority signatures, accounts, and flags within wrapped transaction.
+    /// - This program validates authority signatures, accounts, flags, and executor identity.
     /// - The inner signed transaction is an authorization envelope. Only the single executor
     ///   instruction is invoked.
-    /// - The executor instruction data is opaque to this program.
+    /// - Except for its discriminator, executor instruction data is opaque to this program.
     /// - This program is stateless. Replay protection belongs to the executor program.
     ///
     /// Accounts required:

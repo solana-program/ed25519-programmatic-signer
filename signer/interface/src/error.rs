@@ -47,6 +47,8 @@ pub enum Error {
         ))
     )]
     InvalidExecutorAccountIndex = 4,
+    /// The executor program and instruction pair is not permitted by this signer program.
+    DisallowedExecutorInstruction = 5,
 }
 
 impl From<Error> for ProgramError {
