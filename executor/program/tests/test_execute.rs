@@ -19,9 +19,11 @@ use {
     },
     solana_program_error::ProgramError,
     solana_system_interface::instruction::transfer,
-    spl_message_executor_interface::error::Error as MessageExecutorError,
+    spl_message_executor_interface::{
+        error::Error as MessageExecutorError, instruction::derive_transition_commitment,
+    },
     spl_nonce_client::instruction::advance,
-    spl_nonce_interface::error::Error as NonceError,
+    spl_nonce_interface::{error::Error as NonceError, state::Nonce},
 };
 
 pub mod helpers;
@@ -136,6 +138,91 @@ fn execute_rejects_message_reuse_after_nonce_advances() {
     ExecuteBuilder::default()
         .nonce_account(first.nonce_address, first.nonce_account)
         .message(first.message)
+        .check_err(MessageExecutorError::NonceMismatch)
+        .execute();
+}
+
+#[test]
+fn execute_supports_precomputed_nonce_chain() {
+    let mollusk = init_mollusk();
+    let (nonce_address, nonce_account) = initialize_nonce_account(&mollusk, &DEFAULT_AUTHORITY);
+    let initial_state = decode_state(&nonce_account);
+
+    let first_recipient = Address::new_unique();
+    let first_message = VersionedMessage::Legacy(Message::new_with_blockhash(
+        &[transfer(&DEFAULT_AUTHORITY, &first_recipient, 1)],
+        Some(&DEFAULT_AUTHORITY),
+        &initial_state.nonce,
+    ));
+    let first_nonce = initial_state.derive_next_nonce(
+        &spl_nonce_interface::id(),
+        &nonce_address,
+        &derive_transition_commitment(&first_message),
+    );
+
+    let second_recipient = Address::new_unique();
+    let second_message = VersionedMessage::Legacy(Message::new_with_blockhash(
+        &[transfer(&DEFAULT_AUTHORITY, &second_recipient, 1)],
+        Some(&DEFAULT_AUTHORITY),
+        &first_nonce,
+    ));
+    let second_nonce = Nonce {
+        nonce: first_nonce,
+        authority: initial_state.authority,
+    }
+    .derive_next_nonce(
+        &spl_nonce_interface::id(),
+        &nonce_address,
+        &derive_transition_commitment(&second_message),
+    );
+
+    let first = ExecuteBuilder::new(mollusk)
+        .nonce_account(nonce_address, nonce_account)
+        .message(first_message)
+        .execute();
+    assert_eq!(decode_state(&first.nonce_account).nonce, first_nonce);
+
+    let second = ExecuteBuilder::default()
+        .nonce_account(nonce_address, first.nonce_account)
+        .message(second_message)
+        .execute();
+    assert_eq!(decode_state(&second.nonce_account).nonce, second_nonce);
+}
+
+#[test]
+fn tampered_message_invalidates_precomputed_successor() {
+    let mollusk = init_mollusk();
+    let (nonce_address, nonce_account) = initialize_nonce_account(&mollusk, &DEFAULT_AUTHORITY);
+    let initial_state = decode_state(&nonce_account);
+
+    let planned_message = VersionedMessage::Legacy(Message::new_with_blockhash(
+        &[transfer(&DEFAULT_AUTHORITY, &Address::new_unique(), 1)],
+        Some(&DEFAULT_AUTHORITY),
+        &initial_state.nonce,
+    ));
+    let planned_successor = initial_state.derive_next_nonce(
+        &spl_nonce_interface::id(),
+        &nonce_address,
+        &derive_transition_commitment(&planned_message),
+    );
+
+    let tampered_message = VersionedMessage::Legacy(Message::new_with_blockhash(
+        &[transfer(&DEFAULT_AUTHORITY, &Address::new_unique(), 2)],
+        Some(&DEFAULT_AUTHORITY),
+        &initial_state.nonce,
+    ));
+    let tampered = ExecuteBuilder::new(mollusk)
+        .nonce_account(nonce_address, nonce_account)
+        .message(tampered_message)
+        .execute();
+    assert_ne!(
+        decode_state(&tampered.nonce_account).nonce,
+        planned_successor
+    );
+
+    ExecuteBuilder::default()
+        .nonce_account(nonce_address, tampered.nonce_account)
+        .recent_blockhash(planned_successor)
         .check_err(MessageExecutorError::NonceMismatch)
         .execute();
 }
