@@ -1,7 +1,7 @@
 use {
     crate::{
         cpi::invoke_instructions,
-        validate::{validate_replay_accounts, validate_wrapped_message},
+        validate::{validate_message_accounts, validate_wrapped_message},
     },
     pinocchio::{AccountView, ProgramResult, error::ProgramError},
     solana_message::VersionedMessage,
@@ -18,7 +18,7 @@ pub fn process_execute(
         nonce_account,
         nonce_program,
         slot_hashes,
-        replay_accounts @ ..,
+        message_accounts @ ..,
     ] = accounts
     else {
         return Err(ProgramError::NotEnoughAccountKeys);
@@ -44,11 +44,11 @@ pub fn process_execute(
     }
 
     let nonce_authority_account =
-        validate_replay_accounts(replay_accounts, &wrapped_message, &authority)?;
+        validate_message_accounts(message_accounts, &wrapped_message, &authority)?;
 
-    // Consume the nonce before replay to prevent recursive execution.
-    // The advance rolls back if any replayed instruction fails.
+    // Consume the nonce before invoking the message instructions to prevent recursive execution.
+    // The advance rolls back if any instruction invocation fails.
     spl_nonce_client::cpi::advance(nonce_authority_account, nonce_account, slot_hashes, nonce)?;
 
-    invoke_instructions(replay_accounts, &wrapped_message)
+    invoke_instructions(message_accounts, &wrapped_message)
 }

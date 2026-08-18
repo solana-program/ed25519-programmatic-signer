@@ -10,10 +10,10 @@ use {
 };
 
 pub fn invoke_instructions(
-    replay_accounts: &[AccountView],
+    message_accounts: &[AccountView],
     wrapped_message: &VersionedMessage,
 ) -> ProgramResult {
-    // Allocate once for the largest instruction and reuse across the replay
+    // Allocate once for the largest instruction and reuse across the execution
     let max_instruction_accounts = wrapped_message
         .instructions()
         .iter()
@@ -23,20 +23,20 @@ pub fn invoke_instructions(
     let mut instruction_accounts = Vec::with_capacity(max_instruction_accounts);
     let mut account_views = Vec::with_capacity(max_instruction_accounts);
 
-    // Replay instructions via CPI
+    // Invoke each instruction via CPI
     for ix in wrapped_message.instructions() {
         instruction_accounts.clear();
         account_views.clear();
 
         // Resolve the invoked program
-        let program_account = replay_accounts
+        let program_account = message_accounts
             .get(usize::from(ix.program_id_index))
             .ok_or(Error::InvalidMessage)?;
 
         // Rebuild CPI accounts with exactly the message requested privileges
         for idx in &ix.accounts {
             let account_index = usize::from(*idx);
-            let replay_account = replay_accounts
+            let message_account = message_accounts
                 .get(account_index)
                 .ok_or(Error::InvalidMessage)?;
             let is_writable = wrapped_message
@@ -44,11 +44,11 @@ pub fn invoke_instructions(
             let is_signer = wrapped_message.is_signer(account_index);
 
             instruction_accounts.push(InstructionAccount::new(
-                replay_account.address(),
+                message_account.address(),
                 is_writable,
                 is_signer,
             ));
-            account_views.push(replay_account);
+            account_views.push(message_account);
         }
 
         let ix_view = InstructionView {

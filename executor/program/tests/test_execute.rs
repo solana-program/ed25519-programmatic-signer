@@ -139,7 +139,7 @@ fn execute_rejects_recent_blockhash_mismatch() {
 }
 
 #[test]
-fn execute_rejects_replay_after_nonce_advances() {
+fn execute_rejects_message_reuse_after_nonce_advances() {
     let first = ExecuteBuilder::default().execute();
 
     ExecuteBuilder::default()
@@ -225,9 +225,9 @@ fn execute_rejects_uninitialized_nonce_account() {
 }
 
 #[test]
-fn execute_downgrades_extra_writable_privilege_during_replay() {
+fn execute_downgrades_extra_writable_privilege_for_inner_cpi() {
     // Verifies extra writable privilege on the outer executor instruction
-    // does not leak into the replayed CPI
+    // does not leak into the inner CPI
     let recipient = Address::new_unique();
 
     ExecuteBuilder::default()
@@ -246,9 +246,9 @@ fn execute_downgrades_extra_writable_privilege_during_replay() {
 }
 
 #[test]
-fn execute_downgrades_extra_signer_privilege_during_replay() {
+fn execute_downgrades_extra_signer_privilege_for_inner_cpi() {
     // Verifies extra signer privilege on the outer executor instruction
-    // does not leak into the replayed CPI
+    // does not leak into the inner CPI
     let source = Address::new_unique();
     let recipient = Address::new_unique();
 
@@ -270,7 +270,7 @@ fn execute_downgrades_extra_signer_privilege_during_replay() {
 }
 
 #[test]
-fn execute_rolls_back_nonce_when_replay_fails() {
+fn execute_rolls_back_nonce_when_inner_instruction_fails() {
     let recipient = Address::new_unique();
 
     let overdraft = 1_000_000_000;
@@ -399,7 +399,7 @@ fn assert_static_message_executes(
 
 #[test]
 fn execute_empty_message_advances_nonce() {
-    // An empty replay must still consume the nonce
+    // An empty message must still consume the nonce
     let mollusk = init_mollusk();
     let (nonce_address, nonce_account) = initialize_nonce_account(&mollusk, &DEFAULT_AUTHORITY);
     let old_nonce = decode_state(&nonce_account).nonce;
@@ -431,7 +431,7 @@ fn execute_batches_instructions_from_multiple_signers() {
 }
 
 #[test]
-fn execute_replays_duplicate_instruction_account_indices() {
+fn execute_accepts_duplicate_instruction_account_indices() {
     let result = ExecuteBuilder::default()
         .inner_instruction(transfer(&DEFAULT_AUTHORITY, &DEFAULT_AUTHORITY, 1))
         .execute();
