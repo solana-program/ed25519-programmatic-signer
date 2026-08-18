@@ -13,17 +13,19 @@ use {
 pub fn advance(
     authority: &AccountView,
     nonce_account: &AccountView,
-    slot_hashes: &AccountView,
     current_nonce: Hash,
+    transition_commitment: Hash,
 ) -> ProgramResult {
-    let instruction = Instruction::Advance(AdvanceNonceArgs { current_nonce });
+    let instruction = Instruction::Advance(AdvanceNonceArgs {
+        current_nonce,
+        transition_commitment,
+    });
     let data =
         wincode::serialize(&instruction).map_err(|_| ProgramError::InvalidInstructionData)?;
 
     let instruction_accounts = [
         InstructionAccount::new(authority.address(), false, true),
         InstructionAccount::new(nonce_account.address(), true, false),
-        InstructionAccount::new(slot_hashes.address(), false, false),
     ];
     let view = InstructionView {
         program_id: &spl_nonce_interface::ID,
@@ -31,5 +33,5 @@ pub fn advance(
         data: data.as_slice(),
     };
 
-    invoke_with_bounds::<3, &AccountView>(&view, &[authority, nonce_account, slot_hashes])
+    invoke_with_bounds::<2, &AccountView>(&view, &[authority, nonce_account])
 }

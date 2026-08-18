@@ -293,7 +293,12 @@ fn execute_rejects_message_that_consumes_its_own_nonce() {
 
     ExecuteBuilder::new(mollusk)
         .nonce_account(nonce_address, nonce_account)
-        .inner_instruction(advance(&DEFAULT_AUTHORITY, &nonce_address, old_nonce))
+        .inner_instruction(advance(
+            &DEFAULT_AUTHORITY,
+            &nonce_address,
+            old_nonce,
+            Hash::default(),
+        ))
         .check_err(NonceError::NonceMismatch)
         .execute();
 }

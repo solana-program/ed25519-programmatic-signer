@@ -49,19 +49,19 @@ impl Nonce {
         ])
     }
 
-    /// Derives the value that follows this nonce for the given recent slot hash.
+    /// Derives the value that follows this nonce.
     pub fn derive_next_nonce(
         &self,
         program_id: &Address,
         nonce_account: &Address,
-        recent_slot_hash: &Hash,
+        transition_commitment: &Hash,
     ) -> Hash {
         hashv(&[
-            NONCE_STEP_TAG,              // domain-separates advancement from initialization
-            program_id.as_array(),       // binds the derivation to the program address
-            nonce_account.as_array(),    // binds each successor to the nonce-account address
-            self.nonce.as_bytes(),       // makes the successor depend on the current nonce
-            recent_slot_hash.as_bytes(), // makes the successor depend on the recent slot hash
+            NONCE_STEP_TAG,                   // domain-separates advancement from initialization
+            program_id.as_array(),            // binds the derivation to the program address
+            nonce_account.as_array(),         // binds each successor to the nonce-account address
+            self.nonce.as_bytes(),            // makes the successor depend on the current nonce
+            transition_commitment.as_bytes(), // binds the successor to the action this step authorizes
         ])
     }
 }
@@ -88,6 +88,7 @@ mod tests {
         let program_id = Address::from([1; 32]);
         let nonce_account = Address::from([2; 32]);
         let recent_slot_hash = Hash::from([3; 32]);
+        let transition_commitment = Hash::from([4; 32]);
 
         assert_eq!(
             Nonce::derive_initial_nonce(&program_id, &nonce_account, &recent_slot_hash),
@@ -103,8 +104,8 @@ mod tests {
             authority: Address::default(),
         };
         assert_eq!(
-            state.derive_next_nonce(&program_id, &nonce_account, &recent_slot_hash),
-            "8Sh5B8dWH6xhSmHdwxLPWVifNFRXdGrd8nA9G7RMcVg4"
+            state.derive_next_nonce(&program_id, &nonce_account, &transition_commitment),
+            "EgbzChWYoCDgPbJNWv8nVUqdxnoxDTRXg2stzPKhYZu4"
                 .parse::<Hash>()
                 .unwrap()
         );

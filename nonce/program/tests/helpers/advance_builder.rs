@@ -16,6 +16,7 @@ pub struct AdvanceBuilder<'a> {
     authority: Address,
     nonce_account: Option<(Address, Account)>,
     current_nonce: Option<Hash>,
+    transition_commitment: Hash,
     authority_is_signer: bool,
     advance_authority: Option<Address>,
     checks: Vec<Check<'a>>,
@@ -28,6 +29,7 @@ impl Default for AdvanceBuilder<'_> {
             authority: Address::from([2; 32]),
             nonce_account: None,
             current_nonce: None,
+            transition_commitment: Hash::new_from_array([3; 32]),
             authority_is_signer: true,
             advance_authority: None,
             checks: vec![],
@@ -43,6 +45,11 @@ impl<'a> AdvanceBuilder<'a> {
 
     pub fn current_nonce(mut self, current_nonce: Hash) -> Self {
         self.current_nonce = Some(current_nonce);
+        self
+    }
+
+    pub fn transition_commitment(mut self, transition_commitment: Hash) -> Self {
+        self.transition_commitment = transition_commitment;
         self
     }
 
@@ -71,7 +78,12 @@ impl<'a> AdvanceBuilder<'a> {
             .unwrap_or_else(|| decode_state(&nonce_account).nonce);
         let advance_authority = self.advance_authority.unwrap_or(self.authority);
 
-        let mut instruction = advance(&advance_authority, &nonce_account_address, current_nonce);
+        let mut instruction = advance(
+            &advance_authority,
+            &nonce_account_address,
+            current_nonce,
+            self.transition_commitment,
+        );
         if !self.authority_is_signer {
             instruction.accounts[0] = AccountMeta::new_readonly(advance_authority, false);
         }
@@ -79,7 +91,6 @@ impl<'a> AdvanceBuilder<'a> {
         let accounts = vec![
             (advance_authority, Account::default()),
             (nonce_account_address, nonce_account),
-            self.mollusk.sysvars.keyed_account_for_slot_hashes_sysvar(),
         ];
 
         if self.checks.is_empty() {

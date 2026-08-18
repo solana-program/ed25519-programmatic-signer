@@ -64,6 +64,13 @@ pub enum Instruction {
     /// via CPI after their work succeeds. `current_nonce` is re-checked here so the
     /// nonce cannot be consumed twice within one transaction.
     ///
+    /// By convention, `transition_commitment` is a hash of whatever action the advancement
+    /// authorizes. The program does not validate it or mix in entropy of its own, so an authority
+    /// that fixes its commitments in advance knows every future nonce value. This allows signing
+    /// an ordered batch of transactions up front, where each becomes valid only after its
+    /// predecessor executes. Advancing with a different commitment at any step yields a different
+    /// successor and invalidates everything signed against the abandoned branch.
+    ///
     /// Instruction data is the discriminator followed by a serialized [`AdvanceNonceArgs`].
     ///
     /// On success, the program:
@@ -71,12 +78,11 @@ pub enum Instruction {
     ///    runtime signer privilege.
     /// 2. Verifies the stored nonce equals `current_nonce`.
     /// 3. Stores the next nonce by hashing the advancement tag, program id, nonce account
-    ///    address, old nonce, and latest slot hash.
+    ///    address, old nonce, and transition commitment.
     ///
     /// Required accounts.
     /// - `[signer]` Authority stored in the nonce account
     /// - `[writable]` Nonce account
-    /// - `[]` `SlotHashes` sysvar
     #[cfg_attr(
         feature = "codama",
         codama(display(
@@ -93,12 +99,6 @@ pub enum Instruction {
             name = "nonce_account",
             writable,
             docs = "Nonce account to advance"
-        )),
-        codama(account(
-            name = "slot_hashes",
-            docs = "Slot Hashes sysvar",
-            default_value = sysvar("slot_hashes"),
-            display(skip = always)
         ))
     )]
     Advance(
@@ -118,7 +118,11 @@ pub enum Instruction {
 /// Payload for nonce advancement.
 #[derive(Clone, Debug, PartialEq, Eq, SchemaRead, SchemaWrite)]
 pub struct AdvanceNonceArgs {
+    /// Nonce value the account must currently store.
     pub current_nonce: Hash,
+    /// Value the successor nonce commits to, conventionally a hash of the action being
+    /// authorized. See [`Instruction::Advance`].
+    pub transition_commitment: Hash,
 }
 
 impl Instruction {
@@ -139,6 +143,7 @@ mod tests {
 
     const ADVANCE_IX: Instruction = Instruction::Advance(AdvanceNonceArgs {
         current_nonce: Hash::new_from_array([1; 32]),
+        transition_commitment: Hash::new_from_array([2; 32]),
     });
 
     #[test_case(Instruction::Initialize, 0)]

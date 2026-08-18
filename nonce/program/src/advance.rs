@@ -1,5 +1,4 @@
 use {
-    crate::nonce::recent_slot_hash,
     pinocchio::{AccountView, Address, ProgramResult, error::ProgramError},
     spl_nonce_interface::{error::Error, instruction::AdvanceNonceArgs, state::Nonce},
     wincode::ZeroCopy,
@@ -12,7 +11,7 @@ pub fn process_advance(
     accounts: &mut [AccountView],
     advance: AdvanceNonceArgs,
 ) -> ProgramResult {
-    let [authority, nonce_account, slot_hashes_account, ..] = accounts else {
+    let [authority, nonce_account, ..] = accounts else {
         return Err(ProgramError::NotEnoughAccountKeys);
     };
 
@@ -48,8 +47,11 @@ pub fn process_advance(
         return Err(Error::NonceMismatch.into());
     }
 
-    let recent_slot_hash = recent_slot_hash(slot_hashes_account)?;
-    state.nonce = state.derive_next_nonce(program_id, nonce_account.address(), &recent_slot_hash);
+    state.nonce = state.derive_next_nonce(
+        program_id,
+        nonce_account.address(),
+        &advance.transition_commitment,
+    );
 
     Ok(())
 }
