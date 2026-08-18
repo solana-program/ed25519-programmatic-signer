@@ -56,15 +56,6 @@ fn execute_rejects_nonce_account_owned_by_another_program() {
 }
 
 #[test]
-fn execute_rejects_wrong_slot_hashes_account() {
-    let wrong_slot_hashes = Address::new_unique();
-    ExecuteBuilder::default()
-        .mutate_execute_ix(move |ix| ix.accounts[2].pubkey = wrong_slot_hashes)
-        .check_err(ProgramError::UnsupportedSysvar)
-        .execute();
-}
-
-#[test]
 fn execute_rejects_malformed_nonce_account() {
     // Program owned but with truncated data that cannot parse as nonce state
     let (nonce_address, nonce_account) = NonceAccountBuilder::new().data(vec![0; 1]).build();
@@ -164,7 +155,7 @@ fn execute_rejects_account_count_mismatch() {
 fn execute_rejects_account_order_mismatch() {
     ExecuteBuilder::default()
         .inner_instruction(transfer(&DEFAULT_AUTHORITY, &Address::new_unique(), 1))
-        .mutate_execute_ix(|ix| ix.accounts.swap(3, 4))
+        .mutate_execute_ix(|ix| ix.accounts.swap(2, 3))
         .check_err(MessageExecutorError::MessageAccountsMismatch)
         .execute();
 }
@@ -173,7 +164,7 @@ fn execute_rejects_account_order_mismatch() {
 fn execute_rejects_readonly_message_writable_account() {
     ExecuteBuilder::default()
         .inner_instruction(transfer(&DEFAULT_AUTHORITY, &Address::new_unique(), 1))
-        .mutate_execute_ix(|ix| ix.accounts[4].is_writable = false)
+        .mutate_execute_ix(|ix| ix.accounts[3].is_writable = false)
         .check(Check::instruction_err(
             InstructionError::PrivilegeEscalation,
         ))
@@ -183,7 +174,7 @@ fn execute_rejects_readonly_message_writable_account() {
 #[test]
 fn execute_rejects_missing_required_signer_privilege() {
     ExecuteBuilder::default()
-        .mutate_execute_ix(|ix| ix.accounts[3].is_signer = false)
+        .mutate_execute_ix(|ix| ix.accounts[2].is_signer = false)
         .check(Check::instruction_err(
             InstructionError::PrivilegeEscalation,
         ))
@@ -238,7 +229,7 @@ fn execute_downgrades_extra_writable_privilege_for_inner_cpi() {
             message.header.num_readonly_unsigned_accounts = 2;
         })
         // gives recipient extra writable privilege on the outer ix
-        .mutate_execute_ix(|ix| ix.accounts[4].is_writable = true)
+        .mutate_execute_ix(|ix| ix.accounts[3].is_writable = true)
         .check(Check::instruction_err(
             InstructionError::ReadonlyLamportChange,
         ))
@@ -260,7 +251,7 @@ fn execute_downgrades_extra_signer_privilege_for_inner_cpi() {
             message.header.num_required_signatures = 1;
         })
         // gives source extra signer privilege on the outer ix
-        .mutate_execute_ix(|ix| ix.accounts[4].is_signer = true)
+        .mutate_execute_ix(|ix| ix.accounts[3].is_signer = true)
         .account(
             source,
             Account::new(1, 0, &solana_system_interface::program::id()),

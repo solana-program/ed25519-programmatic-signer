@@ -33,7 +33,6 @@ pub enum Instruction {
     /// Accounts required:
     /// - `[writable]` Nonce account to advance
     /// - `[]` SPL Nonce program
-    /// - `[]` `SlotHashes` sysvar
     /// - Message accounts referenced by the wrapped message, in order
     #[cfg_attr(
         feature = "codama",

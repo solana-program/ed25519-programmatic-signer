@@ -3,7 +3,6 @@ use {
     solana_address::Address,
     solana_instruction::{AccountMeta, Instruction},
     solana_message::VersionedMessage,
-    solana_sdk_ids::sysvar::slot_hashes,
     spl_message_executor_interface::instruction::Instruction as MessageExecutorInstruction,
 };
 
@@ -12,10 +11,9 @@ pub fn execute(nonce_account: &Address, message: &VersionedMessage) -> Instructi
     let account_addrs = message.static_account_keys();
 
     // Fixed accounts for consuming the nonce, followed by the wrapped message's accounts
-    let mut accounts = Vec::with_capacity(account_addrs.len().saturating_add(3));
+    let mut accounts = Vec::with_capacity(account_addrs.len().saturating_add(2));
     accounts.push(AccountMeta::new(*nonce_account, false));
     accounts.push(AccountMeta::new_readonly(spl_nonce_interface::id(), false));
-    accounts.push(AccountMeta::new_readonly(slot_hashes::id(), false));
 
     for (index, address) in account_addrs.iter().enumerate() {
         accounts.push(AccountMeta {

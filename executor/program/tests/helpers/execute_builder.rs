@@ -157,7 +157,6 @@ impl<'a> ExecuteBuilder<'a> {
                 },
             ),
             mollusk_svm::program::keyed_account_for_system_program(),
-            mollusk.sysvars.keyed_account_for_slot_hashes_sysvar(),
             (
                 spl_nonce_interface::id(),
                 mollusk_svm::program::create_program_account_loader_v3(&spl_nonce_interface::id()),

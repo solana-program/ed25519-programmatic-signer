@@ -3189,7 +3189,6 @@ dependencies = [
  "solana-address 2.6.1",
  "solana-instruction",
  "solana-message",
- "solana-sdk-ids",
  "spl-message-executor-interface",
  "spl-nonce-interface",
 ]
@@ -3220,7 +3219,6 @@ dependencies = [
  "solana-message",
  "solana-program-error",
  "solana-rent",
- "solana-sdk-ids",
  "solana-system-interface",
  "spl-message-executor-client",
  "spl-message-executor-interface",
