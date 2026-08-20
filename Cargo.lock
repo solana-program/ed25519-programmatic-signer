@@ -3183,51 +3183,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "spl-message-executor-client"
-version = "0.1.0"
-dependencies = [
- "solana-address 2.6.1",
- "solana-instruction",
- "solana-message",
- "spl-message-executor-interface",
- "spl-nonce-interface",
-]
-
-[[package]]
-name = "spl-message-executor-interface"
-version = "0.1.0"
-dependencies = [
- "codama-macros",
- "solana-address 2.6.1",
- "solana-hash",
- "solana-message",
- "solana-program-error",
- "solana-sha256-hasher",
- "wincode",
-]
-
-[[package]]
-name = "spl-message-executor-program"
-version = "0.1.0"
-dependencies = [
- "mollusk-svm",
- "pinocchio",
- "solana-account",
- "solana-address 2.6.1",
- "solana-hash",
- "solana-instruction",
- "solana-message",
- "solana-program-error",
- "solana-rent",
- "solana-system-interface",
- "spl-message-executor-client",
- "spl-message-executor-interface",
- "spl-nonce-client",
- "spl-nonce-interface",
- "wincode",
-]
-
-[[package]]
 name = "spl-nonce-client"
 version = "0.1.0"
 dependencies = [
@@ -3269,6 +3224,52 @@ dependencies = [
  "spl-nonce-client",
  "spl-nonce-interface",
  "test-case",
+ "wincode",
+]
+
+[[package]]
+name = "spl-v1-message-executor-client"
+version = "0.1.0"
+dependencies = [
+ "solana-address 2.6.1",
+ "solana-instruction",
+ "solana-message",
+ "spl-nonce-interface",
+ "spl-v1-message-executor-interface",
+]
+
+[[package]]
+name = "spl-v1-message-executor-interface"
+version = "0.1.0"
+dependencies = [
+ "codama-macros",
+ "solana-address 2.6.1",
+ "solana-hash",
+ "solana-message",
+ "solana-program-error",
+ "solana-sha256-hasher",
+ "wincode",
+]
+
+[[package]]
+name = "spl-v1-message-executor-program"
+version = "0.1.0"
+dependencies = [
+ "mollusk-svm",
+ "pinocchio",
+ "solana-account",
+ "solana-address 2.6.1",
+ "solana-hash",
+ "solana-instruction",
+ "solana-message",
+ "solana-program-error",
+ "solana-rent",
+ "solana-sanitize",
+ "solana-system-interface",
+ "spl-nonce-client",
+ "spl-nonce-interface",
+ "spl-v1-message-executor-client",
+ "spl-v1-message-executor-interface",
  "wincode",
 ]
 

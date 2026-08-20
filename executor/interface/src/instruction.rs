@@ -2,12 +2,12 @@
 use codama_macros::CodamaInstructions;
 use {
     solana_hash::Hash,
-    solana_message::VersionedMessage,
+    solana_message::v1,
     solana_program_error::ProgramError,
     wincode::{SchemaRead, SchemaWrite},
 };
 
-/// Instructions supported by the SPL Message Executor program.
+/// Instructions supported by the SPL V1 Message Executor program.
 #[derive(Clone, Debug, PartialEq, Eq, SchemaRead, SchemaWrite)]
 #[wincode(tag_encoding = "u8")]
 #[cfg_attr(
@@ -20,7 +20,7 @@ pub enum Instruction {
     /// for replay protection. This program is intended to be invoked after a signer program has
     /// verified signatures and promoted any authorized PDAs to signer.
     ///
-    /// Instruction data: the discriminator followed by a serialized [`VersionedMessage`].
+    /// Instruction data: the discriminator followed by a serialized [`v1::Message`].
     ///
     /// On success, the program:
     /// 1. Deserializes and sanitizes the wrapped message.
@@ -48,12 +48,6 @@ pub enum Instruction {
             docs = "SPL Nonce program",
             default_value = public_key("Noncediea1fH12usShuQAz28UhgAeuE5Maf32LsMUQB"),
             display(skip = always)
-        )),
-        codama(account(
-            name = "slot_hashes",
-            docs = "Slot Hashes sysvar",
-            default_value = sysvar("slot_hashes"),
-            display(skip = always)
         ))
     )]
     Execute(
@@ -63,14 +57,14 @@ pub enum Instruction {
             codama(type = bytes),
             codama(display(label = "Wrapped message"))
         )]
-        VersionedMessage,
+        v1::Message,
     ),
 }
 
 /// Derives the transition commitment for a wrapped message as SHA-256 of its wire encoding.
 /// Each nonce advancement commits to the exact message executed, so altering a message
 /// invalidates every successor precomputed from the original.
-pub fn derive_transition_commitment(message: &VersionedMessage) -> Hash {
+pub fn derive_transition_commitment(message: &v1::Message) -> Hash {
     solana_sha256_hasher::hash(&message.serialize())
 }
 
@@ -87,34 +81,28 @@ mod tests {
     use {
         super::{Instruction, derive_transition_commitment},
         solana_hash::Hash,
-        solana_message::{Message, VersionedMessage},
+        solana_message::v1,
         solana_program_error::ProgramError,
     };
 
     #[test]
     fn instruction_tags_match_wire_format() {
         assert_eq!(
-            wincode::serialize(&Instruction::Execute(VersionedMessage::Legacy(
-                Message::default(),
-            )))
-            .unwrap()[0],
+            wincode::serialize(&Instruction::Execute(v1::Message::default())).unwrap()[0],
             0
         );
     }
 
     #[test]
     fn execute_round_trips() {
-        let instruction = Instruction::Execute(VersionedMessage::Legacy(Message::default()));
+        let instruction = Instruction::Execute(v1::Message::default());
         let bytes = wincode::serialize(&instruction).unwrap();
         assert_eq!(Instruction::try_from_bytes(&bytes).unwrap(), instruction);
     }
 
     #[test]
     fn execute_rejects_trailing_data() {
-        let mut bytes = wincode::serialize(&Instruction::Execute(VersionedMessage::Legacy(
-            Message::default(),
-        )))
-        .unwrap();
+        let mut bytes = wincode::serialize(&Instruction::Execute(v1::Message::default())).unwrap();
         bytes.extend_from_slice(&[1, 2, 3]);
 
         assert_eq!(
@@ -137,10 +125,10 @@ mod tests {
 
     #[test]
     fn transition_commitment_matches_snapshot() {
-        let message = VersionedMessage::Legacy(Message::default());
+        let message = v1::Message::default();
         assert_eq!(
             derive_transition_commitment(&message),
-            "CX5984hat3eK4NK1B9p8wdidmffPKjeDVkYNZihXTdZh"
+            "CBg3iVEh1d3hGJDQQ7eQxEJhZ9txvkCeeMDSMaVTWZwc"
                 .parse::<Hash>()
                 .unwrap()
         );

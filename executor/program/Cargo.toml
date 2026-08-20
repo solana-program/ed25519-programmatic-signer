@@ -1,7 +1,7 @@
 [package]
-name = "spl-message-executor-program"
+name = "spl-v1-message-executor-program"
 version = "0.1.0"
-description = "SPL Message Executor program"
+description = "SPL V1 Message Executor program"
 authors = { workspace = true }
 repository = { workspace = true }
 homepage = { workspace = true }
@@ -20,7 +20,8 @@ workspace = true
 [dependencies]
 pinocchio = { workspace = true, features = ["alloc", "cpi"] }
 solana-message = { workspace = true }
-spl-message-executor-interface = { workspace = true }
+solana-sanitize = { workspace = true }
+spl-v1-message-executor-interface = { workspace = true }
 spl-nonce-client = { workspace = true, features = ["cpi"] }
 spl-nonce-interface = { workspace = true }
 wincode = { workspace = true }
@@ -34,4 +35,4 @@ solana-instruction = { workspace = true }
 solana-rent = { workspace = true }
 solana-program-error = { workspace = true }
 solana-system-interface = { workspace = true, features = ["wincode"] }
-spl-message-executor-client = { workspace = true }
+spl-v1-message-executor-client = { workspace = true }
