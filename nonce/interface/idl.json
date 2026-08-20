@@ -1,0 +1,215 @@
+{
+  "kind": "rootNode",
+  "standard": "codama",
+  "version": "1.8.0",
+  "program": {
+    "kind": "programNode",
+    "name": "nonce",
+    "publicKey": "Noncediea1fH12usShuQAz28UhgAeuE5Maf32LsMUQB",
+    "version": "0.1.0",
+    "accounts": [
+      {
+        "kind": "accountNode",
+        "name": "nonce",
+        "data": {
+          "kind": "structTypeNode",
+          "fields": [
+            {
+              "kind": "structFieldTypeNode",
+              "name": "nonce",
+              "type": {
+                "kind": "publicKeyTypeNode"
+              }
+            },
+            {
+              "kind": "structFieldTypeNode",
+              "name": "authority",
+              "type": {
+                "kind": "publicKeyTypeNode"
+              }
+            }
+          ]
+        },
+        "discriminators": [
+          {
+            "kind": "sizeDiscriminatorNode",
+            "size": 64
+          }
+        ]
+      }
+    ],
+    "instructions": [
+      {
+        "kind": "instructionNode",
+        "name": "initialize",
+        "accounts": [
+          {
+            "kind": "instructionAccountNode",
+            "name": "nonceAccount",
+            "isWritable": true,
+            "isSigner": false,
+            "docs": [
+              "Nonce account to initialize"
+            ]
+          },
+          {
+            "kind": "instructionAccountNode",
+            "name": "authority",
+            "isWritable": false,
+            "isSigner": false,
+            "docs": [
+              "Authority stored in the nonce account"
+            ]
+          },
+          {
+            "kind": "instructionAccountNode",
+            "name": "slotHashes",
+            "isWritable": false,
+            "isSigner": false,
+            "docs": [
+              "Slot Hashes sysvar"
+            ],
+            "defaultValue": {
+              "kind": "publicKeyValueNode",
+              "publicKey": "SysvarS1otHashes111111111111111111111111111"
+            },
+            "display": {
+              "kind": "instructionAccountDisplayNode",
+              "skip": "always"
+            }
+          }
+        ],
+        "arguments": [
+          {
+            "kind": "instructionArgumentNode",
+            "name": "discriminator",
+            "defaultValueStrategy": "omitted",
+            "type": {
+              "kind": "numberTypeNode",
+              "format": "u8",
+              "endian": "le"
+            },
+            "defaultValue": {
+              "kind": "numberValueNode",
+              "number": 0
+            },
+            "display": {
+              "kind": "structFieldDisplayNode",
+              "skip": "always"
+            }
+          }
+        ],
+        "discriminators": [
+          {
+            "kind": "fieldDiscriminatorNode",
+            "name": "discriminator",
+            "offset": 0
+          }
+        ],
+        "display": {
+          "kind": "instructionDisplayNode",
+          "intent": "Initialize nonce account"
+        }
+      },
+      {
+        "kind": "instructionNode",
+        "name": "advance",
+        "accounts": [
+          {
+            "kind": "instructionAccountNode",
+            "name": "authority",
+            "isWritable": false,
+            "isSigner": true,
+            "docs": [
+              "Authority stored in the nonce account"
+            ]
+          },
+          {
+            "kind": "instructionAccountNode",
+            "name": "nonceAccount",
+            "isWritable": true,
+            "isSigner": false,
+            "docs": [
+              "Nonce account to advance"
+            ]
+          },
+          {
+            "kind": "instructionAccountNode",
+            "name": "slotHashes",
+            "isWritable": false,
+            "isSigner": false,
+            "docs": [
+              "Slot Hashes sysvar"
+            ],
+            "defaultValue": {
+              "kind": "publicKeyValueNode",
+              "publicKey": "SysvarS1otHashes111111111111111111111111111"
+            },
+            "display": {
+              "kind": "instructionAccountDisplayNode",
+              "skip": "always"
+            }
+          }
+        ],
+        "arguments": [
+          {
+            "kind": "instructionArgumentNode",
+            "name": "discriminator",
+            "defaultValueStrategy": "omitted",
+            "type": {
+              "kind": "numberTypeNode",
+              "format": "u8",
+              "endian": "le"
+            },
+            "defaultValue": {
+              "kind": "numberValueNode",
+              "number": 1
+            },
+            "display": {
+              "kind": "structFieldDisplayNode",
+              "skip": "always"
+            }
+          },
+          {
+            "kind": "instructionArgumentNode",
+            "name": "currentNonce",
+            "type": {
+              "kind": "publicKeyTypeNode"
+            }
+          }
+        ],
+        "discriminators": [
+          {
+            "kind": "fieldDiscriminatorNode",
+            "name": "discriminator",
+            "offset": 0
+          }
+        ],
+        "display": {
+          "kind": "instructionDisplayNode",
+          "intent": "Advance nonce"
+        }
+      }
+    ],
+    "errors": [
+      {
+        "kind": "errorNode",
+        "name": "invalidNonceAccount",
+        "code": 0,
+        "message": "The nonce account is malformed or not writable"
+      },
+      {
+        "kind": "errorNode",
+        "name": "authorityMismatch",
+        "code": 1,
+        "message": "The stored authority does not match the passed authority account"
+      },
+      {
+        "kind": "errorNode",
+        "name": "nonceMismatch",
+        "code": 2,
+        "message": "The stored nonce does not match the nonce supplied by the caller"
+      }
+    ]
+  }
+}

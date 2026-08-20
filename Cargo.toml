@@ -21,6 +21,7 @@ edition = "2021"
 
 [workspace.dependencies]
 brine-ed25519 = "0.7.0"
+codama-macros = "0.13.1"
 mollusk-svm = "0.14.0"
 pinocchio = { version = "0.11.2", default-features = false }
 solana-account = "4.3.0"

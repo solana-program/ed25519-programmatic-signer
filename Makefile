@@ -1,5 +1,6 @@
 RUST_TOOLCHAIN_NIGHTLY = nightly-2026-01-22
 SOLANA_CLI_VERSION = 3.1.8
+CODAMA_CLI_VERSION = 0.13.1
 
 nightly = +${RUST_TOOLCHAIN_NIGHTLY}
 
@@ -63,6 +64,15 @@ test-%:
 
 generate-clients:
 	@echo "No clients to generate yet"
+
+generate-idl-%:
+	@cargo install --locked --version =${CODAMA_CLI_VERSION} codama-cli
+	@mkdir -p target/codama-idl
+	codama-rs generate-idl $(call make-path,$*) \
+		--output target/codama-idl/$*.json \
+		--pretty \
+		$(ARGS)
+	pnpm codama run idl --idl target/codama-idl/$*.json
 
 check-no-std-core-%:
 	cargo $(nightly) hack check \

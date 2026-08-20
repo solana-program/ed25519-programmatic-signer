@@ -1,4 +1,11 @@
 {
   "private": true,
+  "devDependencies": {
+    "@codama/renderers-core": "1.4.0",
+    "codama": "1.10.2"
+  },
+  "engines": {
+    "node": ">=v20.0.0"
+  },
   "packageManager": "pnpm@10.15.0"
 }

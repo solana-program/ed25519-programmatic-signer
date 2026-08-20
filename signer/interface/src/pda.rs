@@ -1,3 +1,5 @@
+#[cfg(feature = "codama")]
+use codama_macros::CodamaPda;
 use solana_address::Address;
 
 /// Programmatic signer for an authority.
@@ -7,6 +9,12 @@ use solana_address::Address;
 /// authority has signed the wrapped transaction message.
 ///
 /// Seeds: `["programmatic-signer", authority, bump]`
+#[cfg_attr(
+    feature = "codama",
+    derive(CodamaPda),
+    codama(seed(type = string(utf8), value = "programmatic-signer")),
+    codama(seed(name = "authority", type = public_key))
+)]
 pub struct ProgrammaticSigner;
 
 impl ProgrammaticSigner {

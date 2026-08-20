@@ -1,0 +1,136 @@
+{
+  "kind": "rootNode",
+  "standard": "codama",
+  "version": "1.8.0",
+  "program": {
+    "kind": "programNode",
+    "name": "ed25519Signer",
+    "publicKey": "EdSigVfK1DkeMrjFNDMjwfQaJPhPTtX7jW8uPv3oKEgN",
+    "version": "0.1.0",
+    "instructions": [
+      {
+        "kind": "instructionNode",
+        "name": "submit",
+        "arguments": [
+          {
+            "kind": "instructionArgumentNode",
+            "name": "discriminator",
+            "defaultValueStrategy": "omitted",
+            "type": {
+              "kind": "numberTypeNode",
+              "format": "u8",
+              "endian": "le"
+            },
+            "defaultValue": {
+              "kind": "numberValueNode",
+              "number": 0
+            },
+            "display": {
+              "kind": "structFieldDisplayNode",
+              "skip": "always"
+            }
+          },
+          {
+            "kind": "instructionArgumentNode",
+            "name": "transaction",
+            "type": {
+              "kind": "bytesTypeNode"
+            }
+          }
+        ],
+        "discriminators": [
+          {
+            "kind": "fieldDiscriminatorNode",
+            "name": "discriminator",
+            "offset": 0
+          }
+        ],
+        "display": {
+          "kind": "instructionDisplayNode",
+          "intent": "Verify signatures and submit transaction"
+        },
+        "remainingAccounts": [
+          {
+            "kind": "instructionRemainingAccountsNode",
+            "isOptional": false,
+            "isSigner": false,
+            "docs": [
+              "One account for each key in the wrapped transaction message's static account-key list, in the same order."
+            ],
+            "value": {
+              "kind": "resolverValueNode",
+              "name": "resolveTransactionAccounts",
+              "docs": [
+                "Preserves each wrapped message account's writable role without marking it as an outer Submit signer."
+              ],
+              "dependsOn": [
+                {
+                  "kind": "argumentValueNode",
+                  "name": "transaction"
+                }
+              ]
+            }
+          }
+        ]
+      }
+    ],
+    "pdas": [
+      {
+        "kind": "pdaNode",
+        "name": "programmaticSigner",
+        "seeds": [
+          {
+            "kind": "constantPdaSeedNode",
+            "type": {
+              "kind": "stringTypeNode",
+              "encoding": "utf8"
+            },
+            "value": {
+              "kind": "stringValueNode",
+              "string": "programmatic-signer"
+            }
+          },
+          {
+            "kind": "variablePdaSeedNode",
+            "name": "authority",
+            "type": {
+              "kind": "publicKeyTypeNode"
+            }
+          }
+        ]
+      }
+    ],
+    "errors": [
+      {
+        "kind": "errorNode",
+        "name": "invalidWrappedTransaction",
+        "code": 0,
+        "message": "The wrapped transaction failed sanitization"
+      },
+      {
+        "kind": "errorNode",
+        "name": "invalidExecutorInstructionCount",
+        "code": 1,
+        "message": "The wrapped transaction must contain exactly one executor instruction"
+      },
+      {
+        "kind": "errorNode",
+        "name": "accountKeyMismatch",
+        "code": 2,
+        "message": "A Submit account differs from the wrapped message key at the same index"
+      },
+      {
+        "kind": "errorNode",
+        "name": "invalidSignature",
+        "code": 3,
+        "message": "An authority signature failed verification against the wrapped message"
+      },
+      {
+        "kind": "errorNode",
+        "name": "invalidExecutorAccountIndex",
+        "code": 4,
+        "message": "The executor references an index outside the static account-key list"
+      }
+    ]
+  }
+}
