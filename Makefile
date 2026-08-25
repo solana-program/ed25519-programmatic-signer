@@ -31,6 +31,9 @@ audit:
 spellcheck:
 	cargo spellcheck --code 1 $(ARGS)
 
+format-check-js-%:
+	cd $(call make-path,$*) && pnpm install && pnpm format $(ARGS)
+
 clippy-%:
 	cargo $(nightly) clippy --manifest-path $(call make-path,$*)/Cargo.toml \
 	  --all-targets \
@@ -60,11 +63,17 @@ build-doc-%:
 test-doc-%:
 	cargo $(nightly) test --doc --all-features --manifest-path $(call make-path,$*)/Cargo.toml $(ARGS)
 
+lint-js-%:
+	cd $(call make-path,$*) && pnpm install && pnpm lint $(ARGS)
+
+test-js-%:
+	cd $(call make-path,$*) && pnpm install && pnpm build && pnpm test $(ARGS)
+
 test-%:
 	SBF_OUT_DIR=$(PWD)/target/deploy cargo $(nightly) test --manifest-path $(call make-path,$*)/Cargo.toml $(ARGS)
 
-generate-clients:
-	@echo "No clients to generate yet"
+generate-clients: generate-idl-workspace
+	pnpm codama run js $(ARGS)
 
 generate-idl-workspace:
 	@cargo install --locked --version =${CODAMA_CLI_VERSION} codama-cli

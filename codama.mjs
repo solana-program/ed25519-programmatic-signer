@@ -1,7 +1,6 @@
 import {
     argumentValueNode,
     assertIsNode,
-    getValidationItemsVisitor,
     instructionAccountDisplayNode,
     instructionRemainingAccountsNode,
     resolverValueNode,
@@ -65,5 +64,23 @@ export default {
     ],
     scripts: {
         idl: { from: '@codama/renderers-core#writeIdlVisitor', args: ['idl.json'] },
+        js: {
+            from: '@codama/renderers-js',
+            args: [
+                'clients/js',
+                {
+                    dependencyVersions: { '@solana/kit': '^8.0.0' },
+                    kitImportStrategy: 'rootOnly',
+                    syncPackageJson: true,
+                    prettierOptions: {
+                        arrowParens: 'avoid',
+                        printWidth: 120,
+                        singleQuote: true,
+                        tabWidth: 4,
+                        trailingComma: 'all',
+                    },
+                },
+            ],
+        },
     },
 };

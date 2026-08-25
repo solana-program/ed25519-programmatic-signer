@@ -7,6 +7,7 @@ on:
 
 env:
   IDL_PACKAGES: "['workspace']"
+  JS_PACKAGES: "['clients-js']"
   RUST_PACKAGES: "['executor-client', 'executor-interface', 'executor-program', 'nonce-client', 'nonce-interface', 'nonce-program', 'signer-client', 'signer-interface', 'signer-program']"
   SBPF_PROGRAM_PACKAGES: "['executor-program', 'nonce-program', 'signer-program']"
   NO_STD_CORE_PACKAGES: "['nonce-interface', 'nonce-program']"
@@ -18,6 +19,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       IDL_PACKAGES: ${{ steps.compute.outputs.IDL_PACKAGES }}
+      JS_PACKAGES: ${{ steps.compute.outputs.JS_PACKAGES }}
       SBPF_PROGRAM_PACKAGES: ${{ steps.compute.outputs.SBPF_PROGRAM_PACKAGES }}
       RUST_PACKAGES: ${{ steps.compute.outputs.RUST_PACKAGES }}
       RUST_TOOLCHAIN_NIGHTLY: ${{ steps.compute.outputs.RUST_TOOLCHAIN_NIGHTLY }}
@@ -26,26 +28,30 @@ jobs:
       NO_STD_ALLOC_PACKAGES: ${{ steps.compute.outputs.NO_STD_ALLOC_PACKAGES }}
     steps:
       - name: Git Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Compute variables
         id: compute
         shell: bash
         run: |
-          echo "SBPF_PROGRAM_PACKAGES=$SBPF_PROGRAM_PACKAGES" >> "$GITHUB_OUTPUT"
-          echo "RUST_PACKAGES=$RUST_PACKAGES" >> "$GITHUB_OUTPUT"
-          echo "RUST_TOOLCHAIN_NIGHTLY=$(make rust-toolchain-nightly)" >> "$GITHUB_OUTPUT"
-          echo "SOLANA_CLI_VERSION=$(make solana-cli-version)" >> "$GITHUB_OUTPUT"
-          echo "NO_STD_CORE_PACKAGES=$NO_STD_CORE_PACKAGES" >> "$GITHUB_OUTPUT"
-          echo "NO_STD_ALLOC_PACKAGES=$NO_STD_ALLOC_PACKAGES" >> "$GITHUB_OUTPUT"
-          echo "IDL_PACKAGES=$IDL_PACKAGES" >> "$GITHUB_OUTPUT"
+          {
+            echo "SBPF_PROGRAM_PACKAGES=$SBPF_PROGRAM_PACKAGES"
+            echo "RUST_PACKAGES=$RUST_PACKAGES"
+            echo "RUST_TOOLCHAIN_NIGHTLY=$(make rust-toolchain-nightly)"
+            echo "SOLANA_CLI_VERSION=$(make solana-cli-version)"
+            echo "NO_STD_CORE_PACKAGES=$NO_STD_CORE_PACKAGES"
+            echo "NO_STD_ALLOC_PACKAGES=$NO_STD_ALLOC_PACKAGES"
+            echo "IDL_PACKAGES=$IDL_PACKAGES"
+            echo "JS_PACKAGES=$JS_PACKAGES"
+          } >> "$GITHUB_OUTPUT"
 
   main:
     needs: set_env
     uses: solana-program/actions/.github/workflows/main.yml@main
     with:
-      generate-clients: false # Upcoming PR
+      generate-clients: true
       idl-packages: ${{ needs.set_env.outputs.IDL_PACKAGES }}
+      js-packages: ${{ needs.set_env.outputs.JS_PACKAGES }}
       sbpf-program-packages: ${{ needs.set_env.outputs.SBPF_PROGRAM_PACKAGES }}
       rust-packages: ${{ needs.set_env.outputs.RUST_PACKAGES }}
       rustfmt-toolchain: ${{ needs.set_env.outputs.RUST_TOOLCHAIN_NIGHTLY }}
