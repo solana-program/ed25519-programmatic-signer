@@ -1,4 +1,4 @@
-//! Validates the wrapped message and the runtime accounts used to replay it.
+//! Validates the wrapped message and the runtime accounts used to execute it.
 
 use {
     pinocchio::{AccountView, Address, error::ProgramError},
@@ -7,7 +7,7 @@ use {
 };
 
 pub fn validate_wrapped_message(wrapped_message: &VersionedMessage) -> Result<(), ProgramError> {
-    // Reject message features that CPI replay does not support. Address table lookups
+    // Reject message features that the executor cannot support via CPI. Address table lookups
     // are never resolved and v1 transaction config only applies at transaction load.
     match wrapped_message {
         VersionedMessage::Legacy(_) => {}
@@ -18,7 +18,7 @@ pub fn validate_wrapped_message(wrapped_message: &VersionedMessage) -> Result<()
         }
     }
 
-    // Replay derives account privileges from the header counts,
+    // Message account privileges come from the header counts,
     // so they must agree with the key list.
     wrapped_message
         .sanitize()
@@ -47,22 +47,22 @@ fn has_duplicate_addresses(mut addresses: &[Address]) -> bool {
 ///
 /// Note: The CPI runtime rejects writable and signer privilege escalation during instruction
 /// execution.
-pub fn validate_replay_accounts<'a>(
-    replay_accounts: &'a [AccountView],
+pub fn validate_message_accounts<'a>(
+    message_accounts: &'a [AccountView],
     wrapped_message: &VersionedMessage,
     stored_nonce_authority: &Address,
 ) -> Result<&'a AccountView, ProgramError> {
     let expected_addrs = wrapped_message.static_account_keys();
 
-    // Compiled instructions resolve accounts by index, so replay accounts
+    // Compiled instructions resolve accounts by index, so message accounts
     // must mirror the message's static addresses one-to-one
-    if replay_accounts.len() != expected_addrs.len() {
+    if message_accounts.len() != expected_addrs.len() {
         return Err(Error::MessageAccountsMismatch.into());
     }
 
     let mut nonce_authority_account = None;
 
-    for (index, (account, expected_addr)) in replay_accounts.iter().zip(expected_addrs).enumerate()
+    for (index, (account, expected_addr)) in message_accounts.iter().zip(expected_addrs).enumerate()
     {
         if account.address() != expected_addr {
             return Err(Error::MessageAccountsMismatch.into());
