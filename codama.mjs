@@ -62,10 +62,6 @@ export default {
                 ],
             ],
         },
-        {
-            from: 'codama#throwValidatorItemsVisitor',
-            args: [getValidationItemsVisitor()],
-        },
     ],
     scripts: {
         idl: { from: '@codama/renderers-core#writeIdlVisitor', args: ['idl.json'] },
