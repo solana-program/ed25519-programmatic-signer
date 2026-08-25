@@ -42,13 +42,14 @@ pub enum Instruction {
     ///   static `account_keys` indices.
     #[cfg_attr(
         feature = "codama",
-        codama(display(intent = "Verify signatures and submit transaction"))
+        codama(display(intent = "Verify wrapped transaction signatures and invoke its executor"))
     )]
     Submit(
         #[cfg_attr(
             feature = "codama",
             codama(name = "transaction"),
-            codama(type = bytes)
+            codama(type = bytes),
+            codama(display(label = "Wrapped transaction"))
         )]
         VersionedTransaction,
     ),

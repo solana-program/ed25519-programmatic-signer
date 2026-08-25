@@ -35,7 +35,10 @@ pub enum Instruction {
     /// - `[]` `SlotHashes` sysvar
     #[cfg_attr(
         feature = "codama",
-        codama(display(intent = "Initialize nonce account")),
+        codama(display(
+            intent = "Initialize nonce account",
+            interpolated_intent = "Initialize nonce account ${accounts.nonceAccount} with authority ${accounts.authority}"
+        )),
         codama(account(
             name = "nonce_account",
             writable,
@@ -43,7 +46,8 @@ pub enum Instruction {
         )),
         codama(account(
             name = "authority",
-            docs = "Authority stored in the nonce account"
+            docs = "Authority stored in the nonce account",
+            display(label = "Nonce authority")
         )),
         codama(account(
             name = "slot_hashes",
@@ -75,11 +79,15 @@ pub enum Instruction {
     /// - `[]` `SlotHashes` sysvar
     #[cfg_attr(
         feature = "codama",
-        codama(display(intent = "Advance nonce")),
+        codama(display(
+            intent = "Advance nonce",
+            interpolated_intent = "Advance nonce account ${accounts.nonceAccount} by consuming current nonce ${data.currentNonce}"
+        )),
         codama(account(
             name = "authority",
             signer,
-            docs = "Authority stored in the nonce account"
+            docs = "Authority stored in the nonce account",
+            display(label = "Nonce authority")
         )),
         codama(account(
             name = "nonce_account",

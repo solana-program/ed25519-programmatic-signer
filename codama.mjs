@@ -2,6 +2,7 @@ import {
     argumentValueNode,
     assertIsNode,
     getValidationItemsVisitor,
+    instructionAccountDisplayNode,
     instructionRemainingAccountsNode,
     resolverValueNode,
 } from 'codama';
@@ -12,6 +13,7 @@ const executeRemainingAccounts = instructionRemainingAccountsNode(
         docs: "Preserves each wrapped message account's signer and writable role.",
     }),
     {
+        display: instructionAccountDisplayNode({ label: 'Wrapped message accounts' }),
         docs: "One account for each key in the wrapped message's static account-key list, in the same order.",
         isOptional: false,
         isSigner: 'either',
@@ -24,6 +26,9 @@ const submitRemainingAccounts = instructionRemainingAccountsNode(
         docs: "Preserves each wrapped message account's writable role without marking it as an outer Submit signer.",
     }),
     {
+        display: instructionAccountDisplayNode({
+            label: 'Wrapped transaction accounts',
+        }),
         docs: "One account for each key in the wrapped transaction message's static account-key list, in the same order.",
         isOptional: false,
         isSigner: false,

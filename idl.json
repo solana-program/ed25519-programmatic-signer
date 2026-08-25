@@ -36,6 +36,10 @@
             "name": "transaction",
             "type": {
               "kind": "bytesTypeNode"
+            },
+            "display": {
+              "kind": "structFieldDisplayNode",
+              "label": "Wrapped transaction"
             }
           }
         ],
@@ -48,7 +52,7 @@
         ],
         "display": {
           "kind": "instructionDisplayNode",
-          "intent": "Verify signatures and submit transaction"
+          "intent": "Verify wrapped transaction signatures and invoke its executor"
         },
         "remainingAccounts": [
           {
@@ -70,6 +74,10 @@
                   "name": "transaction"
                 }
               ]
+            },
+            "display": {
+              "kind": "instructionAccountDisplayNode",
+              "label": "Wrapped transaction accounts"
             }
           }
         ]
@@ -154,7 +162,11 @@
               "isOptional": false,
               "docs": [
                 "Nonce account consumed for replay protection"
-              ]
+              ],
+              "display": {
+                "kind": "instructionAccountDisplayNode",
+                "label": "Nonce account to advance"
+              }
             },
             {
               "kind": "instructionAccountNode",
@@ -217,6 +229,10 @@
               "name": "message",
               "type": {
                 "kind": "bytesTypeNode"
+              },
+              "display": {
+                "kind": "structFieldDisplayNode",
+                "label": "Wrapped message"
               }
             }
           ],
@@ -229,7 +245,7 @@
           ],
           "display": {
             "kind": "instructionDisplayNode",
-            "intent": "Execute message"
+            "intent": "Execute all instructions in a wrapped message"
           },
           "remainingAccounts": [
             {
@@ -251,6 +267,10 @@
                     "name": "message"
                   }
                 ]
+              },
+              "display": {
+                "kind": "instructionAccountDisplayNode",
+                "label": "Wrapped message accounts"
               }
             }
           ]
@@ -349,7 +369,11 @@
               "isOptional": false,
               "docs": [
                 "Authority stored in the nonce account"
-              ]
+              ],
+              "display": {
+                "kind": "instructionAccountDisplayNode",
+                "label": "Nonce authority"
+              }
             },
             {
               "kind": "instructionAccountNode",
@@ -399,7 +423,8 @@
           ],
           "display": {
             "kind": "instructionDisplayNode",
-            "intent": "Initialize nonce account"
+            "intent": "Initialize nonce account",
+            "interpolatedIntent": "Initialize nonce account ${accounts.nonceAccount} with authority ${accounts.authority}"
           }
         },
         {
@@ -415,7 +440,11 @@
               "isOptional": false,
               "docs": [
                 "Authority stored in the nonce account"
-              ]
+              ],
+              "display": {
+                "kind": "instructionAccountDisplayNode",
+                "label": "Nonce authority"
+              }
             },
             {
               "kind": "instructionAccountNode",
@@ -482,7 +511,8 @@
           ],
           "display": {
             "kind": "instructionDisplayNode",
-            "intent": "Advance nonce"
+            "intent": "Advance nonce",
+            "interpolatedIntent": "Advance nonce account ${accounts.nonceAccount} by consuming current nonce ${data.currentNonce}"
           }
         }
       ],

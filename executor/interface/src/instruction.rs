@@ -36,11 +36,12 @@ pub enum Instruction {
     /// - Message accounts referenced by the wrapped message, in order
     #[cfg_attr(
         feature = "codama",
-        codama(display(intent = "Execute message")),
+        codama(display(intent = "Execute all instructions in a wrapped message")),
         codama(account(
             name = "nonce_account",
             writable,
-            docs = "Nonce account consumed for replay protection"
+            docs = "Nonce account consumed for replay protection",
+            display(label = "Nonce account to advance")
         )),
         codama(account(
             name = "nonce_program",
@@ -59,7 +60,8 @@ pub enum Instruction {
         #[cfg_attr(
             feature = "codama",
             codama(name = "message"),
-            codama(type = bytes)
+            codama(type = bytes),
+            codama(display(label = "Wrapped message"))
         )]
         VersionedMessage,
     ),
