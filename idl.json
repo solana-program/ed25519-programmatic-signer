@@ -1,0 +1,541 @@
+{
+  "kind": "rootNode",
+  "standard": "codama",
+  "version": "1.8.0",
+  "program": {
+    "kind": "programNode",
+    "name": "ed25519Signer",
+    "publicKey": "EdSigVfK1DkeMrjFNDMjwfQaJPhPTtX7jW8uPv3oKEgN",
+    "version": "0.1.0",
+    "instructions": [
+      {
+        "kind": "instructionNode",
+        "name": "submit",
+        "optionalAccountStrategy": "programId",
+        "arguments": [
+          {
+            "kind": "instructionArgumentNode",
+            "name": "discriminator",
+            "defaultValueStrategy": "omitted",
+            "type": {
+              "kind": "numberTypeNode",
+              "format": "u8",
+              "endian": "le"
+            },
+            "defaultValue": {
+              "kind": "numberValueNode",
+              "number": 0
+            },
+            "display": {
+              "kind": "structFieldDisplayNode",
+              "skip": "always"
+            }
+          },
+          {
+            "kind": "instructionArgumentNode",
+            "name": "transaction",
+            "type": {
+              "kind": "bytesTypeNode"
+            },
+            "display": {
+              "kind": "structFieldDisplayNode",
+              "label": "Wrapped transaction"
+            }
+          }
+        ],
+        "discriminators": [
+          {
+            "kind": "fieldDiscriminatorNode",
+            "name": "discriminator",
+            "offset": 0
+          }
+        ],
+        "display": {
+          "kind": "instructionDisplayNode",
+          "intent": "Verify wrapped transaction signatures and invoke its executor"
+        },
+        "remainingAccounts": [
+          {
+            "kind": "instructionRemainingAccountsNode",
+            "isOptional": false,
+            "isSigner": false,
+            "docs": [
+              "One account for each key in the wrapped transaction message's static account-key list, in the same order."
+            ],
+            "value": {
+              "kind": "resolverValueNode",
+              "name": "resolveTransactionAccounts",
+              "docs": [
+                "Preserves each wrapped message account's writable role without marking it as an outer Submit signer."
+              ],
+              "dependsOn": [
+                {
+                  "kind": "argumentValueNode",
+                  "name": "transaction"
+                }
+              ]
+            },
+            "display": {
+              "kind": "instructionAccountDisplayNode",
+              "label": "Wrapped transaction accounts"
+            }
+          }
+        ]
+      }
+    ],
+    "pdas": [
+      {
+        "kind": "pdaNode",
+        "name": "programmaticSigner",
+        "seeds": [
+          {
+            "kind": "constantPdaSeedNode",
+            "type": {
+              "kind": "stringTypeNode",
+              "encoding": "utf8"
+            },
+            "value": {
+              "kind": "stringValueNode",
+              "string": "programmatic-signer"
+            }
+          },
+          {
+            "kind": "variablePdaSeedNode",
+            "name": "authority",
+            "type": {
+              "kind": "publicKeyTypeNode"
+            }
+          }
+        ]
+      }
+    ],
+    "errors": [
+      {
+        "kind": "errorNode",
+        "name": "invalidWrappedTransaction",
+        "code": 0,
+        "message": "The wrapped transaction failed sanitization"
+      },
+      {
+        "kind": "errorNode",
+        "name": "invalidExecutorInstructionCount",
+        "code": 1,
+        "message": "The wrapped transaction must contain exactly one executor instruction"
+      },
+      {
+        "kind": "errorNode",
+        "name": "accountKeyMismatch",
+        "code": 2,
+        "message": "A Submit account differs from the wrapped message key at the same index"
+      },
+      {
+        "kind": "errorNode",
+        "name": "invalidSignature",
+        "code": 3,
+        "message": "An authority signature failed verification against the wrapped message"
+      },
+      {
+        "kind": "errorNode",
+        "name": "invalidExecutorAccountIndex",
+        "code": 4,
+        "message": "The executor references an index outside the static account-key list"
+      }
+    ]
+  },
+  "additionalPrograms": [
+    {
+      "kind": "programNode",
+      "name": "messageExecutor",
+      "publicKey": "ExecxgyHYsAXB4c5dZodV1zJZ9hqfsDCYkRDRATrpkFR",
+      "version": "0.1.0",
+      "instructions": [
+        {
+          "kind": "instructionNode",
+          "name": "execute",
+          "optionalAccountStrategy": "programId",
+          "accounts": [
+            {
+              "kind": "instructionAccountNode",
+              "name": "nonceAccount",
+              "isWritable": true,
+              "isSigner": false,
+              "isOptional": false,
+              "docs": [
+                "Nonce account consumed for replay protection"
+              ],
+              "display": {
+                "kind": "instructionAccountDisplayNode",
+                "label": "Nonce account to advance"
+              }
+            },
+            {
+              "kind": "instructionAccountNode",
+              "name": "nonceProgram",
+              "isWritable": false,
+              "isSigner": false,
+              "isOptional": false,
+              "docs": [
+                "SPL Nonce program"
+              ],
+              "defaultValue": {
+                "kind": "publicKeyValueNode",
+                "publicKey": "Noncediea1fH12usShuQAz28UhgAeuE5Maf32LsMUQB"
+              },
+              "display": {
+                "kind": "instructionAccountDisplayNode",
+                "skip": "always"
+              }
+            },
+            {
+              "kind": "instructionAccountNode",
+              "name": "slotHashes",
+              "isWritable": false,
+              "isSigner": false,
+              "isOptional": false,
+              "docs": [
+                "Slot Hashes sysvar"
+              ],
+              "defaultValue": {
+                "kind": "publicKeyValueNode",
+                "publicKey": "SysvarS1otHashes111111111111111111111111111"
+              },
+              "display": {
+                "kind": "instructionAccountDisplayNode",
+                "skip": "always"
+              }
+            }
+          ],
+          "arguments": [
+            {
+              "kind": "instructionArgumentNode",
+              "name": "discriminator",
+              "defaultValueStrategy": "omitted",
+              "type": {
+                "kind": "numberTypeNode",
+                "format": "u8",
+                "endian": "le"
+              },
+              "defaultValue": {
+                "kind": "numberValueNode",
+                "number": 0
+              },
+              "display": {
+                "kind": "structFieldDisplayNode",
+                "skip": "always"
+              }
+            },
+            {
+              "kind": "instructionArgumentNode",
+              "name": "message",
+              "type": {
+                "kind": "bytesTypeNode"
+              },
+              "display": {
+                "kind": "structFieldDisplayNode",
+                "label": "Wrapped message"
+              }
+            }
+          ],
+          "discriminators": [
+            {
+              "kind": "fieldDiscriminatorNode",
+              "name": "discriminator",
+              "offset": 0
+            }
+          ],
+          "display": {
+            "kind": "instructionDisplayNode",
+            "intent": "Execute all instructions in a wrapped message"
+          },
+          "remainingAccounts": [
+            {
+              "kind": "instructionRemainingAccountsNode",
+              "isOptional": false,
+              "isSigner": "either",
+              "docs": [
+                "One account for each key in the wrapped message's static account-key list, in the same order."
+              ],
+              "value": {
+                "kind": "resolverValueNode",
+                "name": "resolveMessageAccounts",
+                "docs": [
+                  "Preserves each wrapped message account's signer and writable role."
+                ],
+                "dependsOn": [
+                  {
+                    "kind": "argumentValueNode",
+                    "name": "message"
+                  }
+                ]
+              },
+              "display": {
+                "kind": "instructionAccountDisplayNode",
+                "label": "Wrapped message accounts"
+              }
+            }
+          ]
+        }
+      ],
+      "errors": [
+        {
+          "kind": "errorNode",
+          "name": "invalidNonceAccount",
+          "code": 0,
+          "message": "The nonce account data could not be decoded as nonce state"
+        },
+        {
+          "kind": "errorNode",
+          "name": "invalidMessage",
+          "code": 1,
+          "message": "The message is unsupported, fails sanitization, or has duplicate keys"
+        },
+        {
+          "kind": "errorNode",
+          "name": "messageAccountsMismatch",
+          "code": 2,
+          "message": "The passed accounts do not match the wrapped message's account keys"
+        },
+        {
+          "kind": "errorNode",
+          "name": "missingNonceAuthoritySigner",
+          "code": 3,
+          "message": "The nonce account's stored authority is not a required message signer"
+        },
+        {
+          "kind": "errorNode",
+          "name": "nonceMismatch",
+          "code": 4,
+          "message": "The message's lifetime specifier does not match the stored nonce"
+        }
+      ]
+    },
+    {
+      "kind": "programNode",
+      "name": "nonce",
+      "publicKey": "Noncediea1fH12usShuQAz28UhgAeuE5Maf32LsMUQB",
+      "version": "0.1.0",
+      "accounts": [
+        {
+          "kind": "accountNode",
+          "name": "nonce",
+          "data": {
+            "kind": "structTypeNode",
+            "fields": [
+              {
+                "kind": "structFieldTypeNode",
+                "name": "nonce",
+                "type": {
+                  "kind": "publicKeyTypeNode"
+                }
+              },
+              {
+                "kind": "structFieldTypeNode",
+                "name": "authority",
+                "type": {
+                  "kind": "publicKeyTypeNode"
+                }
+              }
+            ]
+          },
+          "discriminators": [
+            {
+              "kind": "sizeDiscriminatorNode",
+              "size": 64
+            }
+          ]
+        }
+      ],
+      "instructions": [
+        {
+          "kind": "instructionNode",
+          "name": "initialize",
+          "optionalAccountStrategy": "programId",
+          "accounts": [
+            {
+              "kind": "instructionAccountNode",
+              "name": "nonceAccount",
+              "isWritable": true,
+              "isSigner": false,
+              "isOptional": false,
+              "docs": [
+                "Nonce account to initialize"
+              ]
+            },
+            {
+              "kind": "instructionAccountNode",
+              "name": "authority",
+              "isWritable": false,
+              "isSigner": false,
+              "isOptional": false,
+              "docs": [
+                "Authority stored in the nonce account"
+              ],
+              "display": {
+                "kind": "instructionAccountDisplayNode",
+                "label": "Nonce authority"
+              }
+            },
+            {
+              "kind": "instructionAccountNode",
+              "name": "slotHashes",
+              "isWritable": false,
+              "isSigner": false,
+              "isOptional": false,
+              "docs": [
+                "Slot Hashes sysvar"
+              ],
+              "defaultValue": {
+                "kind": "publicKeyValueNode",
+                "publicKey": "SysvarS1otHashes111111111111111111111111111"
+              },
+              "display": {
+                "kind": "instructionAccountDisplayNode",
+                "skip": "always"
+              }
+            }
+          ],
+          "arguments": [
+            {
+              "kind": "instructionArgumentNode",
+              "name": "discriminator",
+              "defaultValueStrategy": "omitted",
+              "type": {
+                "kind": "numberTypeNode",
+                "format": "u8",
+                "endian": "le"
+              },
+              "defaultValue": {
+                "kind": "numberValueNode",
+                "number": 0
+              },
+              "display": {
+                "kind": "structFieldDisplayNode",
+                "skip": "always"
+              }
+            }
+          ],
+          "discriminators": [
+            {
+              "kind": "fieldDiscriminatorNode",
+              "name": "discriminator",
+              "offset": 0
+            }
+          ],
+          "display": {
+            "kind": "instructionDisplayNode",
+            "intent": "Initialize nonce account",
+            "interpolatedIntent": "Initialize nonce account ${accounts.nonceAccount} with authority ${accounts.authority}"
+          }
+        },
+        {
+          "kind": "instructionNode",
+          "name": "advance",
+          "optionalAccountStrategy": "programId",
+          "accounts": [
+            {
+              "kind": "instructionAccountNode",
+              "name": "authority",
+              "isWritable": false,
+              "isSigner": true,
+              "isOptional": false,
+              "docs": [
+                "Authority stored in the nonce account"
+              ],
+              "display": {
+                "kind": "instructionAccountDisplayNode",
+                "label": "Nonce authority"
+              }
+            },
+            {
+              "kind": "instructionAccountNode",
+              "name": "nonceAccount",
+              "isWritable": true,
+              "isSigner": false,
+              "isOptional": false,
+              "docs": [
+                "Nonce account to advance"
+              ]
+            },
+            {
+              "kind": "instructionAccountNode",
+              "name": "slotHashes",
+              "isWritable": false,
+              "isSigner": false,
+              "isOptional": false,
+              "docs": [
+                "Slot Hashes sysvar"
+              ],
+              "defaultValue": {
+                "kind": "publicKeyValueNode",
+                "publicKey": "SysvarS1otHashes111111111111111111111111111"
+              },
+              "display": {
+                "kind": "instructionAccountDisplayNode",
+                "skip": "always"
+              }
+            }
+          ],
+          "arguments": [
+            {
+              "kind": "instructionArgumentNode",
+              "name": "discriminator",
+              "defaultValueStrategy": "omitted",
+              "type": {
+                "kind": "numberTypeNode",
+                "format": "u8",
+                "endian": "le"
+              },
+              "defaultValue": {
+                "kind": "numberValueNode",
+                "number": 1
+              },
+              "display": {
+                "kind": "structFieldDisplayNode",
+                "skip": "always"
+              }
+            },
+            {
+              "kind": "instructionArgumentNode",
+              "name": "currentNonce",
+              "type": {
+                "kind": "publicKeyTypeNode"
+              }
+            }
+          ],
+          "discriminators": [
+            {
+              "kind": "fieldDiscriminatorNode",
+              "name": "discriminator",
+              "offset": 0
+            }
+          ],
+          "display": {
+            "kind": "instructionDisplayNode",
+            "intent": "Advance nonce",
+            "interpolatedIntent": "Advance nonce account ${accounts.nonceAccount} by consuming current nonce ${data.currentNonce}"
+          }
+        }
+      ],
+      "errors": [
+        {
+          "kind": "errorNode",
+          "name": "invalidNonceAccount",
+          "code": 0,
+          "message": "The nonce account is malformed or not writable"
+        },
+        {
+          "kind": "errorNode",
+          "name": "authorityMismatch",
+          "code": 1,
+          "message": "The stored authority does not match the passed authority account"
+        },
+        {
+          "kind": "errorNode",
+          "name": "nonceMismatch",
+          "code": 2,
+          "message": "The stored nonce does not match the nonce supplied by the caller"
+        }
+      ]
+    }
+  ]
+}

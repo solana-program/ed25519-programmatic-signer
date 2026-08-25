@@ -1,3 +1,5 @@
+#[cfg(feature = "codama")]
+use codama_macros::CodamaInstructions;
 use {
     solana_hash::Hash,
     solana_program_error::ProgramError,
@@ -7,6 +9,11 @@ use {
 /// Instructions supported by the SPL Nonce program.
 #[derive(Clone, Debug, PartialEq, Eq, SchemaRead, SchemaWrite)]
 #[wincode(tag_encoding = "u8")]
+#[cfg_attr(
+    feature = "codama",
+    derive(CodamaInstructions),
+    codama(enum_discriminator(size = number(u8)))
+)]
 pub enum Instruction {
     /// Initializes a nonce account for an authority.
     ///
@@ -26,6 +33,29 @@ pub enum Instruction {
     /// - `[writable]` Nonce account
     /// - `[]` Authority to store in the nonce account
     /// - `[]` `SlotHashes` sysvar
+    #[cfg_attr(
+        feature = "codama",
+        codama(display(
+            intent = "Initialize nonce account",
+            interpolated_intent = "Initialize nonce account ${accounts.nonceAccount} with authority ${accounts.authority}"
+        )),
+        codama(account(
+            name = "nonce_account",
+            writable,
+            docs = "Nonce account to initialize"
+        )),
+        codama(account(
+            name = "authority",
+            docs = "Authority stored in the nonce account",
+            display(label = "Nonce authority")
+        )),
+        codama(account(
+            name = "slot_hashes",
+            docs = "Slot Hashes sysvar",
+            default_value = sysvar("slot_hashes"),
+            display(skip = always)
+        ))
+    )]
     Initialize,
 
     /// Consumes the stored nonce and advances it to a fresh value.
@@ -47,9 +77,41 @@ pub enum Instruction {
     /// - `[signer]` Authority stored in the nonce account
     /// - `[writable]` Nonce account
     /// - `[]` `SlotHashes` sysvar
-    Advance(AdvanceNonceArgs),
+    #[cfg_attr(
+        feature = "codama",
+        codama(display(
+            intent = "Advance nonce",
+            interpolated_intent = "Advance nonce account ${accounts.nonceAccount} by consuming current nonce ${data.currentNonce}"
+        )),
+        codama(account(
+            name = "authority",
+            signer,
+            docs = "Authority stored in the nonce account",
+            display(label = "Nonce authority")
+        )),
+        codama(account(
+            name = "nonce_account",
+            writable,
+            docs = "Nonce account to advance"
+        )),
+        codama(account(
+            name = "slot_hashes",
+            docs = "Slot Hashes sysvar",
+            default_value = sysvar("slot_hashes"),
+            display(skip = always)
+        ))
+    )]
+    Advance(
+        #[cfg_attr(
+            feature = "codama",
+            codama(name = "current_nonce"),
+            codama(type = public_key)
+        )]
+        AdvanceNonceArgs,
+    ),
 
     /// Closes a nonce account. Not yet implemented.
+    #[cfg_attr(feature = "codama", codama(skip))]
     Close,
 }
 

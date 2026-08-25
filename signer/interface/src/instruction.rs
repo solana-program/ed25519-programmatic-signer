@@ -1,3 +1,5 @@
+#[cfg(feature = "codama")]
+use codama_macros::CodamaInstructions;
 use {
     solana_program_error::ProgramError,
     solana_transaction::versioned::VersionedTransaction,
@@ -7,6 +9,11 @@ use {
 /// Instructions supported by the SPL Ed25519 Signer program.
 #[derive(Clone, Debug, PartialEq, Eq, SchemaRead, SchemaWrite)]
 #[wincode(tag_encoding = "u8")]
+#[cfg_attr(
+    feature = "codama",
+    derive(CodamaInstructions),
+    codama(enum_discriminator(size = number(u8)))
+)]
 pub enum Instruction {
     /// Verifies authority signatures over a Solana `VersionedTransaction`, then CPIs to the program
     /// of its single executor instruction, promoting `ProgrammaticSigner` PDAs to a signer.
@@ -33,7 +40,19 @@ pub enum Instruction {
     ///   At every index, the submitted account key and writable flag must match the wrapped message.
     ///   V0 address table lookups are not resolved. The executor instruction must reference only
     ///   static `account_keys` indices.
-    Submit(VersionedTransaction),
+    #[cfg_attr(
+        feature = "codama",
+        codama(display(intent = "Verify wrapped transaction signatures and invoke its executor"))
+    )]
+    Submit(
+        #[cfg_attr(
+            feature = "codama",
+            codama(name = "transaction"),
+            codama(type = bytes),
+            codama(display(label = "Wrapped transaction"))
+        )]
+        VersionedTransaction,
+    ),
 }
 
 impl Instruction {

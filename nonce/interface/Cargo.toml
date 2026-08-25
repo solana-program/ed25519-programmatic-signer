@@ -11,6 +11,9 @@ edition = { workspace = true }
 [lib]
 crate-type = ["rlib"]
 
+[features]
+codama = ["dep:codama-macros"]
+
 [package.metadata.solana]
 program-id = "Noncediea1fH12usShuQAz28UhgAeuE5Maf32LsMUQB"
 
@@ -18,6 +21,7 @@ program-id = "Noncediea1fH12usShuQAz28UhgAeuE5Maf32LsMUQB"
 workspace = true
 
 [dependencies]
+codama-macros = { workspace = true, optional = true }
 solana-address = { workspace = true, features = ["decode", "wincode"] }
 solana-hash = { workspace = true, features = ["wincode"] }
 solana-program-error = { workspace = true }

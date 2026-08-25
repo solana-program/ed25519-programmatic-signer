@@ -1,3 +1,5 @@
+#[cfg(feature = "codama")]
+use codama_macros::CodamaAccount;
 use {
     solana_address::{ADDRESS_BYTES, Address},
     solana_hash::{HASH_BYTES, Hash},
@@ -15,10 +17,16 @@ pub const NONCE_STEP_TAG: &[u8] = b"spl-nonce::step::v1";
 #[derive(Clone, Debug, PartialEq, Eq, SchemaRead, SchemaWrite)]
 #[wincode(assert_zero_copy)]
 #[repr(C)]
+#[cfg_attr(
+    feature = "codama",
+    derive(CodamaAccount),
+    codama(discriminator(size = 64))
+)]
 pub struct Nonce {
     /// Single-use value that prevents a signed message from being replayed. `Advance`
     /// requires the caller to present this value and the stored authority's signer
     /// privilege, then replaces it with a freshly derived hash.
+    #[cfg_attr(feature = "codama", codama(type = public_key))]
     pub nonce: Hash,
     /// Address allowed to consume this nonce and advance its value.
     pub authority: Address,

@@ -6,6 +6,7 @@ on:
   pull_request:
 
 env:
+  IDL_PACKAGES: "['workspace']"
   RUST_PACKAGES: "['executor-client', 'executor-interface', 'executor-program', 'nonce-client', 'nonce-interface', 'nonce-program', 'signer-client', 'signer-interface', 'signer-program']"
   SBPF_PROGRAM_PACKAGES: "['executor-program', 'nonce-program', 'signer-program']"
   NO_STD_CORE_PACKAGES: "['nonce-interface', 'nonce-program']"
@@ -16,6 +17,7 @@ jobs:
     name: Set variables to be used in strategy definitions in reusable workflow
     runs-on: ubuntu-latest
     outputs:
+      IDL_PACKAGES: ${{ steps.compute.outputs.IDL_PACKAGES }}
       SBPF_PROGRAM_PACKAGES: ${{ steps.compute.outputs.SBPF_PROGRAM_PACKAGES }}
       RUST_PACKAGES: ${{ steps.compute.outputs.RUST_PACKAGES }}
       RUST_TOOLCHAIN_NIGHTLY: ${{ steps.compute.outputs.RUST_TOOLCHAIN_NIGHTLY }}
@@ -36,11 +38,14 @@ jobs:
           echo "SOLANA_CLI_VERSION=$(make solana-cli-version)" >> "$GITHUB_OUTPUT"
           echo "NO_STD_CORE_PACKAGES=$NO_STD_CORE_PACKAGES" >> "$GITHUB_OUTPUT"
           echo "NO_STD_ALLOC_PACKAGES=$NO_STD_ALLOC_PACKAGES" >> "$GITHUB_OUTPUT"
+          echo "IDL_PACKAGES=$IDL_PACKAGES" >> "$GITHUB_OUTPUT"
 
   main:
     needs: set_env
     uses: solana-program/actions/.github/workflows/main.yml@main
     with:
+      generate-clients: false # Upcoming PR
+      idl-packages: ${{ needs.set_env.outputs.IDL_PACKAGES }}
       sbpf-program-packages: ${{ needs.set_env.outputs.SBPF_PROGRAM_PACKAGES }}
       rust-packages: ${{ needs.set_env.outputs.RUST_PACKAGES }}
       rustfmt-toolchain: ${{ needs.set_env.outputs.RUST_TOOLCHAIN_NIGHTLY }}

@@ -1,3 +1,5 @@
+#[cfg(feature = "codama")]
+use codama_macros::CodamaInstructions;
 use {
     solana_message::VersionedMessage,
     solana_program_error::ProgramError,
@@ -7,6 +9,11 @@ use {
 /// Instructions supported by the SPL Message Executor program.
 #[derive(Clone, Debug, PartialEq, Eq, SchemaRead, SchemaWrite)]
 #[wincode(tag_encoding = "u8")]
+#[cfg_attr(
+    feature = "codama",
+    derive(CodamaInstructions),
+    codama(enum_discriminator(size = number(u8)))
+)]
 pub enum Instruction {
     /// Executes a wrapped message by invoking each of its instructions via CPI, consuming a nonce
     /// for replay protection. This program is intended to be invoked after a signer program has
@@ -27,7 +34,37 @@ pub enum Instruction {
     /// - `[]` SPL Nonce program
     /// - `[]` `SlotHashes` sysvar
     /// - Message accounts referenced by the wrapped message, in order
-    Execute(VersionedMessage),
+    #[cfg_attr(
+        feature = "codama",
+        codama(display(intent = "Execute all instructions in a wrapped message")),
+        codama(account(
+            name = "nonce_account",
+            writable,
+            docs = "Nonce account consumed for replay protection",
+            display(label = "Nonce account to advance")
+        )),
+        codama(account(
+            name = "nonce_program",
+            docs = "SPL Nonce program",
+            default_value = public_key("Noncediea1fH12usShuQAz28UhgAeuE5Maf32LsMUQB"),
+            display(skip = always)
+        )),
+        codama(account(
+            name = "slot_hashes",
+            docs = "Slot Hashes sysvar",
+            default_value = sysvar("slot_hashes"),
+            display(skip = always)
+        ))
+    )]
+    Execute(
+        #[cfg_attr(
+            feature = "codama",
+            codama(name = "message"),
+            codama(type = bytes),
+            codama(display(label = "Wrapped message"))
+        )]
+        VersionedMessage,
+    ),
 }
 
 impl Instruction {

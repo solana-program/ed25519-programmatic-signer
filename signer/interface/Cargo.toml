@@ -11,6 +11,9 @@ edition = { workspace = true }
 [lib]
 crate-type = ["rlib"]
 
+[features]
+codama = ["dep:codama-macros"]
+
 [package.metadata.solana]
 program-id = "EdSigVfK1DkeMrjFNDMjwfQaJPhPTtX7jW8uPv3oKEgN"
 
@@ -18,6 +21,7 @@ program-id = "EdSigVfK1DkeMrjFNDMjwfQaJPhPTtX7jW8uPv3oKEgN"
 workspace = true
 
 [dependencies]
+codama-macros = { workspace = true, optional = true }
 solana-address = { workspace = true, features = ["curve25519", "decode", "wincode"] }
 solana-program-error = { workspace = true }
 solana-transaction = { workspace = true, features = ["wincode"] }
