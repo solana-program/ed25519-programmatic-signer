@@ -19,9 +19,11 @@ use {
     },
     solana_program_error::ProgramError,
     solana_system_interface::instruction::transfer,
-    spl_message_executor_interface::error::Error as MessageExecutorError,
+    spl_message_executor_interface::{
+        error::Error as MessageExecutorError, instruction::derive_transition_commitment,
+    },
     spl_nonce_client::instruction::advance,
-    spl_nonce_interface::error::Error as NonceError,
+    spl_nonce_interface::{error::Error as NonceError, state::Nonce},
 };
 
 pub mod helpers;
@@ -52,15 +54,6 @@ fn execute_rejects_nonce_account_owned_by_another_program() {
     ExecuteBuilder::default()
         .nonce_account(nonce_address, nonce_account)
         .check_err(ProgramError::IllegalOwner)
-        .execute();
-}
-
-#[test]
-fn execute_rejects_wrong_slot_hashes_account() {
-    let wrong_slot_hashes = Address::new_unique();
-    ExecuteBuilder::default()
-        .mutate_execute_ix(move |ix| ix.accounts[2].pubkey = wrong_slot_hashes)
-        .check_err(ProgramError::UnsupportedSysvar)
         .execute();
 }
 
@@ -150,6 +143,91 @@ fn execute_rejects_message_reuse_after_nonce_advances() {
 }
 
 #[test]
+fn execute_supports_precomputed_nonce_chain() {
+    let mollusk = init_mollusk();
+    let (nonce_address, nonce_account) = initialize_nonce_account(&mollusk, &DEFAULT_AUTHORITY);
+    let initial_state = decode_state(&nonce_account);
+
+    let first_recipient = Address::new_unique();
+    let first_message = VersionedMessage::Legacy(Message::new_with_blockhash(
+        &[transfer(&DEFAULT_AUTHORITY, &first_recipient, 1)],
+        Some(&DEFAULT_AUTHORITY),
+        &initial_state.nonce,
+    ));
+    let first_nonce = initial_state.derive_next_nonce(
+        &spl_nonce_interface::id(),
+        &nonce_address,
+        &derive_transition_commitment(&first_message),
+    );
+
+    let second_recipient = Address::new_unique();
+    let second_message = VersionedMessage::Legacy(Message::new_with_blockhash(
+        &[transfer(&DEFAULT_AUTHORITY, &second_recipient, 1)],
+        Some(&DEFAULT_AUTHORITY),
+        &first_nonce,
+    ));
+    let second_nonce = Nonce {
+        nonce: first_nonce,
+        authority: initial_state.authority,
+    }
+    .derive_next_nonce(
+        &spl_nonce_interface::id(),
+        &nonce_address,
+        &derive_transition_commitment(&second_message),
+    );
+
+    let first = ExecuteBuilder::new(mollusk)
+        .nonce_account(nonce_address, nonce_account)
+        .message(first_message)
+        .execute();
+    assert_eq!(decode_state(&first.nonce_account).nonce, first_nonce);
+
+    let second = ExecuteBuilder::default()
+        .nonce_account(nonce_address, first.nonce_account)
+        .message(second_message)
+        .execute();
+    assert_eq!(decode_state(&second.nonce_account).nonce, second_nonce);
+}
+
+#[test]
+fn tampered_message_invalidates_precomputed_successor() {
+    let mollusk = init_mollusk();
+    let (nonce_address, nonce_account) = initialize_nonce_account(&mollusk, &DEFAULT_AUTHORITY);
+    let initial_state = decode_state(&nonce_account);
+
+    let planned_message = VersionedMessage::Legacy(Message::new_with_blockhash(
+        &[transfer(&DEFAULT_AUTHORITY, &Address::new_unique(), 1)],
+        Some(&DEFAULT_AUTHORITY),
+        &initial_state.nonce,
+    ));
+    let planned_successor = initial_state.derive_next_nonce(
+        &spl_nonce_interface::id(),
+        &nonce_address,
+        &derive_transition_commitment(&planned_message),
+    );
+
+    let tampered_message = VersionedMessage::Legacy(Message::new_with_blockhash(
+        &[transfer(&DEFAULT_AUTHORITY, &Address::new_unique(), 2)],
+        Some(&DEFAULT_AUTHORITY),
+        &initial_state.nonce,
+    ));
+    let tampered = ExecuteBuilder::new(mollusk)
+        .nonce_account(nonce_address, nonce_account)
+        .message(tampered_message)
+        .execute();
+    assert_ne!(
+        decode_state(&tampered.nonce_account).nonce,
+        planned_successor
+    );
+
+    ExecuteBuilder::default()
+        .nonce_account(nonce_address, tampered.nonce_account)
+        .recent_blockhash(planned_successor)
+        .check_err(MessageExecutorError::NonceMismatch)
+        .execute();
+}
+
+#[test]
 fn execute_rejects_account_count_mismatch() {
     ExecuteBuilder::default()
         .mutate_execute_ix(|ix| {
@@ -164,7 +242,7 @@ fn execute_rejects_account_count_mismatch() {
 fn execute_rejects_account_order_mismatch() {
     ExecuteBuilder::default()
         .inner_instruction(transfer(&DEFAULT_AUTHORITY, &Address::new_unique(), 1))
-        .mutate_execute_ix(|ix| ix.accounts.swap(3, 4))
+        .mutate_execute_ix(|ix| ix.accounts.swap(2, 3))
         .check_err(MessageExecutorError::MessageAccountsMismatch)
         .execute();
 }
@@ -173,7 +251,7 @@ fn execute_rejects_account_order_mismatch() {
 fn execute_rejects_readonly_message_writable_account() {
     ExecuteBuilder::default()
         .inner_instruction(transfer(&DEFAULT_AUTHORITY, &Address::new_unique(), 1))
-        .mutate_execute_ix(|ix| ix.accounts[4].is_writable = false)
+        .mutate_execute_ix(|ix| ix.accounts[3].is_writable = false)
         .check(Check::instruction_err(
             InstructionError::PrivilegeEscalation,
         ))
@@ -183,7 +261,7 @@ fn execute_rejects_readonly_message_writable_account() {
 #[test]
 fn execute_rejects_missing_required_signer_privilege() {
     ExecuteBuilder::default()
-        .mutate_execute_ix(|ix| ix.accounts[3].is_signer = false)
+        .mutate_execute_ix(|ix| ix.accounts[2].is_signer = false)
         .check(Check::instruction_err(
             InstructionError::PrivilegeEscalation,
         ))
@@ -238,7 +316,7 @@ fn execute_downgrades_extra_writable_privilege_for_inner_cpi() {
             message.header.num_readonly_unsigned_accounts = 2;
         })
         // gives recipient extra writable privilege on the outer ix
-        .mutate_execute_ix(|ix| ix.accounts[4].is_writable = true)
+        .mutate_execute_ix(|ix| ix.accounts[3].is_writable = true)
         .check(Check::instruction_err(
             InstructionError::ReadonlyLamportChange,
         ))
@@ -260,7 +338,7 @@ fn execute_downgrades_extra_signer_privilege_for_inner_cpi() {
             message.header.num_required_signatures = 1;
         })
         // gives source extra signer privilege on the outer ix
-        .mutate_execute_ix(|ix| ix.accounts[4].is_signer = true)
+        .mutate_execute_ix(|ix| ix.accounts[3].is_signer = true)
         .account(
             source,
             Account::new(1, 0, &solana_system_interface::program::id()),
@@ -293,7 +371,12 @@ fn execute_rejects_message_that_consumes_its_own_nonce() {
 
     ExecuteBuilder::new(mollusk)
         .nonce_account(nonce_address, nonce_account)
-        .inner_instruction(advance(&DEFAULT_AUTHORITY, &nonce_address, old_nonce))
+        .inner_instruction(advance(
+            &DEFAULT_AUTHORITY,
+            &nonce_address,
+            old_nonce,
+            Hash::default(),
+        ))
         .check_err(NonceError::NonceMismatch)
         .execute();
 }

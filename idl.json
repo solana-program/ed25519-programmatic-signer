@@ -455,24 +455,6 @@
               "docs": [
                 "Nonce account to advance"
               ]
-            },
-            {
-              "kind": "instructionAccountNode",
-              "name": "slotHashes",
-              "isWritable": false,
-              "isSigner": false,
-              "isOptional": false,
-              "docs": [
-                "Slot Hashes sysvar"
-              ],
-              "defaultValue": {
-                "kind": "publicKeyValueNode",
-                "publicKey": "SysvarS1otHashes111111111111111111111111111"
-              },
-              "display": {
-                "kind": "instructionAccountDisplayNode",
-                "skip": "always"
-              }
             }
           ],
           "arguments": [
@@ -500,6 +482,13 @@
               "type": {
                 "kind": "publicKeyTypeNode"
               }
+            },
+            {
+              "kind": "instructionArgumentNode",
+              "name": "transitionCommitment",
+              "type": {
+                "kind": "publicKeyTypeNode"
+              }
             }
           ],
           "discriminators": [
@@ -512,7 +501,7 @@
           "display": {
             "kind": "instructionDisplayNode",
             "intent": "Advance nonce",
-            "interpolatedIntent": "Advance nonce account ${accounts.nonceAccount} by consuming current nonce ${data.currentNonce}"
+            "interpolatedIntent": "Advance nonce account ${accounts.nonceAccount} by consuming current nonce ${data.currentNonce} and committing to transition ${data.transitionCommitment}."
           }
         }
       ],

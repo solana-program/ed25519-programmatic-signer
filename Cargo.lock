@@ -3189,7 +3189,6 @@ dependencies = [
  "solana-address 2.6.1",
  "solana-instruction",
  "solana-message",
- "solana-sdk-ids",
  "spl-message-executor-interface",
  "spl-nonce-interface",
 ]
@@ -3200,8 +3199,10 @@ version = "0.1.0"
 dependencies = [
  "codama-macros",
  "solana-address 2.6.1",
+ "solana-hash",
  "solana-message",
  "solana-program-error",
+ "solana-sha256-hasher",
  "wincode",
 ]
 
@@ -3218,7 +3219,6 @@ dependencies = [
  "solana-message",
  "solana-program-error",
  "solana-rent",
- "solana-sdk-ids",
  "solana-system-interface",
  "spl-message-executor-client",
  "spl-message-executor-interface",

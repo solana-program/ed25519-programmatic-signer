@@ -20,7 +20,6 @@ workspace = true
 [dependencies]
 pinocchio = { workspace = true, features = ["alloc", "cpi"] }
 solana-message = { workspace = true }
-solana-sdk-ids = { workspace = true }
 spl-message-executor-interface = { workspace = true }
 spl-nonce-client = { workspace = true, features = ["cpi"] }
 spl-nonce-interface = { workspace = true }

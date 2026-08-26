@@ -27,8 +27,13 @@ fn advance_rejects_missing_accounts() {
     let (nonce_account_address, nonce_account) = initialize_nonce_account(&mollusk, &authority);
     let current_nonce = decode_state(&nonce_account).nonce;
 
-    let mut instruction = advance(&authority, &nonce_account_address, current_nonce);
-    instruction.accounts.truncate(2);
+    let mut instruction = advance(
+        &authority,
+        &nonce_account_address,
+        current_nonce,
+        Hash::default(),
+    );
+    instruction.accounts.truncate(1);
 
     mollusk.process_and_validate_instruction(
         &instruction,
@@ -128,25 +133,26 @@ fn advance_rejects_reuse_of_consumed_nonce() {
 }
 
 #[test]
-fn advance_rejects_wrong_slot_hashes_account() {
+fn repeated_transition_commitment_produces_distinct_successors() {
     let authority = Address::from([2; 32]);
     let mollusk = init_mollusk();
     let (nonce_account_address, nonce_account) = initialize_nonce_account(&mollusk, &authority);
-    let current_nonce = decode_state(&nonce_account).nonce;
+    let transition_commitment = Hash::new_from_array([7; 32]);
 
-    let wrong_slot_hashes_addr = Address::new_unique();
-    let mut instruction = advance(&authority, &nonce_account_address, current_nonce);
-    instruction.accounts[2] = AccountMeta::new_readonly(wrong_slot_hashes_addr, false);
+    let first = AdvanceBuilder::default()
+        .nonce_account((nonce_account_address, nonce_account))
+        .transition_commitment(transition_commitment)
+        .execute();
+    let first_account = first.get_account(&nonce_account_address).unwrap().clone();
+    let first_nonce = decode_state(&first_account).nonce;
 
-    mollusk.process_and_validate_instruction(
-        &instruction,
-        &[
-            (authority, Account::default()),
-            (nonce_account_address, nonce_account),
-            (wrong_slot_hashes_addr, Account::default()),
-        ],
-        &[Check::err(ProgramError::InvalidArgument)],
-    );
+    let second = AdvanceBuilder::default()
+        .nonce_account((nonce_account_address, first_account))
+        .transition_commitment(transition_commitment)
+        .execute();
+    let second_nonce = decode_state(second.get_account(&nonce_account_address).unwrap()).nonce;
+
+    assert_ne!(second_nonce, first_nonce);
 }
 
 #[test]
@@ -157,7 +163,12 @@ fn advance_rejects_readonly_nonce_account() {
     let original_nonce_account = nonce_account.clone();
     let current_nonce = decode_state(&nonce_account).nonce;
 
-    let mut instruction = advance(&authority, &nonce_account_address, current_nonce);
+    let mut instruction = advance(
+        &authority,
+        &nonce_account_address,
+        current_nonce,
+        Hash::default(),
+    );
     instruction.accounts[1] = AccountMeta::new_readonly(nonce_account_address, false);
 
     let result = mollusk.process_and_validate_instruction(
@@ -165,7 +176,6 @@ fn advance_rejects_readonly_nonce_account() {
         &[
             (authority, Account::default()),
             (nonce_account_address, nonce_account),
-            mollusk.sysvars.keyed_account_for_slot_hashes_sysvar(),
         ],
         &[Check::instruction_err(
             InstructionError::ReadonlyDataModified,
@@ -184,17 +194,18 @@ fn advance_writes_expected_state() {
     let mollusk = init_mollusk();
     let (nonce_account_address, nonce_account) = initialize_nonce_account(&mollusk, &authority);
     let old_nonce = decode_state(&nonce_account).nonce;
+    let transition_commitment = Hash::new_from_array([7; 32]);
 
     let result = AdvanceBuilder::default()
         .nonce_account((nonce_account_address, nonce_account))
+        .transition_commitment(transition_commitment)
         .execute();
 
     let state = decode_state(result.get_account(&nonce_account_address).unwrap());
-    let slot_hash = mollusk.sysvars.slot_hashes.first().unwrap().1;
     let program_id = spl_nonce_interface::id().to_bytes();
     let nonce_account_address = nonce_account_address.to_bytes();
     let old_nonce = old_nonce.to_bytes();
-    let slot_hash = slot_hash.to_bytes();
+    let transition_commitment = transition_commitment.to_bytes();
     assert_eq!(
         state.nonce,
         solana_sha256_hasher::hashv(&[
@@ -202,7 +213,7 @@ fn advance_writes_expected_state() {
             &program_id,
             &nonce_account_address,
             &old_nonce,
-            &slot_hash,
+            &transition_commitment,
         ])
     );
     assert_eq!(state.authority, authority);
@@ -216,7 +227,12 @@ fn advance_accepts_extra_accounts() {
     let current_nonce = decode_state(&nonce_account).nonce;
     let extra_account = Address::new_unique();
 
-    let mut instruction = advance(&authority, &nonce_account_address, current_nonce);
+    let mut instruction = advance(
+        &authority,
+        &nonce_account_address,
+        current_nonce,
+        Hash::default(),
+    );
     instruction
         .accounts
         .push(AccountMeta::new_readonly(extra_account, false));
@@ -226,7 +242,6 @@ fn advance_accepts_extra_accounts() {
         &[
             (authority, Account::default()),
             (nonce_account_address, nonce_account),
-            mollusk.sysvars.keyed_account_for_slot_hashes_sysvar(),
             (extra_account, Account::default()),
         ],
         &[Check::success()],

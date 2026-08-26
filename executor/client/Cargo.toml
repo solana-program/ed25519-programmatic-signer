@@ -18,6 +18,5 @@ workspace = true
 solana-address = { workspace = true }
 solana-instruction = { workspace = true, features = ["wincode"] }
 solana-message = { workspace = true }
-solana-sdk-ids = { workspace = true }
 spl-message-executor-interface = { workspace = true }
 spl-nonce-interface = { workspace = true }
