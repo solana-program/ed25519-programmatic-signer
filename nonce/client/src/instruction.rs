@@ -4,7 +4,7 @@ use {
     solana_hash::Hash,
     solana_instruction::{AccountMeta, Instruction},
     solana_sdk_ids::sysvar::slot_hashes,
-    spl_nonce_interface::instruction::{AdvanceNonceArgs, Instruction as NonceInstruction},
+    spl_nonce_interface::instruction::Instruction as NonceInstruction,
 };
 
 /// Creates an `Initialize` instruction.
@@ -29,10 +29,10 @@ pub fn advance(
 ) -> Instruction {
     Instruction::new_with_wincode(
         spl_nonce_interface::id(),
-        &NonceInstruction::Advance(AdvanceNonceArgs {
+        &NonceInstruction::Advance {
             current_nonce,
             transition_commitment,
-        }),
+        },
         vec![
             AccountMeta::new_readonly(*authority, true),
             AccountMeta::new(*nonce_account, false),

@@ -71,7 +71,8 @@ pub enum Instruction {
     /// predecessor executes. Advancing with a different commitment at any step yields a different
     /// successor and invalidates everything signed against the abandoned branch.
     ///
-    /// Instruction data is the discriminator followed by a serialized [`AdvanceNonceArgs`].
+    /// Instruction data is the discriminator followed by `current_nonce` and
+    /// `transition_commitment`.
     ///
     /// On success, the program:
     /// 1. Verifies the stored authority matches the authority account, which must carry
@@ -87,7 +88,9 @@ pub enum Instruction {
         feature = "codama",
         codama(display(
             intent = "Advance nonce",
-            interpolated_intent = "Advance nonce account ${accounts.nonceAccount} by consuming current nonce ${data.currentNonce}"
+            interpolated_intent = "Advance nonce account ${accounts.nonceAccount} by consuming \
+                                   current nonce ${data.currentNonce} and committing to \
+                                   transition ${data.transitionCommitment}."
         )),
         codama(account(
             name = "authority",
@@ -95,34 +98,21 @@ pub enum Instruction {
             docs = "Authority stored in the nonce account",
             display(label = "Nonce authority")
         )),
-        codama(account(
-            name = "nonce_account",
-            writable,
-            docs = "Nonce account to advance"
-        ))
+        codama(account(name = "nonce_account", writable, docs = "Nonce account to advance"))
     )]
-    Advance(
-        #[cfg_attr(
-            feature = "codama",
-            codama(name = "current_nonce"),
-            codama(type = public_key)
-        )]
-        AdvanceNonceArgs,
-    ),
+    Advance {
+        /// Nonce value the account must currently store.
+        #[cfg_attr(feature = "codama", codama(type = public_key))]
+        current_nonce: Hash,
+        /// Value the successor nonce commits to, conventionally a hash of the action being
+        /// authorized.
+        #[cfg_attr(feature = "codama", codama(type = public_key))]
+        transition_commitment: Hash,
+    },
 
     /// Closes a nonce account. Not yet implemented.
     #[cfg_attr(feature = "codama", codama(skip))]
     Close,
-}
-
-/// Payload for nonce advancement.
-#[derive(Clone, Debug, PartialEq, Eq, SchemaRead, SchemaWrite)]
-pub struct AdvanceNonceArgs {
-    /// Nonce value the account must currently store.
-    pub current_nonce: Hash,
-    /// Value the successor nonce commits to, conventionally a hash of the action being
-    /// authorized. See [`Instruction::Advance`].
-    pub transition_commitment: Hash,
 }
 
 impl Instruction {
@@ -136,15 +126,15 @@ impl Instruction {
 #[cfg(test)]
 mod tests {
     use {
-        super::{AdvanceNonceArgs, Hash, Instruction},
+        super::{Hash, Instruction},
         solana_program_error::ProgramError,
         test_case::test_case,
     };
 
-    const ADVANCE_IX: Instruction = Instruction::Advance(AdvanceNonceArgs {
+    const ADVANCE_IX: Instruction = Instruction::Advance {
         current_nonce: Hash::new_from_array([1; 32]),
         transition_commitment: Hash::new_from_array([2; 32]),
-    });
+    };
 
     #[test_case(Instruction::Initialize, 0)]
     #[test_case(ADVANCE_IX, 1)]

@@ -6,7 +6,7 @@ use {
         instruction::{InstructionAccount, InstructionView},
     },
     solana_hash::Hash,
-    spl_nonce_interface::instruction::{AdvanceNonceArgs, Instruction},
+    spl_nonce_interface::instruction::Instruction,
 };
 
 /// Invokes the SPL Nonce program's `Advance` instruction.
@@ -16,10 +16,10 @@ pub fn advance(
     current_nonce: Hash,
     transition_commitment: Hash,
 ) -> ProgramResult {
-    let instruction = Instruction::Advance(AdvanceNonceArgs {
+    let instruction = Instruction::Advance {
         current_nonce,
         transition_commitment,
-    });
+    };
     let data =
         wincode::serialize(&instruction).map_err(|_| ProgramError::InvalidInstructionData)?;
 
