@@ -4,14 +4,16 @@ use {
         validate::{validate_message_accounts, validate_wrapped_message},
     },
     pinocchio::{AccountView, ProgramResult, error::ProgramError},
-    solana_message::v1,
+    solana_message::legacy,
+    spl_legacy_message_executor_interface::{
+        error::Error, instruction::derive_transition_commitment,
+    },
     spl_nonce_interface::state::Nonce,
-    spl_v1_message_executor_interface::{error::Error, instruction::derive_transition_commitment},
 };
 
 pub fn process_execute(
     accounts: &mut [AccountView],
-    wrapped_message: v1::Message,
+    wrapped_message: legacy::Message,
 ) -> ProgramResult {
     let [nonce_account, nonce_program, message_accounts @ ..] = accounts else {
         return Err(ProgramError::NotEnoughAccountKeys);
@@ -28,7 +30,7 @@ pub fn process_execute(
 
     validate_wrapped_message(&wrapped_message)?;
 
-    if wrapped_message.lifetime_specifier != nonce {
+    if wrapped_message.recent_blockhash != nonce {
         return Err(Error::NonceMismatch.into());
     }
 

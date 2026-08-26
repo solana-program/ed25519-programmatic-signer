@@ -9,13 +9,13 @@ use {
     solana_address::Address,
     solana_hash::Hash,
     solana_instruction::Instruction,
-    solana_message::v1,
+    solana_message::legacy,
     solana_program_error::ProgramError,
+    spl_legacy_message_executor_client::instruction::execute,
     spl_nonce_interface::state::Nonce,
-    spl_v1_message_executor_client::instruction::execute,
 };
 
-type MessageMutation = Box<dyn FnOnce(&mut v1::Message)>;
+type MessageMutation = Box<dyn FnOnce(&mut legacy::Message)>;
 type InstructionMutation = Box<dyn FnOnce(&mut Instruction)>;
 
 pub const DEFAULT_AUTHORITY: Address = Address::new_from_array([3; 32]);
@@ -26,7 +26,7 @@ pub struct ExecuteBuilder<'a> {
     authority: Address,
     inner_instructions: Vec<Instruction>,
     recent_blockhash: Option<Hash>,
-    message: Option<v1::Message>,
+    message: Option<legacy::Message>,
     message_mutations: Vec<MessageMutation>,
     execute_instruction_mutations: Vec<InstructionMutation>,
     account_overrides: Vec<(Address, Account)>,
@@ -75,12 +75,12 @@ impl<'a> ExecuteBuilder<'a> {
         self
     }
 
-    pub fn message(mut self, message: v1::Message) -> Self {
+    pub fn message(mut self, message: legacy::Message) -> Self {
         self.message = Some(message);
         self
     }
 
-    pub fn mutate_message(mut self, mutation: impl FnOnce(&mut v1::Message) + 'static) -> Self {
+    pub fn mutate_message(mut self, mutation: impl FnOnce(&mut legacy::Message) + 'static) -> Self {
         self.message_mutations.push(Box::new(mutation));
         self
     }
@@ -128,7 +128,11 @@ impl<'a> ExecuteBuilder<'a> {
         });
 
         let mut message = message_override.unwrap_or_else(|| {
-            v1::Message::try_compile(&authority, &inner_instructions, recent_blockhash).unwrap()
+            legacy::Message::new_with_blockhash(
+                &inner_instructions,
+                Some(&authority),
+                &recent_blockhash,
+            )
         });
 
         for mutation in message_mutations {
@@ -195,7 +199,7 @@ impl<'a> ExecuteBuilder<'a> {
 pub struct ExecuteResult {
     pub nonce_address: Address,
     pub nonce_account: Account,
-    pub message: v1::Message,
+    pub message: legacy::Message,
     raw: InstructionResult,
 }
 

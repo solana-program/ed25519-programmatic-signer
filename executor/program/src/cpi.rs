@@ -5,13 +5,13 @@ use {
         cpi::invoke_with_slice,
         instruction::{InstructionAccount, InstructionView},
     },
-    solana_message::v1,
-    spl_v1_message_executor_interface::error::Error,
+    solana_message::legacy,
+    spl_legacy_message_executor_interface::error::Error,
 };
 
 pub fn invoke_instructions(
     message_accounts: &[AccountView],
-    wrapped_message: &v1::Message,
+    wrapped_message: &legacy::Message,
 ) -> ProgramResult {
     // Allocate once for the largest instruction and reuse across the execution
     let max_instruction_accounts = wrapped_message

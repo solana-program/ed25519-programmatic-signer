@@ -2,12 +2,12 @@ use {
     alloc::{collections::BTreeSet, vec::Vec},
     solana_address::Address,
     solana_instruction::{AccountMeta, Instruction},
-    solana_message::v1,
-    spl_v1_message_executor_interface::instruction::Instruction as MessageExecutorInstruction,
+    solana_message::legacy,
+    spl_legacy_message_executor_interface::instruction::Instruction as MessageExecutorInstruction,
 };
 
-/// Creates an `Execute` instruction for a V1 Message.
-pub fn execute(nonce_account: &Address, message: &v1::Message) -> Instruction {
+/// Creates an `Execute` instruction for a legacy message.
+pub fn execute(nonce_account: &Address, message: &legacy::Message) -> Instruction {
     // Fixed accounts for consuming the nonce, followed by the wrapped message's accounts
     let mut accounts = Vec::with_capacity(message.account_keys.len().saturating_add(2));
     accounts.push(AccountMeta::new(*nonce_account, false));
@@ -23,7 +23,7 @@ pub fn execute(nonce_account: &Address, message: &v1::Message) -> Instruction {
     }
 
     Instruction::new_with_wincode(
-        spl_v1_message_executor_interface::id(),
+        spl_legacy_message_executor_interface::id(),
         &MessageExecutorInstruction::Execute(message.clone()),
         accounts,
     )

@@ -2,23 +2,23 @@
 
 use {
     pinocchio::{AccountView, Address, error::ProgramError},
-    solana_message::v1,
+    solana_message::legacy,
     solana_sanitize::Sanitize,
-    spl_v1_message_executor_interface::error::Error,
+    spl_legacy_message_executor_interface::error::Error,
 };
 
-pub fn validate_wrapped_message(wrapped_message: &v1::Message) -> Result<(), ProgramError> {
-    // Transaction config applies only while loading a top-level transaction and
-    // cannot be applied during CPI.
-    if wrapped_message.config != v1::TransactionConfig::empty() {
-        return Err(Error::InvalidMessage.into());
-    }
-
+pub fn validate_wrapped_message(wrapped_message: &legacy::Message) -> Result<(), ProgramError> {
     // Message account privileges come from the header counts,
     // so they must agree with the key list.
     wrapped_message
         .sanitize()
         .map_err(|_| Error::InvalidMessage)?;
+
+    // The runtime's `AccountLoadedTwice` check only covers top-level messages.
+    // Reject duplicates so one account cannot hold conflicting CPI privileges.
+    if wrapped_message.has_duplicates() {
+        return Err(Error::InvalidMessage.into());
+    }
 
     Ok(())
 }
@@ -29,7 +29,7 @@ pub fn validate_wrapped_message(wrapped_message: &v1::Message) -> Result<(), Pro
 /// execution.
 pub fn validate_message_accounts<'a>(
     message_accounts: &'a [AccountView],
-    wrapped_message: &v1::Message,
+    wrapped_message: &legacy::Message,
     stored_nonce_authority: &Address,
 ) -> Result<&'a AccountView, ProgramError> {
     // Compiled instructions resolve accounts by index, so message accounts

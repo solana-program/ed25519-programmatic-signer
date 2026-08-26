@@ -185,24 +185,6 @@
                 "kind": "instructionAccountDisplayNode",
                 "skip": "always"
               }
-            },
-            {
-              "kind": "instructionAccountNode",
-              "name": "slotHashes",
-              "isWritable": false,
-              "isSigner": false,
-              "isOptional": false,
-              "docs": [
-                "Slot Hashes sysvar"
-              ],
-              "defaultValue": {
-                "kind": "publicKeyValueNode",
-                "publicKey": "SysvarS1otHashes111111111111111111111111111"
-              },
-              "display": {
-                "kind": "instructionAccountDisplayNode",
-                "skip": "always"
-              }
             }
           ],
           "arguments": [
@@ -287,7 +269,7 @@
           "kind": "errorNode",
           "name": "invalidMessage",
           "code": 1,
-          "message": "The message is unsupported, fails sanitization, or has duplicate keys"
+          "message": "The legacy message fails sanitization or contains duplicate keys"
         },
         {
           "kind": "errorNode",
@@ -305,7 +287,7 @@
           "kind": "errorNode",
           "name": "nonceMismatch",
           "code": 4,
-          "message": "The message's lifetime specifier does not match the stored nonce"
+          "message": "The message's recent blockhash does not match the stored nonce"
         }
       ]
     },
