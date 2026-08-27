@@ -1,0 +1,62 @@
+{
+    "name": "@solana-program/ed25519-programmatic-signer",
+    "version": "0.1.0",
+    "description": "JavaScript client for the SPL Ed25519 Programmatic Signer programs",
+    "homepage": "https://github.com/solana-program/ed25519-programmatic-signer#readme",
+    "bugs": {
+        "url": "https://github.com/solana-program/ed25519-programmatic-signer/issues"
+    },
+    "license": "Apache-2.0",
+    "repository": {
+        "type": "git",
+        "url": "git+https://github.com/solana-program/ed25519-programmatic-signer.git"
+    },
+    "files": [
+        "./dist/src",
+        "./dist/types",
+        "./src/"
+    ],
+    "type": "commonjs",
+    "sideEffects": false,
+    "main": "./dist/src/index.js",
+    "module": "./dist/src/index.mjs",
+    "types": "./dist/types/index.d.ts",
+    "exports": {
+        ".": {
+            "types": "./dist/types/index.d.ts",
+            "import": "./dist/src/index.mjs",
+            "require": "./dist/src/index.js"
+        }
+    },
+    "publishConfig": {
+        "access": "public",
+        "registry": "https://registry.npmjs.org"
+    },
+    "scripts": {
+        "build": "rimraf dist && tsup && tsc -p ./tsconfig.declarations.json",
+        "test": "node -e \"console.log('No tests configured')\"",
+        "lint": "oxlint",
+        "lint:fix": "oxlint --fix",
+        "format": "oxfmt --check",
+        "format:fix": "oxfmt",
+        "prepublishOnly": "pnpm build"
+    },
+    "devDependencies": {
+        "@solana-config/oxc": "^0.1.1",
+        "@solana/kit": "^8.0.0",
+        "@types/node": "^26.3.0",
+        "oxfmt": "^0.65.0",
+        "oxlint": "^1.80.0",
+        "oxlint-tsgolint": "^7.0.2001",
+        "rimraf": "^6.1.3",
+        "tsup": "^8.5.1",
+        "typescript": "^7.0.2"
+    },
+    "peerDependencies": {
+        "@solana/kit": "^8.0.0"
+    },
+    "engines": {
+        "node": ">=24.0.0"
+    },
+    "packageManager": "pnpm@10.15.0"
+}
