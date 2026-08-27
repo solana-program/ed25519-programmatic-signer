@@ -26,7 +26,6 @@ import {
     type Instruction,
     type InstructionWithAccounts,
     type InstructionWithData,
-    type ReadonlyAccount,
     type ReadonlySignerAccount,
     type ReadonlyUint8Array,
     type TransactionSigner,
@@ -45,7 +44,6 @@ export type AdvanceInstruction<
     TProgram extends string = typeof NONCE_PROGRAM_ADDRESS,
     TAccountAuthority extends string | AccountMeta<string> = string,
     TAccountNonceAccount extends string | AccountMeta<string> = string,
-    TAccountSlotHashes extends string | AccountMeta<string> = 'SysvarS1otHashes111111111111111111111111111',
     TRemainingAccounts extends readonly AccountMeta<string>[] = [],
 > = Instruction<TProgram> &
     InstructionWithData<ReadonlyUint8Array> &
@@ -55,20 +53,20 @@ export type AdvanceInstruction<
                 ? ReadonlySignerAccount<TAccountAuthority> & AccountSignerMeta<TAccountAuthority>
                 : TAccountAuthority,
             TAccountNonceAccount extends string ? WritableAccount<TAccountNonceAccount> : TAccountNonceAccount,
-            TAccountSlotHashes extends string ? ReadonlyAccount<TAccountSlotHashes> : TAccountSlotHashes,
             ...TRemainingAccounts,
         ]
     >;
 
-export type AdvanceInstructionData = { discriminator: number; currentNonce: Address };
+export type AdvanceInstructionData = { discriminator: number; currentNonce: Address; transitionCommitment: Address };
 
-export type AdvanceInstructionDataArgs = { currentNonce: Address };
+export type AdvanceInstructionDataArgs = { currentNonce: Address; transitionCommitment: Address };
 
 export function getAdvanceInstructionDataEncoder(): FixedSizeEncoder<AdvanceInstructionDataArgs> {
     return transformEncoder(
         getStructEncoder([
             ['discriminator', getU8Encoder()],
             ['currentNonce', getAddressEncoder()],
+            ['transitionCommitment', getAddressEncoder()],
         ]),
         value => ({ ...value, discriminator: ADVANCE_DISCRIMINATOR }),
     );
@@ -78,6 +76,7 @@ export function getAdvanceInstructionDataDecoder(): FixedSizeDecoder<AdvanceInst
     return getStructDecoder([
         ['discriminator', getU8Decoder()],
         ['currentNonce', getAddressDecoder()],
+        ['transitionCommitment', getAddressDecoder()],
     ]);
 }
 
@@ -85,29 +84,23 @@ export function getAdvanceInstructionDataCodec(): FixedSizeCodec<AdvanceInstruct
     return combineCodec(getAdvanceInstructionDataEncoder(), getAdvanceInstructionDataDecoder());
 }
 
-export type AdvanceInput<
-    TAccountAuthority extends string = string,
-    TAccountNonceAccount extends string = string,
-    TAccountSlotHashes extends string = string,
-> = {
+export type AdvanceInput<TAccountAuthority extends string = string, TAccountNonceAccount extends string = string> = {
     /** Authority stored in the nonce account */
     authority: TransactionSigner<TAccountAuthority>;
     /** Nonce account to advance */
     nonceAccount: Address<TAccountNonceAccount>;
-    /** Slot Hashes sysvar */
-    slotHashes?: Address<TAccountSlotHashes>;
     currentNonce: AdvanceInstructionDataArgs['currentNonce'];
+    transitionCommitment: AdvanceInstructionDataArgs['transitionCommitment'];
 };
 
 export function getAdvanceInstruction<
     TAccountAuthority extends string,
     TAccountNonceAccount extends string,
-    TAccountSlotHashes extends string,
     TProgramAddress extends Address = typeof NONCE_PROGRAM_ADDRESS,
 >(
-    input: AdvanceInput<TAccountAuthority, TAccountNonceAccount, TAccountSlotHashes>,
+    input: AdvanceInput<TAccountAuthority, TAccountNonceAccount>,
     config?: { programAddress?: TProgramAddress },
-): AdvanceInstruction<TProgramAddress, TAccountAuthority, TAccountNonceAccount, TAccountSlotHashes> {
+): AdvanceInstruction<TProgramAddress, TAccountAuthority, TAccountNonceAccount> {
     // Program address.
     const programAddress = config?.programAddress ?? NONCE_PROGRAM_ADDRESS;
 
@@ -115,29 +108,21 @@ export function getAdvanceInstruction<
     const originalAccounts = {
         authority: { value: input.authority ?? null, isWritable: false },
         nonceAccount: { value: input.nonceAccount ?? null, isWritable: true },
-        slotHashes: { value: input.slotHashes ?? null, isWritable: false },
     };
     const accounts = originalAccounts as Record<keyof typeof originalAccounts, ResolvedInstructionAccount>;
 
     // Original args.
     const args = { ...input };
 
-    // Resolve default values.
-    if (!accounts.slotHashes.value) {
-        accounts.slotHashes.value =
-            'SysvarS1otHashes111111111111111111111111111' as Address<'SysvarS1otHashes111111111111111111111111111'>;
-    }
-
     const getAccountMeta = getAccountMetaFactory(programAddress, 'programId');
     return Object.freeze({
         accounts: [
             getAccountMeta('authority', accounts.authority),
             getAccountMeta('nonceAccount', accounts.nonceAccount),
-            getAccountMeta('slotHashes', accounts.slotHashes),
         ],
         data: getAdvanceInstructionDataEncoder().encode(args as AdvanceInstructionDataArgs),
         programAddress,
-    } as AdvanceInstruction<TProgramAddress, TAccountAuthority, TAccountNonceAccount, TAccountSlotHashes>);
+    } as AdvanceInstruction<TProgramAddress, TAccountAuthority, TAccountNonceAccount>);
 }
 
 export type ParsedAdvanceInstruction<
@@ -150,8 +135,6 @@ export type ParsedAdvanceInstruction<
         authority: TAccountMetas[0];
         /** Nonce account to advance */
         nonceAccount: TAccountMetas[1];
-        /** Slot Hashes sysvar */
-        slotHashes: TAccountMetas[2];
     };
     data: AdvanceInstructionData;
 };
@@ -161,10 +144,10 @@ export function parseAdvanceInstruction<TProgram extends string, TAccountMetas e
         InstructionWithAccounts<TAccountMetas> &
         InstructionWithData<ReadonlyUint8Array>,
 ): ParsedAdvanceInstruction<TProgram, TAccountMetas> {
-    if (instruction.accounts.length < 3) {
+    if (instruction.accounts.length < 2) {
         throw new SolanaError(SOLANA_ERROR__PROGRAM_CLIENTS__INSUFFICIENT_ACCOUNT_METAS, {
             actualAccountMetas: instruction.accounts.length,
-            expectedAccountMetas: 3,
+            expectedAccountMetas: 2,
         });
     }
     let accountIndex = 0;
@@ -175,7 +158,7 @@ export function parseAdvanceInstruction<TProgram extends string, TAccountMetas e
     };
     return {
         programAddress: instruction.programAddress,
-        accounts: { authority: getNextAccount(), nonceAccount: getNextAccount(), slotHashes: getNextAccount() },
+        accounts: { authority: getNextAccount(), nonceAccount: getNextAccount() },
         data: getAdvanceInstructionDataDecoder().decode(instruction.data),
     };
 }
