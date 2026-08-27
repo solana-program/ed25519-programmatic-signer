@@ -69,7 +69,6 @@ export default {
             args: [
                 'clients/js',
                 {
-                    dependencyVersions: { '@solana/kit': '^8.0.0' },
                     kitImportStrategy: 'rootOnly',
                     syncPackageJson: true,
                     prettierOptions: {
