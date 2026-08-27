@@ -3179,7 +3179,6 @@ dependencies = [
  "solana-keypair",
  "solana-message",
  "solana-program-error",
- "solana-program-runtime",
  "solana-signer",
  "solana-system-interface",
  "solana-transaction",

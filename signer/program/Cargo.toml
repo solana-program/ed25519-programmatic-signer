@@ -33,7 +33,6 @@ solana-hash = { workspace = true }
 solana-instruction = { workspace = true, features = ["wincode"] }
 solana-keypair = { workspace = true }
 solana-program-error = { workspace = true }
-solana-program-runtime = { workspace = true }
 solana-signer = { workspace = true }
 solana-system-interface = { workspace = true, features = ["wincode"] }
 spl-ed25519-signer-client = { workspace = true }
