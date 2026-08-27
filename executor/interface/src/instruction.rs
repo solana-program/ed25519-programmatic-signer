@@ -48,12 +48,6 @@ pub enum Instruction {
             docs = "SPL Nonce program",
             default_value = public_key("Noncediea1fH12usShuQAz28UhgAeuE5Maf32LsMUQB"),
             display(skip = always)
-        )),
-        codama(account(
-            name = "slot_hashes",
-            docs = "Slot Hashes sysvar",
-            default_value = sysvar("slot_hashes"),
-            display(skip = always)
         ))
     )]
     Execute(
