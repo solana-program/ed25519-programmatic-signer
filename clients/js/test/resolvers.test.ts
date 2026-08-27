@@ -1,0 +1,239 @@
+import { LOADER_V3_PROGRAM_ADDRESS } from '@solana-program/loader-v3';
+import {
+    AccountRole,
+    getAddressDecoder,
+    getBlockhashDecoder,
+    getCompiledTransactionMessageEncoder,
+    getTransactionEncoder,
+    SOLANA_ERROR__CODECS__EXPECTED_DECODER_TO_CONSUME_ENTIRE_BYTE_ARRAY,
+    SolanaError,
+    type CompiledTransactionMessage,
+    type CompiledTransactionMessageWithLifetime,
+    type SignaturesMap,
+    type TransactionMessageBytes,
+} from '@solana/kit';
+import { describe, expect, it } from 'vitest';
+
+import { getExecuteInstruction, getSubmitInstruction, NONCE_PROGRAM_ADDRESS } from '../src';
+
+const MESSAGE_VERSIONS = ['legacy', 0, 1] as const;
+
+type MessageVersion = (typeof MESSAGE_VERSIONS)[number];
+type TestMessage = CompiledTransactionMessage & CompiledTransactionMessageWithLifetime;
+
+const addressDecoder = getAddressDecoder();
+const blockhashDecoder = getBlockhashDecoder();
+const messageEncoder = getCompiledTransactionMessageEncoder();
+const transactionEncoder = getTransactionEncoder();
+
+const getTestAddress = (byte: number) => addressDecoder.decode(new Uint8Array(32).fill(byte));
+
+const NONCE_ACCOUNT = getTestAddress(1);
+const LIFETIME_TOKEN = blockhashDecoder.decode(new Uint8Array(32).fill(10));
+const TEST_ACCOUNTS = {
+    feePayer: getTestAddress(11),
+    secondSigner: getTestAddress(12),
+    writable: getTestAddress(13),
+    invokedProgram: getTestAddress(14),
+    readonly: getTestAddress(15),
+} as const;
+const STATIC_ACCOUNTS = [
+    TEST_ACCOUNTS.feePayer,
+    TEST_ACCOUNTS.secondSigner,
+    TEST_ACCOUNTS.writable,
+    TEST_ACCOUNTS.invokedProgram,
+    TEST_ACCOUNTS.readonly,
+];
+
+const getTestMessage = (
+    version: MessageVersion,
+    config: Readonly<{
+        includeAddressTableLookup?: boolean;
+        includeLoader?: boolean;
+        numReadonlySignerAccounts?: number;
+        programAccountIndexes?: readonly number[];
+    }> = {},
+): TestMessage => {
+    const staticAccounts = [
+        ...STATIC_ACCOUNTS.slice(0, 4),
+        config.includeLoader ? LOADER_V3_PROGRAM_ADDRESS : STATIC_ACCOUNTS[4],
+    ];
+    const header = {
+        numReadonlyNonSignerAccounts: 1,
+        numReadonlySignerAccounts: config.numReadonlySignerAccounts ?? 1,
+        numSignerAccounts: 2,
+    };
+    const programAccountIndexes = config.programAccountIndexes ?? [3];
+    const instructions = programAccountIndexes.map(programAddressIndex => ({
+        accountIndices: [0, 2, 4],
+        data: new Uint8Array([7]),
+        programAddressIndex,
+    }));
+
+    if (version === 'legacy') {
+        return {
+            header,
+            instructions,
+            lifetimeToken: LIFETIME_TOKEN,
+            staticAccounts,
+            version: 'legacy',
+        };
+    }
+
+    if (version === 0) {
+        return {
+            addressTableLookups: config.includeAddressTableLookup
+                ? [{ lookupTableAddress: getTestAddress(20), readonlyIndexes: [0], writableIndexes: [] }]
+                : [],
+            header,
+            instructions,
+            lifetimeToken: LIFETIME_TOKEN,
+            staticAccounts,
+            version: 0,
+        };
+    }
+
+    return {
+        configMask: 0,
+        configValues: [],
+        header,
+        instructionHeaders: programAccountIndexes.map(programAccountIndex => ({
+            numInstructionAccounts: 3,
+            numInstructionDataBytes: 1,
+            programAccountIndex,
+        })),
+        instructionPayloads: programAccountIndexes.map(() => ({
+            instructionAccountIndices: [0, 2, 4],
+            instructionData: new Uint8Array([7]),
+        })),
+        lifetimeToken: LIFETIME_TOKEN,
+        numInstructions: programAccountIndexes.length,
+        numStaticAccounts: staticAccounts.length,
+        staticAccounts,
+        version: 1,
+    };
+};
+
+const encodeMessage = (message: TestMessage) => messageEncoder.encode(message);
+
+const encodeTransaction = (message: TestMessage) => {
+    const messageBytes = encodeMessage(message) as TransactionMessageBytes;
+    const signerAddresses = message.staticAccounts.slice(0, message.header.numSignerAccounts);
+    const signatures: SignaturesMap = {};
+    for (const address of signerAddresses) {
+        signatures[address] = null;
+    }
+    return transactionEncoder.encode({ messageBytes, signatures });
+};
+
+const getExecuteAccounts = (message: TestMessage) =>
+    getExecuteInstruction({ message: encodeMessage(message), nonceAccount: NONCE_ACCOUNT }).accounts;
+
+const getRemainingExecuteAccounts = (message: TestMessage) => getExecuteAccounts(message).slice(2);
+
+const getSubmitAccounts = (message: TestMessage) =>
+    getSubmitInstruction({ transaction: encodeTransaction(message) }).accounts;
+
+const expectedExecuteAccounts = [
+    { address: TEST_ACCOUNTS.feePayer, role: AccountRole.WRITABLE_SIGNER },
+    { address: TEST_ACCOUNTS.secondSigner, role: AccountRole.READONLY_SIGNER },
+    { address: TEST_ACCOUNTS.writable, role: AccountRole.WRITABLE },
+    { address: TEST_ACCOUNTS.invokedProgram, role: AccountRole.READONLY },
+    { address: TEST_ACCOUNTS.readonly, role: AccountRole.READONLY },
+];
+
+const expectedSubmitAccounts = [
+    { address: TEST_ACCOUNTS.feePayer, role: AccountRole.WRITABLE },
+    { address: TEST_ACCOUNTS.secondSigner, role: AccountRole.READONLY },
+    { address: TEST_ACCOUNTS.writable, role: AccountRole.WRITABLE },
+    { address: TEST_ACCOUNTS.invokedProgram, role: AccountRole.READONLY },
+    { address: TEST_ACCOUNTS.readonly, role: AccountRole.READONLY },
+];
+
+describe('remaining account resolvers', () => {
+    it.each(MESSAGE_VERSIONS)('resolves account order and permissions for a %s message', version => {
+        expect(getExecuteAccounts(getTestMessage(version))).toEqual([
+            { address: NONCE_ACCOUNT, role: AccountRole.WRITABLE },
+            { address: NONCE_PROGRAM_ADDRESS, role: AccountRole.READONLY },
+            ...expectedExecuteAccounts,
+        ]);
+    });
+
+    it.each(MESSAGE_VERSIONS)('removes signer privileges from a submitted %s transaction', version => {
+        expect(getSubmitAccounts(getTestMessage(version))).toEqual(expectedSubmitAccounts);
+    });
+
+    it('keeps an invoked program writable when loader v3 is present', () => {
+        const message = getTestMessage('legacy', { includeLoader: true });
+        const executeAccounts = getRemainingExecuteAccounts(message);
+        const submitAccounts = getSubmitAccounts(message);
+        const expectedProgramAccounts = [
+            { address: TEST_ACCOUNTS.invokedProgram, role: AccountRole.WRITABLE },
+            { address: LOADER_V3_PROGRAM_ADDRESS, role: AccountRole.READONLY },
+        ];
+
+        expect(executeAccounts.slice(3)).toEqual(expectedProgramAccounts);
+        expect(submitAccounts.slice(3)).toEqual(expectedProgramAccounts);
+    });
+
+    it('demotes every program account used by multiple instructions', () => {
+        const remainingAccounts = getRemainingExecuteAccounts(
+            getTestMessage('legacy', { programAccountIndexes: [2, 3] }),
+        );
+
+        expect(remainingAccounts.slice(2, 4)).toEqual([
+            { address: TEST_ACCOUNTS.writable, role: AccountRole.READONLY },
+            { address: TEST_ACCOUNTS.invokedProgram, role: AccountRole.READONLY },
+        ]);
+    });
+
+    it('uses only static accounts for a v0 transaction with an unused address table lookup', () => {
+        const message = getTestMessage(0, { includeAddressTableLookup: true });
+
+        expect(getSubmitAccounts(message)).toEqual(expectedSubmitAccounts);
+    });
+
+    it('preserves signer status when demoting a program account', () => {
+        const message = getTestMessage('legacy', {
+            numReadonlySignerAccounts: 0,
+            programAccountIndexes: [1],
+        });
+        const executeAccounts = getRemainingExecuteAccounts(message);
+        const submitAccounts = getSubmitAccounts(message);
+
+        expect(executeAccounts[1]).toEqual({
+            address: TEST_ACCOUNTS.secondSigner,
+            role: AccountRole.READONLY_SIGNER,
+        });
+        expect(submitAccounts[1]).toEqual({
+            address: TEST_ACCOUNTS.secondSigner,
+            role: AccountRole.READONLY,
+        });
+    });
+
+    it('rejects trailing bytes after a compiled message', () => {
+        const message = encodeMessage(getTestMessage('legacy'));
+
+        expect(() =>
+            getExecuteInstruction({ message: new Uint8Array([...message, 255]), nonceAccount: NONCE_ACCOUNT }),
+        ).toThrow(
+            new SolanaError(SOLANA_ERROR__CODECS__EXPECTED_DECODER_TO_CONSUME_ENTIRE_BYTE_ARRAY, {
+                expectedLength: message.length,
+                numExcessBytes: 1,
+            }),
+        );
+    });
+
+    it('rejects trailing bytes after a wrapped transaction message', () => {
+        const message = getTestMessage('legacy');
+        const messageBytes = encodeMessage(message);
+        const transaction = encodeTransaction(message);
+
+        expect(() => getSubmitInstruction({ transaction: new Uint8Array([...transaction, 255]) })).toThrow(
+            new SolanaError(SOLANA_ERROR__CODECS__EXPECTED_DECODER_TO_CONSUME_ENTIRE_BYTE_ARRAY, {
+                expectedLength: messageBytes.length,
+                numExcessBytes: 1,
+            }),
+        );
+    });
+});

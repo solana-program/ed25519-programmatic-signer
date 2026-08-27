@@ -43,7 +43,6 @@ export type ExecuteInstruction<
     TProgram extends string = typeof MESSAGE_EXECUTOR_PROGRAM_ADDRESS,
     TAccountNonceAccount extends string | AccountMeta<string> = string,
     TAccountNonceProgram extends string | AccountMeta<string> = 'Noncediea1fH12usShuQAz28UhgAeuE5Maf32LsMUQB',
-    TAccountSlotHashes extends string | AccountMeta<string> = 'SysvarS1otHashes111111111111111111111111111',
     TRemainingAccounts extends readonly AccountMeta<string>[] = [],
 > = Instruction<TProgram> &
     InstructionWithData<ReadonlyUint8Array> &
@@ -51,7 +50,6 @@ export type ExecuteInstruction<
         [
             TAccountNonceAccount extends string ? WritableAccount<TAccountNonceAccount> : TAccountNonceAccount,
             TAccountNonceProgram extends string ? ReadonlyAccount<TAccountNonceProgram> : TAccountNonceProgram,
-            TAccountSlotHashes extends string ? ReadonlyAccount<TAccountSlotHashes> : TAccountSlotHashes,
             ...TRemainingAccounts,
         ]
     >;
@@ -81,29 +79,22 @@ export function getExecuteInstructionDataCodec(): Codec<ExecuteInstructionDataAr
     return combineCodec(getExecuteInstructionDataEncoder(), getExecuteInstructionDataDecoder());
 }
 
-export type ExecuteInput<
-    TAccountNonceAccount extends string = string,
-    TAccountNonceProgram extends string = string,
-    TAccountSlotHashes extends string = string,
-> = {
+export type ExecuteInput<TAccountNonceAccount extends string = string, TAccountNonceProgram extends string = string> = {
     /** Nonce account consumed for replay protection */
     nonceAccount: Address<TAccountNonceAccount>;
     /** SPL Nonce program */
     nonceProgram?: Address<TAccountNonceProgram>;
-    /** Slot Hashes sysvar */
-    slotHashes?: Address<TAccountSlotHashes>;
     message: ExecuteInstructionDataArgs['message'];
 };
 
 export function getExecuteInstruction<
     TAccountNonceAccount extends string,
     TAccountNonceProgram extends string,
-    TAccountSlotHashes extends string,
     TProgramAddress extends Address = typeof MESSAGE_EXECUTOR_PROGRAM_ADDRESS,
 >(
-    input: ExecuteInput<TAccountNonceAccount, TAccountNonceProgram, TAccountSlotHashes>,
+    input: ExecuteInput<TAccountNonceAccount, TAccountNonceProgram>,
     config?: { programAddress?: TProgramAddress },
-): ExecuteInstruction<TProgramAddress, TAccountNonceAccount, TAccountNonceProgram, TAccountSlotHashes> {
+): ExecuteInstruction<TProgramAddress, TAccountNonceAccount, TAccountNonceProgram> {
     // Program address.
     const programAddress = config?.programAddress ?? MESSAGE_EXECUTOR_PROGRAM_ADDRESS;
 
@@ -111,7 +102,6 @@ export function getExecuteInstruction<
     const originalAccounts = {
         nonceAccount: { value: input.nonceAccount ?? null, isWritable: true },
         nonceProgram: { value: input.nonceProgram ?? null, isWritable: false },
-        slotHashes: { value: input.slotHashes ?? null, isWritable: false },
     };
     const accounts = originalAccounts as Record<keyof typeof originalAccounts, ResolvedInstructionAccount>;
 
@@ -126,10 +116,6 @@ export function getExecuteInstruction<
         accounts.nonceProgram.value =
             'Noncediea1fH12usShuQAz28UhgAeuE5Maf32LsMUQB' as Address<'Noncediea1fH12usShuQAz28UhgAeuE5Maf32LsMUQB'>;
     }
-    if (!accounts.slotHashes.value) {
-        accounts.slotHashes.value =
-            'SysvarS1otHashes111111111111111111111111111' as Address<'SysvarS1otHashes111111111111111111111111111'>;
-    }
 
     // Remaining accounts.
     const remainingAccounts: AccountMeta[] = resolveMessageAccounts(resolverScope);
@@ -139,12 +125,11 @@ export function getExecuteInstruction<
         accounts: [
             getAccountMeta('nonceAccount', accounts.nonceAccount),
             getAccountMeta('nonceProgram', accounts.nonceProgram),
-            getAccountMeta('slotHashes', accounts.slotHashes),
             ...remainingAccounts,
         ],
         data: getExecuteInstructionDataEncoder().encode(args as ExecuteInstructionDataArgs),
         programAddress,
-    } as ExecuteInstruction<TProgramAddress, TAccountNonceAccount, TAccountNonceProgram, TAccountSlotHashes>);
+    } as ExecuteInstruction<TProgramAddress, TAccountNonceAccount, TAccountNonceProgram>);
 }
 
 export type ParsedExecuteInstruction<
@@ -157,8 +142,6 @@ export type ParsedExecuteInstruction<
         nonceAccount: TAccountMetas[0];
         /** SPL Nonce program */
         nonceProgram: TAccountMetas[1];
-        /** Slot Hashes sysvar */
-        slotHashes: TAccountMetas[2];
     };
     data: ExecuteInstructionData;
 };
@@ -168,10 +151,10 @@ export function parseExecuteInstruction<TProgram extends string, TAccountMetas e
         InstructionWithAccounts<TAccountMetas> &
         InstructionWithData<ReadonlyUint8Array>,
 ): ParsedExecuteInstruction<TProgram, TAccountMetas> {
-    if (instruction.accounts.length < 3) {
+    if (instruction.accounts.length < 2) {
         throw new SolanaError(SOLANA_ERROR__PROGRAM_CLIENTS__INSUFFICIENT_ACCOUNT_METAS, {
             actualAccountMetas: instruction.accounts.length,
-            expectedAccountMetas: 3,
+            expectedAccountMetas: 2,
         });
     }
     let accountIndex = 0;
@@ -182,7 +165,7 @@ export function parseExecuteInstruction<TProgram extends string, TAccountMetas e
     };
     return {
         programAddress: instruction.programAddress,
-        accounts: { nonceAccount: getNextAccount(), nonceProgram: getNextAccount(), slotHashes: getNextAccount() },
+        accounts: { nonceAccount: getNextAccount(), nonceProgram: getNextAccount() },
         data: getExecuteInstructionDataDecoder().decode(instruction.data),
     };
 }
