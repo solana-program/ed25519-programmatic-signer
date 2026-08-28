@@ -19,9 +19,11 @@ export const ED25519_SIGNER_ERROR__INVALID_EXECUTOR_INSTRUCTION_COUNT = 0x1; // 
 export const ED25519_SIGNER_ERROR__ACCOUNT_KEY_MISMATCH = 0x2; // 2
 export const ED25519_SIGNER_ERROR__INVALID_SIGNATURE = 0x3; // 3
 export const ED25519_SIGNER_ERROR__INVALID_EXECUTOR_ACCOUNT_INDEX = 0x4; // 4
+export const ED25519_SIGNER_ERROR__DISALLOWED_EXECUTOR_INSTRUCTION = 0x5; // 5
 
 export type Ed25519SignerError =
     | typeof ED25519_SIGNER_ERROR__ACCOUNT_KEY_MISMATCH
+    | typeof ED25519_SIGNER_ERROR__DISALLOWED_EXECUTOR_INSTRUCTION
     | typeof ED25519_SIGNER_ERROR__INVALID_EXECUTOR_ACCOUNT_INDEX
     | typeof ED25519_SIGNER_ERROR__INVALID_EXECUTOR_INSTRUCTION_COUNT
     | typeof ED25519_SIGNER_ERROR__INVALID_SIGNATURE
@@ -31,6 +33,7 @@ let ed25519SignerErrorMessages: Record<Ed25519SignerError, string> | undefined;
 if (process.env['NODE_ENV'] !== 'production') {
     ed25519SignerErrorMessages = {
         [ED25519_SIGNER_ERROR__ACCOUNT_KEY_MISMATCH]: `A Submit account differs from the wrapped message key at the same index`,
+        [ED25519_SIGNER_ERROR__DISALLOWED_EXECUTOR_INSTRUCTION]: `The executor program and instruction pair is not permitted by this signer program`,
         [ED25519_SIGNER_ERROR__INVALID_EXECUTOR_ACCOUNT_INDEX]: `The executor references an index outside the static account-key list`,
         [ED25519_SIGNER_ERROR__INVALID_EXECUTOR_INSTRUCTION_COUNT]: `The wrapped transaction must contain exactly one executor instruction`,
         [ED25519_SIGNER_ERROR__INVALID_SIGNATURE]: `An authority signature failed verification against the wrapped message`,

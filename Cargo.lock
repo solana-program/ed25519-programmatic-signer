@@ -3184,7 +3184,7 @@ dependencies = [
  "solana-transaction",
  "spl-ed25519-signer-client",
  "spl-ed25519-signer-interface",
- "spl-message-executor-interface",
+ "spl-legacy-message-executor-interface",
  "test-case",
  "wincode",
 ]
