@@ -23,6 +23,8 @@ workspace = true
 [dependencies]
 codama-macros = { workspace = true, optional = true }
 solana-address = { workspace = true, features = ["curve25519", "decode", "wincode"] }
+solana-message = { workspace = true, features = ["wincode"] }
 solana-program-error = { workspace = true }
-solana-transaction = { workspace = true, features = ["wincode"] }
+solana-short-vec = { workspace = true, features = ["wincode"] }
+solana-signature = { workspace = true, features = ["wincode"] }
 wincode = { workspace = true, features = ["alloc", "derive"] }
