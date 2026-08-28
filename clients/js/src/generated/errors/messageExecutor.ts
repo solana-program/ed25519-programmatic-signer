@@ -30,11 +30,11 @@ export type MessageExecutorError =
 let messageExecutorErrorMessages: Record<MessageExecutorError, string> | undefined;
 if (process.env['NODE_ENV'] !== 'production') {
     messageExecutorErrorMessages = {
-        [MESSAGE_EXECUTOR_ERROR__INVALID_MESSAGE]: `The message is unsupported, fails sanitization, or has duplicate keys`,
+        [MESSAGE_EXECUTOR_ERROR__INVALID_MESSAGE]: `The legacy message fails sanitization or contains duplicate keys`,
         [MESSAGE_EXECUTOR_ERROR__INVALID_NONCE_ACCOUNT]: `The nonce account data could not be decoded as nonce state`,
         [MESSAGE_EXECUTOR_ERROR__MESSAGE_ACCOUNTS_MISMATCH]: `The passed accounts do not match the wrapped message's account keys`,
         [MESSAGE_EXECUTOR_ERROR__MISSING_NONCE_AUTHORITY_SIGNER]: `The nonce account's stored authority is not a required message signer`,
-        [MESSAGE_EXECUTOR_ERROR__NONCE_MISMATCH]: `The message's lifetime specifier does not match the stored nonce`,
+        [MESSAGE_EXECUTOR_ERROR__NONCE_MISMATCH]: `The message's recent blockhash does not match the stored nonce`,
     };
 }
 

@@ -6,8 +6,10 @@ const EXECUTE_DISCRIMINATOR: u8 = 0;
 
 /// Executor entrypoints allowed to receive promoted signers.
 /// Each entry is `(program ID, instruction discriminator)`.
-const ALLOWED_EXECUTOR_INSTRUCTIONS: &[(Address, u8)] =
-    &[(spl_message_executor_interface::ID, EXECUTE_DISCRIMINATOR)];
+const ALLOWED_EXECUTOR_INSTRUCTIONS: &[(Address, u8)] = &[(
+    spl_legacy_message_executor_interface::ID,
+    EXECUTE_DISCRIMINATOR,
+)];
 
 /// Admits only executor entrypoints that guarantee replay protection before using promoted
 /// signers. Without this allow list, accidentally signing an instruction for a malicious executor
@@ -32,18 +34,21 @@ mod tests {
     use {
         super::{EXECUTE_DISCRIMINATOR, validate},
         pinocchio::Address,
-        solana_message::VersionedMessage,
+        solana_message::legacy::Message,
         spl_ed25519_signer_interface::error::Error,
-        spl_message_executor_interface::instruction::Instruction as ExecutorInstruction,
+        spl_legacy_message_executor_interface::instruction::Instruction as ExecutorInstruction,
     };
 
     #[test]
     fn accepts_message_executor_execute_wire_format() {
         let instruction_data =
-            wincode::serialize(&ExecutorInstruction::Execute(VersionedMessage::default())).unwrap();
+            wincode::serialize(&ExecutorInstruction::Execute(Message::default())).unwrap();
 
         assert_eq!(
-            validate(&spl_message_executor_interface::ID, &instruction_data),
+            validate(
+                &spl_legacy_message_executor_interface::ID,
+                &instruction_data,
+            ),
             Ok(())
         );
     }
@@ -59,7 +64,7 @@ mod tests {
     #[test]
     fn rejects_empty_instruction_data() {
         assert_eq!(
-            validate(&spl_message_executor_interface::ID, &[]),
+            validate(&spl_legacy_message_executor_interface::ID, &[]),
             Err(Error::DisallowedExecutorInstruction)
         );
     }
@@ -68,7 +73,7 @@ mod tests {
     fn rejects_unknown_instruction_discriminator() {
         assert_eq!(
             validate(
-                &spl_message_executor_interface::ID,
+                &spl_legacy_message_executor_interface::ID,
                 &[EXECUTE_DISCRIMINATOR + 1],
             ),
             Err(Error::DisallowedExecutorInstruction)
