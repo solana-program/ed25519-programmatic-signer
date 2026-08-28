@@ -2,6 +2,7 @@
 //! while signing for explicitly authorized programmatic signers.
 
 use {
+    crate::executor_policy,
     alloc::{collections::BTreeSet, vec::Vec},
     brine_ed25519::hasher::Sha512,
     pinocchio::{
@@ -94,6 +95,9 @@ impl<'a> CheckedExecutorInstruction<'a> {
         let program_id = wrapped_account_keys
             .get(usize::from(executor_instruction.program_id_index))
             .unwrap();
+
+        // Only allow trusted executor entrypoints to receive promoted signers.
+        executor_policy::validate(program_id, &executor_instruction.data)?;
 
         // V0 address table lookups are never resolved, so every executor account index must
         // hit the static account keys, which the outer accounts mirror one-to-one.

@@ -23,16 +23,18 @@ pinocchio = { workspace = true, features = ["alloc", "cpi"] }
 solana-message = { workspace = true, features = ["wincode"] }
 solana-transaction = { workspace = true, features = ["wincode"] }
 spl-ed25519-signer-interface = { workspace = true }
+spl-message-executor-interface = { workspace = true }
 
 [dev-dependencies]
 mollusk-svm = { workspace = true }
 solana-account = { workspace = true }
 solana-address = { workspace = true }
 solana-hash = { workspace = true }
-solana-instruction = { workspace = true }
+solana-instruction = { workspace = true, features = ["wincode"] }
 solana-keypair = { workspace = true }
 solana-program-error = { workspace = true }
 solana-signer = { workspace = true }
 solana-system-interface = { workspace = true, features = ["wincode"] }
 spl-ed25519-signer-client = { workspace = true }
 test-case = { workspace = true }
+wincode = { workspace = true }

@@ -1,5 +1,5 @@
 use {
-    crate::helpers::common::init_mollusk,
+    crate::helpers::{common::init_mollusk, stub_executor},
     mollusk_svm::result::{Check, InstructionResult},
     solana_account::Account,
     solana_address::Address,
@@ -35,8 +35,8 @@ struct SubmitContext {
 
 /// Builds, signs, and submits a wrapped transaction through Mollusk.
 ///
-/// The system program stands in for the executor role. A transfer from the promoted
-/// `ProgrammaticSigner` consumes the promotion, so success proves the verify, promote, and
+/// A stub at the allowed executor address forwards to the system program.  A transfer from the
+/// promoted `ProgrammaticSigner` consumes the promotion, so success proves the verify, promote, and
 /// CPI chain. These fixtures carry no replay protection.
 pub struct SubmitBuilder<'a> {
     authorities: Vec<Keypair>,
@@ -152,7 +152,7 @@ impl<'a> SubmitBuilder<'a> {
         let message = match self.message_override.take() {
             Some(message) => message,
             None => {
-                let mut executor_instruction =
+                let inner_executor_instruction =
                     self.executor_instruction.take().unwrap_or_else(|| {
                         transfer(
                             &context.programmatic_signer,
@@ -160,6 +160,7 @@ impl<'a> SubmitBuilder<'a> {
                             DEFAULT_TRANSFER_LAMPORTS,
                         )
                     });
+                let mut executor_instruction = stub_executor::wrap(inner_executor_instruction);
                 for mutation in self.executor_instruction_mutations.drain(..) {
                     mutation(&mut executor_instruction);
                 }
@@ -241,6 +242,9 @@ impl<'a> SubmitBuilder<'a> {
         }
         if key == solana_system_interface::program::id() {
             return mollusk_svm::program::keyed_account_for_system_program();
+        }
+        if key == spl_message_executor_interface::id() {
+            return stub_executor::keyed_account();
         }
         // Only the first authority's programmatic signer is prefunded. Promotion tests that
         // create accounts at later programmatic signers need those to start empty.

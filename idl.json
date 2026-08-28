@@ -139,6 +139,12 @@
         "name": "invalidExecutorAccountIndex",
         "code": 4,
         "message": "The executor references an index outside the static account-key list"
+      },
+      {
+        "kind": "errorNode",
+        "name": "disallowedExecutorInstruction",
+        "code": 5,
+        "message": "The executor program and instruction pair is not permitted by this signer program"
       }
     ]
   },

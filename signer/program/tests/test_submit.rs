@@ -1,6 +1,7 @@
 use {
     crate::helpers::{
         common::init_mollusk,
+        stub_executor,
         submit_builder::{DEFAULT_TRANSFER_LAMPORTS, SubmitBuilder, funded_account},
     },
     mollusk_svm::result::Check,
@@ -100,8 +101,7 @@ fn submit_rejects_account_key_mismatch() {
 #[test_case(|msg| *msg.account_keys.last_mut().unwrap() = Address::new_unique(); "account key")]
 #[test_case(|msg| msg.recent_blockhash = Hash::new_from_array([99; 32]); "recent blockhash")]
 #[test_case(|msg| msg.instructions[0].accounts[1] = msg.instructions[0].accounts[0]; "executor account index")]
-#[test_case(|msg| msg.instructions[0].program_id_index = msg.instructions[0].accounts[0]; "executor program index")]
-#[test_case(|msg| msg.instructions[0].data[0] ^= 1; "executor instruction data")]
+#[test_case(|msg| msg.instructions[0].data[1] ^= 1; "executor instruction data")]
 fn submit_rejects_post_sign_message_change(post_sign_change: fn(&mut Message)) {
     SubmitBuilder::default_transfer()
         .tamper_message(post_sign_change)
@@ -147,9 +147,9 @@ fn submit_rejects_v0_loaded_executor_account_index() {
             num_readonly_signed_accounts: 0,
             num_readonly_unsigned_accounts: 0,
         },
-        account_keys: vec![authority.pubkey(), solana_system_interface::program::id()],
+        account_keys: vec![authority.pubkey(), spl_message_executor_interface::id()],
         recent_blockhash: Hash::default(),
-        instructions: vec![CompiledInstruction::new_from_raw_parts(1, vec![], vec![2])],
+        instructions: vec![CompiledInstruction::new_from_raw_parts(1, vec![0], vec![2])],
         address_table_lookups: vec![v0::MessageAddressTableLookup {
             account_key: Address::new_unique(),
             writable_indexes: vec![],
@@ -164,23 +164,23 @@ fn submit_rejects_v0_loaded_executor_account_index() {
 }
 
 #[test]
-fn submit_rejects_non_executable_executor() {
-    // The wrapped message names an executor program that is not executable.
+fn submit_rejects_disallowed_executor_program() {
     let fake_executor = Address::new_unique();
     SubmitBuilder::default_transfer()
         .mutate_executor_instruction(move |ix| {
             ix.program_id = fake_executor;
         })
-        .account(
-            fake_executor,
-            Account {
-                lamports: 1,
-                ..Account::default()
-            },
-        )
-        .check(Check::instruction_err(
-            InstructionError::UnsupportedProgramId,
-        ))
+        .check_err(Error::DisallowedExecutorInstruction)
+        .execute();
+}
+
+#[test]
+fn submit_rejects_disallowed_executor_instruction() {
+    SubmitBuilder::default_transfer()
+        .mutate_executor_instruction(|ix| {
+            ix.data[0] = ix.data[0].wrapping_add(1);
+        })
+        .check_err(Error::DisallowedExecutorInstruction)
         .execute();
 }
 
@@ -278,7 +278,7 @@ fn submit_does_not_forward_outer_writable_overgrant() {
             ix.accounts[recipient_index].is_writable = true;
         })
         .check(Check::instruction_err(
-            InstructionError::ReadonlyLamportChange,
+            InstructionError::PrivilegeEscalation,
         ))
         .execute();
 }
@@ -506,25 +506,29 @@ fn assert_static_message_executes(
         &authority.pubkey(),
     );
     let recipient = Address::new_unique();
-    let executor_instruction =
-        transfer(&programmatic_signer, &recipient, DEFAULT_TRANSFER_LAMPORTS);
+    let executor_instruction = stub_executor::wrap(transfer(
+        &programmatic_signer,
+        &recipient,
+        DEFAULT_TRANSFER_LAMPORTS,
+    ));
     let message = build_message(
         MessageHeader {
             num_required_signatures: 1,
             num_readonly_signed_accounts: 0,
-            num_readonly_unsigned_accounts: 0,
+            num_readonly_unsigned_accounts: 2,
         },
         vec![
             authority.pubkey(),
-            solana_system_interface::program::id(),
             programmatic_signer,
             recipient,
+            spl_message_executor_interface::id(),
+            solana_system_interface::program::id(),
         ],
         Hash::default(),
         vec![CompiledInstruction::new_from_raw_parts(
-            1,
+            3,
             executor_instruction.data,
-            vec![2, 3],
+            vec![1, 2, 4],
         )],
     );
 
@@ -546,25 +550,29 @@ fn submit_accepts_v0_unused_address_table_lookups() {
         &authority.pubkey(),
     );
     let recipient = Address::new_unique();
-    let executor_instruction =
-        transfer(&programmatic_signer, &recipient, DEFAULT_TRANSFER_LAMPORTS);
+    let executor_instruction = stub_executor::wrap(transfer(
+        &programmatic_signer,
+        &recipient,
+        DEFAULT_TRANSFER_LAMPORTS,
+    ));
     let message = VersionedMessage::V0(v0::Message {
         header: MessageHeader {
             num_required_signatures: 1,
             num_readonly_signed_accounts: 0,
-            num_readonly_unsigned_accounts: 0,
+            num_readonly_unsigned_accounts: 2,
         },
         account_keys: vec![
             authority.pubkey(),
-            solana_system_interface::program::id(),
             programmatic_signer,
             recipient,
+            spl_message_executor_interface::id(),
+            solana_system_interface::program::id(),
         ],
         recent_blockhash: Hash::default(),
         instructions: vec![CompiledInstruction::new_from_raw_parts(
-            1,
+            3,
             executor_instruction.data,
-            vec![2, 3],
+            vec![1, 2, 4],
         )],
         // Unused lookups are allowed if executor account indexes still resolve to static keys
         address_table_lookups: vec![v0::MessageAddressTableLookup {
@@ -592,8 +600,11 @@ fn sign_and_submit_builds_and_executes() {
         &authority.pubkey(),
     );
     let recipient = Address::new_unique();
-    let executor_instruction =
-        transfer(&programmatic_signer, &recipient, DEFAULT_TRANSFER_LAMPORTS);
+    let executor_instruction = stub_executor::wrap(transfer(
+        &programmatic_signer,
+        &recipient,
+        DEFAULT_TRANSFER_LAMPORTS,
+    ));
     let ix = sign_and_submit(&executor_instruction, &[&authority]).unwrap();
 
     let result = init_mollusk().process_and_validate_instruction(
@@ -603,6 +614,7 @@ fn sign_and_submit_builds_and_executes() {
             mollusk_svm::program::keyed_account_for_system_program(),
             (programmatic_signer, funded_account()),
             (recipient, Account::default()),
+            stub_executor::keyed_account(),
         ],
         &[Check::success()],
     );
