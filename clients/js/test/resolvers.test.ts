@@ -4,13 +4,10 @@ import {
     getAddressDecoder,
     getBlockhashDecoder,
     getCompiledTransactionMessageEncoder,
-    getTransactionEncoder,
     SOLANA_ERROR__CODECS__EXPECTED_DECODER_TO_CONSUME_ENTIRE_BYTE_ARRAY,
     SolanaError,
     type CompiledTransactionMessage,
     type CompiledTransactionMessageWithLifetime,
-    type SignaturesMap,
-    type TransactionMessageBytes,
 } from '@solana/kit';
 import { describe, expect, it } from 'vitest';
 
@@ -24,7 +21,6 @@ type TestMessage = CompiledTransactionMessage & CompiledTransactionMessageWithLi
 const addressDecoder = getAddressDecoder();
 const blockhashDecoder = getBlockhashDecoder();
 const messageEncoder = getCompiledTransactionMessageEncoder();
-const transactionEncoder = getTransactionEncoder();
 
 const getTestAddress = (byte: number) => addressDecoder.decode(new Uint8Array(32).fill(byte));
 
@@ -116,23 +112,16 @@ const getTestMessage = (
 
 const encodeMessage = (message: TestMessage) => messageEncoder.encode(message);
 
-const encodeTransaction = (message: TestMessage) => {
-    const messageBytes = encodeMessage(message) as TransactionMessageBytes;
-    const signerAddresses = message.staticAccounts.slice(0, message.header.numSignerAccounts);
-    const signatures: SignaturesMap = {};
-    for (const address of signerAddresses) {
-        signatures[address] = null;
-    }
-    return transactionEncoder.encode({ messageBytes, signatures });
-};
-
 const getExecuteAccounts = (message: TestMessage) =>
     getExecuteInstruction({ message: encodeMessage(message), nonceAccount: NONCE_ACCOUNT }).accounts;
 
 const getRemainingExecuteAccounts = (message: TestMessage) => getExecuteAccounts(message).slice(2);
 
 const getSubmitAccounts = (message: TestMessage) =>
-    getSubmitInstruction({ transaction: encodeTransaction(message) }).accounts;
+    getSubmitInstruction({
+        message: encodeMessage(message),
+        signatures: Array.from({ length: message.header.numSignerAccounts }, () => new Uint8Array(64)),
+    }).accounts;
 
 const expectedExecuteAccounts = [
     { address: TEST_ACCOUNTS.feePayer, role: AccountRole.WRITABLE_SIGNER },
@@ -159,7 +148,7 @@ describe('remaining account resolvers', () => {
         ]);
     });
 
-    it.each(MESSAGE_VERSIONS)('removes signer privileges from a submitted %s transaction', version => {
+    it.each(MESSAGE_VERSIONS)('removes signer privileges from a submitted %s message', version => {
         expect(getSubmitAccounts(getTestMessage(version))).toEqual(expectedSubmitAccounts);
     });
 
@@ -187,7 +176,7 @@ describe('remaining account resolvers', () => {
         ]);
     });
 
-    it('uses only static accounts for a v0 transaction with an unused address table lookup', () => {
+    it('uses only static accounts for a v0 message with an unused address table lookup', () => {
         const message = getTestMessage(0, { includeAddressTableLookup: true });
 
         expect(getSubmitAccounts(message)).toEqual(expectedSubmitAccounts);
@@ -224,14 +213,17 @@ describe('remaining account resolvers', () => {
         );
     });
 
-    it('rejects trailing bytes after a wrapped transaction message', () => {
-        const message = getTestMessage('legacy');
-        const messageBytes = encodeMessage(message);
-        const transaction = encodeTransaction(message);
+    it('rejects trailing bytes after a submitted message', () => {
+        const message = encodeMessage(getTestMessage('legacy'));
 
-        expect(() => getSubmitInstruction({ transaction: new Uint8Array([...transaction, 255]) })).toThrow(
+        expect(() =>
+            getSubmitInstruction({
+                message: new Uint8Array([...message, 255]),
+                signatures: [new Uint8Array(64)],
+            }),
+        ).toThrow(
             new SolanaError(SOLANA_ERROR__CODECS__EXPECTED_DECODER_TO_CONSUME_ENTIRE_BYTE_ARRAY, {
-                expectedLength: messageBytes.length,
+                expectedLength: message.length,
                 numExcessBytes: 1,
             }),
         );

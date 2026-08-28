@@ -5,7 +5,6 @@ import {
     downgradeRoleToReadonly,
     getAccountMetasFromCompiledTransactionMessage,
     getCompiledTransactionMessageDecoder,
-    getTransactionDecoder,
     type AccountMeta,
     type CompiledTransactionMessage,
     type ReadonlyUint8Array,
@@ -15,12 +14,7 @@ type MessageAccountsResolverScope = Readonly<{
     args: Readonly<{ message: ReadonlyUint8Array }>;
 }>;
 
-type TransactionAccountsResolverScope = Readonly<{
-    args: Readonly<{ transaction: ReadonlyUint8Array }>;
-}>;
-
 const compiledMessageDecoder = createDecoderThatConsumesEntireByteArray(getCompiledTransactionMessageDecoder());
-const transactionDecoder = createDecoderThatConsumesEntireByteArray(getTransactionDecoder());
 
 /**
  * Resolves the remaining `Execute` accounts from the wrapped message's static account list.
@@ -34,18 +28,16 @@ export const resolveMessageAccounts = (scope: MessageAccountsResolverScope): Acc
 };
 
 /**
- * Resolves the remaining `Submit` accounts from the wrapped transaction's static account list.
+ * Resolves the remaining `Submit` accounts from the wrapped message's static account list.
  * Account order and writable privileges match the wrapped message, while signer privileges are
  * removed because the wrapped signers are not signers of the outer transaction.
  *
  * Mirrors `signer/client/src/instruction.rs`.
  */
-export const resolveTransactionAccounts = (scope: TransactionAccountsResolverScope): AccountMeta[] => {
-    const messageBytes = transactionDecoder.decode(scope.args.transaction).messageBytes;
-    const message = compiledMessageDecoder.decode(messageBytes);
-    return getStaticAccountMetas(message).map(account => ({
+export const resolveSubmitMessageAccounts = (scope: MessageAccountsResolverScope): AccountMeta[] => {
+    return resolveMessageAccounts(scope).map(account => ({
         ...account,
-        // Wrapped signatures authorize the wrapped transaction, not the outer transaction that submits it.
+        // Wrapped signatures authorize the wrapped message, not the outer transaction that submits it.
         role: downgradeRoleToNonSigner(account.role),
     }));
 };
