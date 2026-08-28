@@ -191,7 +191,11 @@ impl<'a> SubmitBuilder<'a> {
             tamper(&mut transaction);
         }
 
-        let mut ix = submit(transaction);
+        let VersionedTransaction {
+            signatures,
+            message,
+        } = transaction;
+        let mut ix = submit(signatures, message);
         for mutation in self.submit_instruction_mutations.drain(..) {
             mutation(&mut ix);
         }
