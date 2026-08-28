@@ -15,7 +15,10 @@ pub fn sign_and_submit<S: Signers + ?Sized>(
 ) -> Result<Instruction, SignerError> {
     let authorities = signers.try_pubkeys()?;
     let message = wrapped_message(executor_instruction, &authorities);
-    let transaction = VersionedTransaction::try_new(message, signers)?;
-    let instruction = submit(transaction);
+    let VersionedTransaction {
+        signatures,
+        message,
+    } = VersionedTransaction::try_new(message, signers)?;
+    let instruction = submit(signatures, message);
     Ok(instruction)
 }

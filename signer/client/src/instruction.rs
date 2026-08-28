@@ -1,30 +1,32 @@
 //! Builder for the on-chain `Submit` instruction.
 
 use {
-    alloc::collections::BTreeSet,
+    alloc::{collections::BTreeSet, vec::Vec},
     solana_instruction::{AccountMeta, Instruction},
-    solana_transaction::versioned::VersionedTransaction,
+    solana_message::VersionedMessage,
+    solana_signature::Signature,
     spl_ed25519_signer_interface::instruction::Instruction as SignerInstruction,
 };
 
-/// Builds the `Submit` instruction from a wrapped transaction envelope.
-pub fn submit(transaction: VersionedTransaction) -> Instruction {
-    let accounts = transaction
-        .message
+/// Builds the `Submit` instruction from signatures and their signed message.
+pub fn submit(signatures: Vec<Signature>, message: VersionedMessage) -> Instruction {
+    let accounts = message
         .static_account_keys()
         .iter()
         .enumerate()
         .map(|(index, key)| AccountMeta {
             pubkey: *key,
             is_signer: false,
-            is_writable: transaction
-                .message
+            is_writable: message
                 .is_maybe_writable_with_reserved_addresses(index, None::<&BTreeSet<_>>),
         })
         .collect();
     Instruction::new_with_wincode(
         spl_ed25519_signer_interface::id(),
-        &SignerInstruction::Submit(transaction),
+        &SignerInstruction::Submit {
+            signatures,
+            message,
+        },
         accounts,
     )
 }
