@@ -2,7 +2,7 @@
 use codama_macros::CodamaErrors;
 use solana_program_error::ProgramError;
 
-/// Custom errors returned by the SPL Message Executor program.
+/// Custom errors returned by the SPL Legacy Message Executor program.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(u32)]
 #[cfg_attr(feature = "codama", derive(CodamaErrors))]
@@ -13,11 +13,11 @@ pub enum Error {
         codama(error(message = "The nonce account data could not be decoded as nonce state"))
     )]
     InvalidNonceAccount = 0,
-    /// The message is unsupported, fails sanitization, or has duplicate keys.
+    /// The legacy message fails sanitization or contains duplicate keys.
     #[cfg_attr(
         feature = "codama",
         codama(error(
-            message = "The message is unsupported, fails sanitization, or has duplicate keys"
+            message = "The legacy message fails sanitization or contains duplicate keys"
         ))
     )]
     InvalidMessage = 1,
@@ -37,12 +37,10 @@ pub enum Error {
         ))
     )]
     MissingNonceAuthoritySigner = 3,
-    /// The message's lifetime specifier does not match the stored nonce.
+    /// The message's recent blockhash does not match the stored nonce.
     #[cfg_attr(
         feature = "codama",
-        codama(error(
-            message = "The message's lifetime specifier does not match the stored nonce"
-        ))
+        codama(error(message = "The message's recent blockhash does not match the stored nonce"))
     )]
     NonceMismatch = 4,
 }

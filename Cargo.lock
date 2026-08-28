@@ -3183,18 +3183,18 @@ dependencies = [
 ]
 
 [[package]]
-name = "spl-message-executor-client"
+name = "spl-legacy-message-executor-client"
 version = "0.1.0"
 dependencies = [
  "solana-address 2.6.1",
  "solana-instruction",
  "solana-message",
- "spl-message-executor-interface",
+ "spl-legacy-message-executor-interface",
  "spl-nonce-interface",
 ]
 
 [[package]]
-name = "spl-message-executor-interface"
+name = "spl-legacy-message-executor-interface"
 version = "0.1.0"
 dependencies = [
  "codama-macros",
@@ -3207,7 +3207,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "spl-message-executor-program"
+name = "spl-legacy-message-executor-program"
 version = "0.1.0"
 dependencies = [
  "mollusk-svm",
@@ -3219,9 +3219,10 @@ dependencies = [
  "solana-message",
  "solana-program-error",
  "solana-rent",
+ "solana-sanitize",
  "solana-system-interface",
- "spl-message-executor-client",
- "spl-message-executor-interface",
+ "spl-legacy-message-executor-client",
+ "spl-legacy-message-executor-interface",
  "spl-nonce-client",
  "spl-nonce-interface",
  "wincode",

@@ -2,22 +2,12 @@
 
 use {
     pinocchio::{AccountView, Address, error::ProgramError},
-    solana_message::{VersionedMessage, v1::TransactionConfig},
-    spl_message_executor_interface::error::Error,
+    solana_message::legacy,
+    solana_sanitize::Sanitize,
+    spl_legacy_message_executor_interface::error::Error,
 };
 
-pub fn validate_wrapped_message(wrapped_message: &VersionedMessage) -> Result<(), ProgramError> {
-    // Reject message features that the executor cannot support via CPI. Address table lookups
-    // are never resolved and v1 transaction config only applies at transaction load.
-    match wrapped_message {
-        VersionedMessage::Legacy(_) => {}
-        VersionedMessage::V0(v0) if v0.address_table_lookups.is_empty() => {}
-        VersionedMessage::V1(v1) if v1.config == TransactionConfig::empty() => {}
-        VersionedMessage::V0(_) | VersionedMessage::V1(_) => {
-            return Err(Error::InvalidMessage.into());
-        }
-    }
-
+pub fn validate_wrapped_message(wrapped_message: &legacy::Message) -> Result<(), ProgramError> {
     // Message account privileges come from the header counts,
     // so they must agree with the key list.
     wrapped_message
@@ -26,21 +16,11 @@ pub fn validate_wrapped_message(wrapped_message: &VersionedMessage) -> Result<()
 
     // The runtime's `AccountLoadedTwice` check only covers top-level messages.
     // Reject duplicates so one account cannot hold conflicting CPI privileges.
-    if has_duplicate_addresses(wrapped_message.static_account_keys()) {
+    if wrapped_message.has_duplicates() {
         return Err(Error::InvalidMessage.into());
     }
 
     Ok(())
-}
-
-fn has_duplicate_addresses(mut addresses: &[Address]) -> bool {
-    while let Some((address, remaining)) = addresses.split_first() {
-        if remaining.contains(address) {
-            return true;
-        }
-        addresses = remaining;
-    }
-    false
 }
 
 /// Validates the supplied accounts against the wrapped message and returns the nonce authority.
@@ -49,20 +29,21 @@ fn has_duplicate_addresses(mut addresses: &[Address]) -> bool {
 /// execution.
 pub fn validate_message_accounts<'a>(
     message_accounts: &'a [AccountView],
-    wrapped_message: &VersionedMessage,
+    wrapped_message: &legacy::Message,
     stored_nonce_authority: &Address,
 ) -> Result<&'a AccountView, ProgramError> {
-    let expected_addrs = wrapped_message.static_account_keys();
-
     // Compiled instructions resolve accounts by index, so message accounts
     // must mirror the message's static addresses one-to-one
-    if message_accounts.len() != expected_addrs.len() {
+    if message_accounts.len() != wrapped_message.account_keys.len() {
         return Err(Error::MessageAccountsMismatch.into());
     }
 
     let mut nonce_authority_account = None;
 
-    for (index, (account, expected_addr)) in message_accounts.iter().zip(expected_addrs).enumerate()
+    for (index, (account, expected_addr)) in message_accounts
+        .iter()
+        .zip(&wrapped_message.account_keys)
+        .enumerate()
     {
         if account.address() != expected_addr {
             return Err(Error::MessageAccountsMismatch.into());

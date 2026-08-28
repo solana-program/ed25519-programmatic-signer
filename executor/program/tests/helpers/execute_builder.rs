@@ -9,13 +9,13 @@ use {
     solana_address::Address,
     solana_hash::Hash,
     solana_instruction::Instruction,
-    solana_message::{Message, VersionedMessage},
+    solana_message::legacy,
     solana_program_error::ProgramError,
-    spl_message_executor_client::instruction::execute,
+    spl_legacy_message_executor_client::instruction::execute,
     spl_nonce_interface::state::Nonce,
 };
 
-type MessageMutation = Box<dyn FnOnce(&mut VersionedMessage)>;
+type MessageMutation = Box<dyn FnOnce(&mut legacy::Message)>;
 type InstructionMutation = Box<dyn FnOnce(&mut Instruction)>;
 
 pub const DEFAULT_AUTHORITY: Address = Address::new_from_array([3; 32]);
@@ -26,7 +26,7 @@ pub struct ExecuteBuilder<'a> {
     authority: Address,
     inner_instructions: Vec<Instruction>,
     recent_blockhash: Option<Hash>,
-    message: Option<VersionedMessage>,
+    message: Option<legacy::Message>,
     message_mutations: Vec<MessageMutation>,
     execute_instruction_mutations: Vec<InstructionMutation>,
     account_overrides: Vec<(Address, Account)>,
@@ -75,15 +75,12 @@ impl<'a> ExecuteBuilder<'a> {
         self
     }
 
-    pub fn message(mut self, message: VersionedMessage) -> Self {
+    pub fn message(mut self, message: legacy::Message) -> Self {
         self.message = Some(message);
         self
     }
 
-    pub fn mutate_message(
-        mut self,
-        mutation: impl FnOnce(&mut VersionedMessage) + 'static,
-    ) -> Self {
+    pub fn mutate_message(mut self, mutation: impl FnOnce(&mut legacy::Message) + 'static) -> Self {
         self.message_mutations.push(Box::new(mutation));
         self
     }
@@ -131,11 +128,11 @@ impl<'a> ExecuteBuilder<'a> {
         });
 
         let mut message = message_override.unwrap_or_else(|| {
-            VersionedMessage::Legacy(Message::new_with_blockhash(
+            legacy::Message::new_with_blockhash(
                 &inner_instructions,
                 Some(&authority),
                 &recent_blockhash,
-            ))
+            )
         });
 
         for mutation in message_mutations {
@@ -202,7 +199,7 @@ impl<'a> ExecuteBuilder<'a> {
 pub struct ExecuteResult {
     pub nonce_address: Address,
     pub nonce_account: Account,
-    pub message: VersionedMessage,
+    pub message: legacy::Message,
     raw: InstructionResult,
 }
 
