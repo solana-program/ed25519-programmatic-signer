@@ -33,13 +33,39 @@
           },
           {
             "kind": "instructionArgumentNode",
-            "name": "transaction",
+            "name": "signatures",
+            "type": {
+              "kind": "arrayTypeNode",
+              "item": {
+                "kind": "fixedSizeTypeNode",
+                "size": 64,
+                "type": {
+                  "kind": "bytesTypeNode"
+                }
+              },
+              "count": {
+                "kind": "prefixedCountNode",
+                "prefix": {
+                  "kind": "numberTypeNode",
+                  "format": "shortU16",
+                  "endian": "le"
+                }
+              }
+            },
+            "display": {
+              "kind": "structFieldDisplayNode",
+              "label": "Authority signatures"
+            }
+          },
+          {
+            "kind": "instructionArgumentNode",
+            "name": "message",
             "type": {
               "kind": "bytesTypeNode"
             },
             "display": {
               "kind": "structFieldDisplayNode",
-              "label": "Wrapped transaction"
+              "label": "Signed message"
             }
           }
         ],
@@ -52,7 +78,7 @@
         ],
         "display": {
           "kind": "instructionDisplayNode",
-          "intent": "Verify wrapped transaction signatures and invoke its executor"
+          "intent": "Verify wrapped message and invoke its executor"
         },
         "remainingAccounts": [
           {
@@ -60,24 +86,24 @@
             "isOptional": false,
             "isSigner": false,
             "docs": [
-              "One account for each key in the wrapped transaction message's static account-key list, in the same order."
+              "One account for each key in the wrapped message's static account-key list, in the same order."
             ],
             "value": {
               "kind": "resolverValueNode",
-              "name": "resolveTransactionAccounts",
+              "name": "resolveSubmitMessageAccounts",
               "docs": [
                 "Preserves each wrapped message account's writable role without marking it as an outer Submit signer."
               ],
               "dependsOn": [
                 {
                   "kind": "argumentValueNode",
-                  "name": "transaction"
+                  "name": "message"
                 }
               ]
             },
             "display": {
               "kind": "instructionAccountDisplayNode",
-              "label": "Wrapped transaction accounts"
+              "label": "Wrapped message accounts"
             }
           }
         ]
@@ -112,15 +138,15 @@
     "errors": [
       {
         "kind": "errorNode",
-        "name": "invalidWrappedTransaction",
+        "name": "invalidWrappedMessage",
         "code": 0,
-        "message": "The wrapped transaction failed sanitization"
+        "message": "The wrapped message failed sanitization"
       },
       {
         "kind": "errorNode",
         "name": "invalidExecutorInstructionCount",
         "code": 1,
-        "message": "The wrapped transaction must contain exactly one executor instruction"
+        "message": "The wrapped message must contain exactly one executor instruction"
       },
       {
         "kind": "errorNode",
@@ -145,6 +171,12 @@
         "name": "disallowedExecutorInstruction",
         "code": 5,
         "message": "The executor program and instruction pair is not permitted by this signer program"
+      },
+      {
+        "kind": "errorNode",
+        "name": "invalidSignatureCount",
+        "code": 6,
+        "message": "The authority signature count does not match the wrapped message."
       }
     ]
   },
