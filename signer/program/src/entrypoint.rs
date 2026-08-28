@@ -18,6 +18,9 @@ fn process_instruction(
     instruction_data: &[u8],
 ) -> ProgramResult {
     match Instruction::try_from_bytes(instruction_data)? {
-        Instruction::Submit(transaction) => process_submit(program_id, accounts, transaction),
+        Instruction::Submit {
+            signatures,
+            message,
+        } => process_submit(program_id, accounts, &signatures, &message),
     }
 }

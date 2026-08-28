@@ -1,4 +1,4 @@
-//! Verifies authority signatures over a wrapped transaction, then invokes its executor instruction
+//! Verifies authority signatures over a wrapped message, then invokes its executor instruction
 //! while signing for explicitly authorized programmatic signers.
 
 use {
@@ -12,7 +12,7 @@ use {
         instruction::{InstructionAccount, InstructionView},
     },
     solana_message::{VersionedMessage, compiled_instruction::CompiledInstruction},
-    solana_transaction::versioned::VersionedTransaction,
+    solana_signature::Signature,
     spl_ed25519_signer_interface::{error::Error, pda::ProgrammaticSigner},
 };
 
@@ -23,18 +23,16 @@ struct AuthorizedSigner {
     bump_seed: [u8; 1],
 }
 
-/// Processes the wrapped transaction and executes its single executor instruction.
+/// Processes the signatures and signed message, then executes its single executor instruction.
 pub fn process_submit(
     program_id: &Address,
     accounts: &[AccountView],
-    transaction: VersionedTransaction,
+    signatures: &[Signature],
+    message: &VersionedMessage,
 ) -> ProgramResult {
-    let message = &transaction.message;
-
-    // Sanitize signature counts and message invariants
-    transaction
+    message
         .sanitize()
-        .map_err(|_| Error::InvalidWrappedTransaction)?;
+        .map_err(|_| Error::InvalidWrappedMessage)?;
 
     // Exactly one executor instruction is expected
     let [executor_instruction] = message.instructions() else {
@@ -44,7 +42,7 @@ pub fn process_submit(
     let executor_instruction =
         CheckedExecutorInstruction::try_new(accounts, message, executor_instruction)?;
 
-    let authorities = verify_authority_signatures(&transaction)?;
+    let authorities = verify_authority_signatures(signatures, message)?;
 
     let authorized_signers =
         collect_authorized_signers(program_id, &executor_instruction, authorities);
@@ -121,22 +119,23 @@ impl<'a> CheckedExecutorInstruction<'a> {
     }
 }
 
-fn verify_authority_signatures(
-    transaction: &VersionedTransaction,
-) -> Result<&[Address], ProgramError> {
-    let required_signatures = usize::from(transaction.message.header().num_required_signatures);
+fn verify_authority_signatures<'a>(
+    signatures: &[Signature],
+    message: &'a VersionedMessage,
+) -> Result<&'a [Address], ProgramError> {
+    let required_signatures = usize::from(message.header().num_required_signatures);
+    if signatures.len() != required_signatures {
+        return Err(Error::InvalidSignatureCount.into());
+    }
 
     // Required signers occupy the leading account key slots. Signatures use the same indexes.
-    // Infallible: sanitization guarantees a static key and a signature for every required signer.
-    let authorities = transaction
-        .message
+    // Infallible: message sanitization guarantees a static account key for every required signer.
+    let authorities = message
         .static_account_keys()
         .get(..required_signatures)
         .unwrap();
 
-    let signatures = transaction.signatures.get(..required_signatures).unwrap();
-
-    let message_bytes = transaction.message.serialize();
+    let message_bytes = message.serialize();
 
     // Verify each authority signed the wrapped transaction message
     for (authority, signature) in authorities.iter().zip(signatures) {
