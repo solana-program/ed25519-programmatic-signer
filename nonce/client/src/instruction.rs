@@ -5,10 +5,7 @@ use {
     solana_instruction::{AccountMeta, Instruction},
     solana_sdk_ids::sysvar::slot_hashes,
     solana_system_interface::instruction as system_instruction,
-    spl_nonce_interface::{
-        instruction::{AdvanceNonceArgs, Instruction as NonceInstruction},
-        state::Nonce,
-    },
+    spl_nonce_interface::{instruction::Instruction as NonceInstruction, state::Nonce},
 };
 
 /// Creates an `Initialize` instruction.
