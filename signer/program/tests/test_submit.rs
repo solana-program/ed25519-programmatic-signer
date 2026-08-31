@@ -27,15 +27,12 @@ pub mod helpers;
 
 #[test]
 fn submit_rejects_no_required_signatures() {
-    let ix = submit(VersionedTransaction {
-        signatures: vec![],
-        message: VersionedMessage::Legacy(Message::default()),
-    });
+    let ix = submit(vec![], VersionedMessage::Legacy(Message::default()));
 
     init_mollusk().process_and_validate_instruction(
         &ix,
         &[],
-        &[Check::err(Error::InvalidWrappedTransaction.into())],
+        &[Check::err(Error::InvalidWrappedMessage.into())],
     );
 }
 
@@ -44,7 +41,7 @@ fn submit_rejects_no_required_signatures() {
 fn submit_rejects_mismatched_signature_count(mutation: fn(&mut VersionedTransaction)) {
     SubmitBuilder::default_transfer()
         .tamper_transaction(mutation)
-        .check_err(Error::InvalidWrappedTransaction)
+        .check_err(Error::InvalidSignatureCount)
         .execute();
 }
 
@@ -53,7 +50,7 @@ fn submit_rejects_mismatched_signature_count(mutation: fn(&mut VersionedTransact
 fn submit_rejects_out_of_bounds_instruction_index(mutation: fn(&mut Message)) {
     SubmitBuilder::default_transfer()
         .mutate_message(mutation)
-        .check_err(Error::InvalidWrappedTransaction)
+        .check_err(Error::InvalidWrappedMessage)
         .execute();
 }
 

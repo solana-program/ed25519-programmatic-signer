@@ -20,15 +20,15 @@ const executeRemainingAccounts = instructionRemainingAccountsNode(
 );
 
 const submitRemainingAccounts = instructionRemainingAccountsNode(
-    resolverValueNode('resolveTransactionAccounts', {
-        dependsOn: [argumentValueNode('transaction')],
+    resolverValueNode('resolveSubmitMessageAccounts', {
+        dependsOn: [argumentValueNode('message')],
         docs: "Preserves each wrapped message account's writable role without marking it as an outer Submit signer.",
     }),
     {
         display: instructionAccountDisplayNode({
-            label: 'Wrapped transaction accounts',
+            label: 'Wrapped message accounts',
         }),
-        docs: "One account for each key in the wrapped transaction message's static account-key list, in the same order.",
+        docs: "One account for each key in the wrapped message's static account-key list, in the same order.",
         isOptional: false,
         isSigner: false,
     },

@@ -3149,6 +3149,7 @@ dependencies = [
  "solana-hash",
  "solana-instruction",
  "solana-message",
+ "solana-signature",
  "solana-signer",
  "solana-transaction",
  "spl-ed25519-signer-interface",
@@ -3160,8 +3161,9 @@ version = "0.1.0"
 dependencies = [
  "codama-macros",
  "solana-address 2.6.1",
+ "solana-message",
  "solana-program-error",
- "solana-transaction",
+ "solana-signature",
  "wincode",
 ]
 
@@ -3179,6 +3181,7 @@ dependencies = [
  "solana-keypair",
  "solana-message",
  "solana-program-error",
+ "solana-signature",
  "solana-signer",
  "solana-system-interface",
  "solana-transaction",

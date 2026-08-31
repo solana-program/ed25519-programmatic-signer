@@ -1,9 +1,11 @@
 #[cfg(feature = "codama")]
 use codama_macros::CodamaInstructions;
 use {
+    alloc::vec::Vec,
+    solana_message::VersionedMessage,
     solana_program_error::ProgramError,
-    solana_transaction::versioned::VersionedTransaction,
-    wincode::{SchemaRead, SchemaWrite},
+    solana_signature::Signature,
+    wincode::{SchemaRead, SchemaWrite, containers},
 };
 
 /// Instructions supported by the SPL Ed25519 Signer program.
@@ -15,10 +17,10 @@ use {
     codama(enum_discriminator(size = number(u8)))
 )]
 pub enum Instruction {
-    /// Verifies authority signatures over a Solana `VersionedTransaction`, then CPIs to the program
+    /// Verifies authority signatures over a Solana [`VersionedMessage`], then CPIs to the program
     /// of its single executor instruction, promoting `ProgrammaticSigner` PDAs to a signer.
     ///
-    /// Instruction data: instruction discriminator followed by a serialized `Submit(VersionedTransaction)`.
+    /// Instruction data: instruction discriminator followed by signatures and message.
     ///
     /// On success, the program:
     /// 1. Verifies the message contains exactly one executor instruction.
@@ -31,7 +33,7 @@ pub enum Instruction {
     ///
     /// Trust assumptions:
     /// - This program validates authority signatures, accounts, flags, and executor identity.
-    /// - The inner signed transaction is an authorization envelope. Only the single executor
+    /// - The inner signed message is an authorization envelope. Only its single executor
     ///   instruction is invoked.
     /// - Except for its discriminator, executor instruction data is opaque to this program.
     /// - This program is stateless. Replay protection belongs to the executor program.
@@ -43,17 +45,23 @@ pub enum Instruction {
     ///   static `account_keys` indices.
     #[cfg_attr(
         feature = "codama",
-        codama(display(intent = "Verify wrapped transaction signatures and invoke its executor"))
+        codama(display(intent = "Verify wrapped message and invoke its executor"))
     )]
-    Submit(
+    Submit {
+        #[wincode(with = "containers::Vec<Signature, u8>")]
         #[cfg_attr(
             feature = "codama",
-            codama(name = "transaction"),
-            codama(type = bytes),
-            codama(display(label = "Wrapped transaction"))
+            codama(type = array(fixed_size(bytes, 64), prefixed_count(number(u8)))),
+            codama(display(label = "Authority signatures"))
         )]
-        VersionedTransaction,
-    ),
+        signatures: Vec<Signature>,
+        #[cfg_attr(
+            feature = "codama",
+            codama(type = bytes),
+            codama(display(label = "Signed message"))
+        )]
+        message: VersionedMessage,
+    },
 }
 
 impl Instruction {
@@ -67,29 +75,36 @@ impl Instruction {
 #[cfg(test)]
 mod tests {
     use {
-        super::Instruction, solana_program_error::ProgramError,
-        solana_transaction::versioned::VersionedTransaction,
+        super::Instruction, alloc::vec, solana_message::VersionedMessage,
+        solana_program_error::ProgramError, solana_signature::Signature,
     };
 
     #[test]
     fn instruction_tags_match_wire_format() {
-        assert_eq!(
-            wincode::serialize(&Instruction::Submit(VersionedTransaction::default())).unwrap()[0],
-            0
-        );
+        let instruction = Instruction::Submit {
+            signatures: vec![],
+            message: VersionedMessage::default(),
+        };
+        assert_eq!(wincode::serialize(&instruction).unwrap()[0], 0);
     }
 
     #[test]
     fn submit_round_trips() {
-        let instruction = Instruction::Submit(VersionedTransaction::default());
+        let instruction = Instruction::Submit {
+            signatures: vec![Signature::from([7; 64])],
+            message: VersionedMessage::default(),
+        };
         let bytes = wincode::serialize(&instruction).unwrap();
         assert_eq!(Instruction::try_from_bytes(&bytes).unwrap(), instruction);
     }
 
     #[test]
     fn submit_rejects_trailing_data() {
-        let mut bytes =
-            wincode::serialize(&Instruction::Submit(VersionedTransaction::default())).unwrap();
+        let mut bytes = wincode::serialize(&Instruction::Submit {
+            signatures: vec![],
+            message: VersionedMessage::default(),
+        })
+        .unwrap();
         bytes.extend_from_slice(&[1, 2, 3]);
 
         assert_eq!(

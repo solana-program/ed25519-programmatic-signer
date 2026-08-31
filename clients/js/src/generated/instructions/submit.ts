@@ -8,6 +8,10 @@
 
 import {
     combineCodec,
+    fixDecoderSize,
+    fixEncoderSize,
+    getArrayDecoder,
+    getArrayEncoder,
     getBytesDecoder,
     getBytesEncoder,
     getStructDecoder,
@@ -25,7 +29,7 @@ import {
     type InstructionWithData,
     type ReadonlyUint8Array,
 } from '@solana/kit';
-import { resolveTransactionAccounts } from '../../hooked';
+import { resolveSubmitMessageAccounts } from '../../hooked';
 import { ED25519_SIGNER_PROGRAM_ADDRESS } from '../programs';
 
 export const SUBMIT_DISCRIMINATOR = 0;
@@ -39,15 +43,20 @@ export type SubmitInstruction<
     TRemainingAccounts extends readonly AccountMeta<string>[] = [],
 > = Instruction<TProgram> & InstructionWithData<ReadonlyUint8Array> & InstructionWithAccounts<TRemainingAccounts>;
 
-export type SubmitInstructionData = { discriminator: number; transaction: ReadonlyUint8Array };
+export type SubmitInstructionData = {
+    discriminator: number;
+    signatures: Array<ReadonlyUint8Array>;
+    message: ReadonlyUint8Array;
+};
 
-export type SubmitInstructionDataArgs = { transaction: ReadonlyUint8Array };
+export type SubmitInstructionDataArgs = { signatures: Array<ReadonlyUint8Array>; message: ReadonlyUint8Array };
 
 export function getSubmitInstructionDataEncoder(): Encoder<SubmitInstructionDataArgs> {
     return transformEncoder(
         getStructEncoder([
             ['discriminator', getU8Encoder()],
-            ['transaction', getBytesEncoder()],
+            ['signatures', getArrayEncoder(fixEncoderSize(getBytesEncoder(), 64), { size: getU8Encoder() })],
+            ['message', getBytesEncoder()],
         ]),
         value => ({ ...value, discriminator: SUBMIT_DISCRIMINATOR }),
     );
@@ -56,7 +65,8 @@ export function getSubmitInstructionDataEncoder(): Encoder<SubmitInstructionData
 export function getSubmitInstructionDataDecoder(): Decoder<SubmitInstructionData> {
     return getStructDecoder([
         ['discriminator', getU8Decoder()],
-        ['transaction', getBytesDecoder()],
+        ['signatures', getArrayDecoder(fixDecoderSize(getBytesDecoder(), 64), { size: getU8Decoder() })],
+        ['message', getBytesDecoder()],
     ]);
 }
 
@@ -65,7 +75,8 @@ export function getSubmitInstructionDataCodec(): Codec<SubmitInstructionDataArgs
 }
 
 export type SubmitInput = {
-    transaction: SubmitInstructionDataArgs['transaction'];
+    signatures: SubmitInstructionDataArgs['signatures'];
+    message: SubmitInstructionDataArgs['message'];
 };
 
 export function getSubmitInstruction<TProgramAddress extends Address = typeof ED25519_SIGNER_PROGRAM_ADDRESS>(
@@ -82,7 +93,7 @@ export function getSubmitInstruction<TProgramAddress extends Address = typeof ED
     const resolverScope = { programAddress, args };
 
     // Remaining accounts.
-    const remainingAccounts: AccountMeta[] = resolveTransactionAccounts(resolverScope);
+    const remainingAccounts: AccountMeta[] = resolveSubmitMessageAccounts(resolverScope);
 
     return Object.freeze({
         accounts: remainingAccounts,

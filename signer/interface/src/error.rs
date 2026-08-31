@@ -9,17 +9,17 @@ use solana_program_error::ProgramError;
 #[repr(u32)]
 #[cfg_attr(feature = "codama", derive(CodamaErrors))]
 pub enum Error {
-    /// The wrapped transaction failed sanitization.
+    /// The wrapped message failed sanitization.
     #[cfg_attr(
         feature = "codama",
-        codama(error(message = "The wrapped transaction failed sanitization"))
+        codama(error(message = "The wrapped message failed sanitization"))
     )]
-    InvalidWrappedTransaction = 0,
-    /// The wrapped transaction must contain exactly one executor instruction.
+    InvalidWrappedMessage = 0,
+    /// The wrapped message must contain exactly one executor instruction.
     #[cfg_attr(
         feature = "codama",
         codama(error(
-            message = "The wrapped transaction must contain exactly one executor instruction"
+            message = "The wrapped message must contain exactly one executor instruction"
         ))
     )]
     InvalidExecutorInstructionCount = 1,
@@ -56,6 +56,14 @@ pub enum Error {
         ))
     )]
     DisallowedExecutorInstruction = 5,
+    /// The authority signature count does not match the wrapped message.
+    #[cfg_attr(
+        feature = "codama",
+        codama(error(
+            message = "The authority signature count does not match the wrapped message."
+        ))
+    )]
+    InvalidSignatureCount = 6,
 }
 
 impl From<Error> for ProgramError {
