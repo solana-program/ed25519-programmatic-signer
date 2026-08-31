@@ -3163,7 +3163,6 @@ dependencies = [
  "solana-address 2.6.1",
  "solana-message",
  "solana-program-error",
- "solana-short-vec",
  "solana-signature",
  "wincode",
 ]

@@ -4,7 +4,6 @@ use {
     alloc::vec::Vec,
     solana_message::VersionedMessage,
     solana_program_error::ProgramError,
-    solana_short_vec::ShortU16,
     solana_signature::Signature,
     wincode::{SchemaRead, SchemaWrite, containers},
 };
@@ -49,10 +48,10 @@ pub enum Instruction {
         codama(display(intent = "Verify wrapped message and invoke its executor"))
     )]
     Submit {
-        #[wincode(with = "containers::Vec<Signature, ShortU16>")]
+        #[wincode(with = "containers::Vec<Signature, u8>")]
         #[cfg_attr(
             feature = "codama",
-            codama(type = array(fixed_size(bytes, 64), prefixed_count(number(short_u16)))),
+            codama(type = array(fixed_size(bytes, 64), prefixed_count(number(u8)))),
             codama(display(label = "Authority signatures"))
         )]
         signatures: Vec<Signature>,

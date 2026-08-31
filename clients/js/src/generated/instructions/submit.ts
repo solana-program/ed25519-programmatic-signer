@@ -14,8 +14,6 @@ import {
     getArrayEncoder,
     getBytesDecoder,
     getBytesEncoder,
-    getShortU16Decoder,
-    getShortU16Encoder,
     getStructDecoder,
     getStructEncoder,
     getU8Decoder,
@@ -57,7 +55,7 @@ export function getSubmitInstructionDataEncoder(): Encoder<SubmitInstructionData
     return transformEncoder(
         getStructEncoder([
             ['discriminator', getU8Encoder()],
-            ['signatures', getArrayEncoder(fixEncoderSize(getBytesEncoder(), 64), { size: getShortU16Encoder() })],
+            ['signatures', getArrayEncoder(fixEncoderSize(getBytesEncoder(), 64), { size: getU8Encoder() })],
             ['message', getBytesEncoder()],
         ]),
         value => ({ ...value, discriminator: SUBMIT_DISCRIMINATOR }),
@@ -67,7 +65,7 @@ export function getSubmitInstructionDataEncoder(): Encoder<SubmitInstructionData
 export function getSubmitInstructionDataDecoder(): Decoder<SubmitInstructionData> {
     return getStructDecoder([
         ['discriminator', getU8Decoder()],
-        ['signatures', getArrayDecoder(fixDecoderSize(getBytesDecoder(), 64), { size: getShortU16Decoder() })],
+        ['signatures', getArrayDecoder(fixDecoderSize(getBytesDecoder(), 64), { size: getU8Decoder() })],
         ['message', getBytesDecoder()],
     ]);
 }

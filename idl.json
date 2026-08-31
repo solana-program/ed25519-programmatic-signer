@@ -47,7 +47,7 @@
                 "kind": "prefixedCountNode",
                 "prefix": {
                   "kind": "numberTypeNode",
-                  "format": "shortU16",
+                  "format": "u8",
                   "endian": "le"
                 }
               }
