@@ -12,7 +12,7 @@ edition = { workspace = true }
 crate-type = ["rlib"]
 
 [features]
-cpi = ["dep:pinocchio", "dep:wincode"]
+cpi = ["dep:pinocchio"]
 
 [lints]
 workspace = true
@@ -23,5 +23,6 @@ solana-address = { workspace = true }
 solana-hash = { workspace = true }
 solana-instruction = { workspace = true, features = ["wincode"] }
 solana-sdk-ids = { workspace = true }
+solana-system-interface = { workspace = true, features = ["wincode"] }
 spl-nonce-interface = { workspace = true }
-wincode = { workspace = true, features = ["alloc"], optional = true }
+wincode = { workspace = true, features = ["alloc"] }
