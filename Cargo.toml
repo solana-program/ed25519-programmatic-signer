@@ -43,6 +43,7 @@ solana-keypair = "3.1.2"
 solana-message = { version = "4.4.0", default-features = false }
 solana-native-token = "3.0.0"
 solana-program-error = "3.0.1"
+solana-program-pack = "3.1.0"
 solana-remote-wallet = "4.2.1"
 solana-rent = "4.2.0"
 solana-rpc-client = { version = "4.2.1", default-features = false }
@@ -67,6 +68,7 @@ spl-legacy-message-executor-interface = { path = "executor/interface" }
 spl-nonce-client = { path = "nonce/client" }
 spl-nonce-interface = { path = "nonce/interface" }
 spl-programmatic-signer-client = { path = "clients/rust" }
+spl-token-interface = "3.0.0"
 
 [workspace.lints.rust.unexpected_cfgs]
 level = "warn"

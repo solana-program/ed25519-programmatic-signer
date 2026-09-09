@@ -8,7 +8,6 @@ use {
     solana_signer::Signer,
     solana_transaction::versioned::VersionedTransaction,
     spl_ed25519_signer_client::instruction::submit,
-    spl_legacy_message_executor_interface::instruction::Instruction as ExecutorInstruction,
 };
 
 /// Builds and signs an outer submit transaction.
@@ -18,13 +17,13 @@ pub fn submit_transaction(
     extra_signers: &[&dyn Signer],
     recent_blockhash: Hash,
 ) -> Result<VersionedTransaction> {
-    crate::verify::verify_static(transaction)?;
+    let decoded = crate::verify::decode_verified(transaction)?;
     if !is_fully_signed(transaction) {
         return Err(Error::NotFullySigned);
     }
 
     let fee_payer_key = fee_payer.try_pubkey()?;
-    let required_outer_signers = required_outer_signers(transaction)?;
+    let required_outer_signers = required_outer_signers(transaction, &decoded.inner_message)?;
     let provided_signer_keys = provided_signer_keys(fee_payer_key, extra_signers)?;
     for required_outer_signer in &required_outer_signers {
         if !provided_signer_keys.contains(required_outer_signer) {
@@ -68,23 +67,20 @@ pub fn submit_transaction(
     Ok(transaction)
 }
 
-fn required_outer_signers(transaction: &VersionedTransaction) -> Result<Vec<Address>> {
-    let [executor_instruction] = transaction.message.instructions() else {
-        return Err(Error::InvalidExecutorInstructionCount);
-    };
-    let ExecutorInstruction::Execute(inner_message) =
-        ExecutorInstruction::try_from_bytes(&executor_instruction.data)
-            .map_err(|_| Error::InvalidInstructionData)?;
+fn required_outer_signers(
+    transaction: &VersionedTransaction,
+    inner_message: &VersionedMessage,
+) -> Result<Vec<Address>> {
     let wrapped_required_signatures =
         usize::from(transaction.message.header().num_required_signatures);
-    let inner_required_signatures = usize::from(inner_message.header.num_required_signatures);
+    let inner_required_signatures = usize::from(inner_message.header().num_required_signatures);
     let wrapped_signers = transaction
         .message
         .static_account_keys()
         .get(..wrapped_required_signatures)
         .ok_or(Error::InvalidWrappedTransaction)?;
     let inner_signers = inner_message
-        .account_keys
+        .static_account_keys()
         .get(..inner_required_signatures)
         .ok_or(Error::InvalidInnerMessage)?;
 

@@ -10311,6 +10311,7 @@ name = "spl-programmatic-signer-cli"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "base64 0.22.1",
  "clap 3.2.25",
  "libtest-mimic",
  "serde",
@@ -10321,20 +10322,28 @@ dependencies = [
  "solana-cli-config",
  "solana-commitment-config",
  "solana-hash 4.4.0",
+ "solana-instruction",
  "solana-keypair",
+ "solana-message",
  "solana-native-token",
+ "solana-program-pack",
  "solana-remote-wallet",
  "solana-rpc-client",
  "solana-rpc-client-types",
  "solana-signature",
  "solana-signer",
+ "solana-system-interface 3.2.0",
  "solana-test-validator",
  "solana-transaction",
  "spl-ed25519-signer-client",
+ "spl-legacy-message-executor-interface",
  "spl-nonce-client",
  "spl-nonce-interface",
+ "spl-programmatic-signer-client",
+ "spl-token-interface",
  "tempfile",
  "tokio",
+ "wincode",
 ]
 
 [[package]]

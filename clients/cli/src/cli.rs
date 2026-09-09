@@ -1,6 +1,6 @@
 use {
     crate::{
-        commands::{address::AddressCommand, nonce::NonceCommand},
+        commands::{address::AddressCommand, nonce::NonceCommand, transaction::TransactionCommand},
         output::OutputFormat,
     },
     clap::{Args, Parser, Subcommand, ValueHint},
@@ -85,4 +85,6 @@ pub(crate) enum Command {
     Address(AddressCommand),
     /// Manage SPL Nonce accounts used by programmatic signer transactions.
     Nonce(NonceCommand),
+    /// Build, inspect, sign, and submit portable transaction files.
+    Transaction(TransactionCommand),
 }

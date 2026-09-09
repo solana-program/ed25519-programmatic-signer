@@ -1,7 +1,7 @@
 [package]
 name = "spl-programmatic-signer-cli"
 version = "0.1.0"
-description = "Command-line setup client for SPL programmatic signers"
+description = "Offline signing and relay workflows for SPL programmatic signers"
 authors = { workspace = true }
 repository = { workspace = true }
 homepage = { workspace = true }
@@ -12,7 +12,14 @@ edition = { workspace = true }
 workspace = true
 
 [dependencies]
+solana-message = { workspace = true, features = ["wincode"] }
+solana-instruction = { workspace = true }
 anyhow = { workspace = true }
+base64 = { workspace = true }
+wincode = { workspace = true, features = ["alloc"] }
+solana-system-interface = { workspace = true, features = ["wincode"] }
+spl-programmatic-signer-client = { workspace = true }
+spl-token-interface = { workspace = true }
 clap = { workspace = true, features = ["derive"] }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
@@ -28,6 +35,7 @@ solana-remote-wallet = { workspace = true, features = ["agave-unstable-api"] }
 solana-rpc-client = { workspace = true, features = ["agave-unstable-api"] }
 solana-rpc-client-types = { workspace = true, features = ["agave-unstable-api"] }
 solana-signer = { workspace = true }
+solana-signature = { workspace = true }
 solana-transaction = { workspace = true, features = ["wincode"] }
 spl-ed25519-signer-client = { workspace = true }
 spl-nonce-client = { workspace = true }
@@ -35,7 +43,8 @@ spl-nonce-interface = { workspace = true }
 tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
 
 [dev-dependencies]
-solana-signature = { workspace = true }
+solana-program-pack = { workspace = true }
+spl-legacy-message-executor-interface = { workspace = true }
 libtest-mimic = { workspace = true }
 solana-test-validator = { workspace = true, features = ["dev-context-only-utils"] }
 tempfile = { workspace = true }

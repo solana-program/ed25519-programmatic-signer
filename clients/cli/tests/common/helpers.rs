@@ -1,7 +1,8 @@
 use {
     solana_cli_config::Config as SolanaConfig,
     solana_commitment_config::CommitmentConfig,
-    solana_keypair::write_keypair_file,
+    solana_keypair::{Keypair, write_keypair_file},
+    solana_rpc_client::nonblocking::rpc_client::RpcClient,
     solana_signer::Signer,
     solana_test_validator::{TestValidator, TestValidatorGenesis},
     spl_nonce_interface::state::Nonce,
@@ -10,6 +11,8 @@ use {
 };
 
 pub struct TestEnv {
+    pub payer: Keypair,
+    pub rpc: RpcClient,
     pub payer_address: String,
     pub config_file_path: String,
     pub nonce_rent_lamports: u64,
@@ -21,6 +24,14 @@ pub struct TestEnv {
 pub async fn setup_test_env() -> TestEnv {
     let mut genesis = TestValidatorGenesis::default_for_tests();
     genesis.add_program("spl_nonce_program", spl_nonce_interface::id());
+    genesis.add_program(
+        "spl_ed25519_signer_program",
+        spl_ed25519_signer_client::id(),
+    );
+    genesis.add_program(
+        "spl_legacy_message_executor_program",
+        spl_legacy_message_executor_interface::id(),
+    );
     let (validator, payer) = genesis.start_async().await;
     let nonce_rent_lamports = validator
         .get_async_rpc_client()
@@ -46,6 +57,8 @@ pub async fn setup_test_env() -> TestEnv {
     .unwrap();
 
     TestEnv {
+        rpc: validator.get_async_rpc_client(),
+        payer,
         payer_address,
         config_file_path,
         nonce_rent_lamports,

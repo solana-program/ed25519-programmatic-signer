@@ -9,10 +9,13 @@ use {
     solana_commitment_config::CommitmentConfig,
     solana_hash::Hash,
     solana_remote_wallet::remote_wallet::RemoteWalletManager,
-    solana_rpc_client::nonblocking::rpc_client::RpcClient,
-    solana_rpc_client_types::config::RpcSendTransactionConfig,
+    solana_rpc_client::{nonblocking::rpc_client::RpcClient, rpc_client::SerializableTransaction},
+    solana_rpc_client_types::{
+        config::{RpcSendTransactionConfig, RpcSimulateTransactionConfig},
+        response::RpcSimulateTransactionResult,
+    },
     solana_signer::Signer,
-    solana_transaction::Transaction,
+    solana_transaction::versioned::VersionedTransaction,
     spl_nonce_interface::state::Nonce,
     std::{cell::RefCell, io::ErrorKind, path::Path, rc::Rc, str::FromStr},
 };
@@ -98,9 +101,43 @@ impl Client {
             .transpose()
     }
 
+    pub(crate) async fn genesis_hash(&self) -> Result<Hash> {
+        self.rpc
+            .get_genesis_hash()
+            .await
+            .context("failed to query cluster genesis hash")
+    }
+
+    pub(crate) async fn require_nonce(&self, address: &Address) -> Result<Nonce> {
+        self.nonce_account(address)
+            .await?
+            .map(|account| account.state)
+            .ok_or_else(|| anyhow!("nonce account {address} was not found"))
+    }
+
+    pub(crate) async fn simulate(
+        &self,
+        transaction: &VersionedTransaction,
+        verify_signatures: bool,
+    ) -> Result<RpcSimulateTransactionResult> {
+        self.rpc
+            .simulate_transaction_with_config(
+                transaction,
+                RpcSimulateTransactionConfig {
+                    sig_verify: verify_signatures,
+                    replace_recent_blockhash: !verify_signatures,
+                    commitment: Some(self.rpc.commitment()),
+                    ..RpcSimulateTransactionConfig::default()
+                },
+            )
+            .await
+            .map(|response| response.value)
+            .context("simulation RPC failed")
+    }
+
     pub(crate) async fn send_and_confirm_transaction(
         &self,
-        transaction: &Transaction,
+        transaction: &impl SerializableTransaction,
     ) -> Result<String> {
         self.rpc
             .send_and_confirm_transaction_with_config(

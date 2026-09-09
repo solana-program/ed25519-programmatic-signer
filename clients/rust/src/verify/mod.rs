@@ -24,20 +24,11 @@ pub fn verify(
     nonce_account: &Address,
     expected_genesis_hash: &Hash,
 ) -> Result<()> {
-    verify_static(transaction)?;
+    let decoded = decode_verified(transaction)?;
     verify_genesis_hash(transaction, expected_genesis_hash)?;
-
     let wrapped_message = &transaction.message;
-    let [executor_instruction] = wrapped_message.instructions() else {
-        return Err(Error::InvalidExecutorInstructionCount);
-    };
-    let spl_legacy_message_executor_interface::instruction::Instruction::Execute(inner_message) =
-        spl_legacy_message_executor_interface::instruction::Instruction::try_from_bytes(
-            &executor_instruction.data,
-        )
-        .map_err(|_| Error::InvalidInstructionData)?;
-
-    let inner_message = VersionedMessage::Legacy(inner_message);
+    let executor_instruction = decoded.executor_instruction;
+    let inner_message = decoded.inner_message;
     validate_inner_message_nonce(&inner_message, expected)?;
     executor_accounts::verify(
         wrapped_message,
@@ -60,6 +51,18 @@ pub fn verify_genesis_hash(
 
 /// Verifies wrapped-transaction invariants that do not require an RPC nonce account snapshot.
 pub fn verify_static(transaction: &VersionedTransaction) -> Result<()> {
+    decode_verified(transaction).map(|_| ())
+}
+
+pub(crate) struct DecodedTransaction<'a> {
+    pub(crate) executor_instruction: &'a solana_message::compiled_instruction::CompiledInstruction,
+    pub(crate) inner_message: VersionedMessage,
+    pub(crate) nonce_account: Address,
+}
+
+pub(crate) fn decode_verified(
+    transaction: &VersionedTransaction,
+) -> Result<DecodedTransaction<'_>> {
     transaction
         .sanitize()
         .map_err(|_| Error::InvalidWrappedTransaction)?;
@@ -97,5 +100,14 @@ pub fn verify_static(transaction: &VersionedTransaction) -> Result<()> {
 
     let inner_message = VersionedMessage::Legacy(inner_message);
     validate_inner_message_shape(&inner_message)?;
-    executor_accounts::verify(wrapped_message, executor_instruction, &inner_message, None)
+    executor_accounts::verify(wrapped_message, executor_instruction, &inner_message, None)?;
+    let nonce_index = *executor_instruction
+        .accounts
+        .first()
+        .ok_or(Error::InvalidNonceAccountMeta)?;
+    Ok(DecodedTransaction {
+        executor_instruction,
+        inner_message,
+        nonce_account: *resolve_key(wrapped_keys, nonce_index)?,
+    })
 }

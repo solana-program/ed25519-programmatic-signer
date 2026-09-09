@@ -1,12 +1,11 @@
 //! Offline transaction inspection helpers.
 
 use {
-    crate::{Error, Result, message::accounts::resolve_key, transaction::signer_status},
+    crate::{Error, Result, transaction::signer_status},
     solana_address::Address,
     solana_hash::Hash,
     solana_message::{VersionedMessage, compiled_instruction::CompiledInstruction},
     solana_transaction::versioned::VersionedTransaction,
-    spl_legacy_message_executor_interface::instruction::Instruction as ExecutorInstruction,
 };
 
 /// Required wrapper signer and current signature status.
@@ -41,29 +40,11 @@ pub struct TransactionSummary {
 
 /// Decodes the cold-signed transaction without RPC for signing-device display.
 pub fn inspect(transaction: &VersionedTransaction) -> Result<TransactionSummary> {
-    crate::verify::verify_static(transaction)?;
-    transaction
-        .sanitize()
-        .map_err(|_| Error::InvalidWrappedTransaction)?;
+    let decoded = crate::verify::decode_verified(transaction)?;
     let wrapped_message = &transaction.message;
-    let [executor_instruction] = wrapped_message.instructions() else {
-        return Err(Error::InvalidExecutorInstructionCount);
-    };
-    let wrapped_keys = wrapped_message.static_account_keys();
-    let executor_program = *resolve_key(wrapped_keys, executor_instruction.program_id_index)?;
-    if executor_program != spl_legacy_message_executor_interface::id() {
-        return Err(Error::InvalidExecutorProgramId);
-    }
-    let nonce_account_index = *executor_instruction
-        .accounts
-        .first()
-        .ok_or(Error::InvalidNonceAccountMeta)?;
-    let nonce_account = *resolve_key(wrapped_keys, nonce_account_index)?;
-
-    let ExecutorInstruction::Execute(inner_message) =
-        ExecutorInstruction::try_from_bytes(&executor_instruction.data)
-            .map_err(|_| Error::InvalidInstructionData)?;
-    let inner_message = VersionedMessage::Legacy(inner_message);
+    let executor_program = spl_legacy_message_executor_interface::id();
+    let nonce_account = decoded.nonce_account;
+    let inner_message = decoded.inner_message;
     let required_signatures = usize::from(inner_message.header().num_required_signatures);
     let inner_required_signers = inner_message
         .static_account_keys()
