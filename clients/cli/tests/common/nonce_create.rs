@@ -68,6 +68,50 @@ pub async fn creates_and_shows_nonce_account(env: &TestEnv) {
     assert_eq!(show.owner, spl_nonce_interface::id().to_string());
 }
 
+pub async fn creates_nonce_account_with_generated_keypair(env: &TestEnv) {
+    let authority = Keypair::new().pubkey();
+    let programmatic_signer = spl_ed25519_signer_client::ProgrammaticSigner::derive_address(
+        &spl_ed25519_signer_client::id(),
+        &authority,
+    );
+    for (authority_arg, expected_authority) in [
+        ("--nonce-authority", authority),
+        ("--cold-authority", programmatic_signer),
+    ] {
+        let create = run_psigner(&[
+            "-C",
+            &env.config_file_path,
+            "--output",
+            "json-compact",
+            "nonce",
+            "create",
+            authority_arg,
+            &authority.to_string(),
+        ]);
+        let create: NonceCreateOutput = serde_json::from_slice(&create.stdout).unwrap();
+        assert_ne!(create.nonce_account, env.payer_address);
+        assert_eq!(create.authority, expected_authority.to_string());
+        assert_eq!(create.lamports, create.rent_lamports);
+        assert!(!create.signature.is_empty());
+
+        let show = run_psigner(&[
+            "-C",
+            &env.config_file_path,
+            "--output",
+            "json-compact",
+            "nonce",
+            "show",
+            &create.nonce_account,
+        ]);
+        let show: NonceShowOutput = serde_json::from_slice(&show.stdout).unwrap();
+        assert_eq!(show.nonce_account, create.nonce_account);
+        assert_eq!(show.authority, create.authority);
+        assert_eq!(show.nonce, create.nonce);
+        assert_eq!(show.lamports, create.lamports);
+        assert_eq!(show.owner, spl_nonce_interface::id().to_string());
+    }
+}
+
 pub async fn creates_nonce_account_with_cold_authority(env: &TestEnv) {
     let cold_authority = Keypair::new().pubkey();
     let nonce_keypair = Keypair::new();

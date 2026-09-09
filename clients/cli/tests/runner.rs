@@ -3,6 +3,7 @@ use {
         helpers::setup_test_env,
         nonce_create::{
             creates_and_shows_nonce_account, creates_nonce_account_with_cold_authority,
+            creates_nonce_account_with_generated_keypair,
         },
     },
     libtest_mimic::{Arguments, Trial},
@@ -29,6 +30,11 @@ fn main() -> ExitCode {
     let runtime_handle = runtime.handle().clone();
     let tests = vec![
         async_trial!(creates_and_shows_nonce_account, env, runtime_handle),
+        async_trial!(
+            creates_nonce_account_with_generated_keypair,
+            env,
+            runtime_handle
+        ),
         async_trial!(
             creates_nonce_account_with_cold_authority,
             env,

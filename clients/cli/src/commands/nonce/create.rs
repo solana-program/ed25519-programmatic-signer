@@ -4,6 +4,7 @@ use {
     clap::Args,
     serde::Serialize,
     solana_address::Address,
+    solana_keypair::Keypair,
     solana_native_token::Sol,
     solana_signer::Signer,
     solana_transaction::Transaction,
@@ -27,10 +28,11 @@ pub(crate) struct CreateCommand {
     #[clap(long)]
     pub(crate) cold_authority: Option<Address>,
 
-    /// Signer for the new nonce account: a keypair file, usb:// URL, prompt:// URL, or the ASK
-    /// keyword.
+    /// Keypair for the new nonce account. Its public key determines the account address.
+    /// Accepts a keypair file, usb:// URL, prompt:// URL, or ASK.
+    /// If omitted, generates a temporary keypair used only for account creation.
     #[clap(long)]
-    pub(crate) nonce_keypair: String,
+    pub(crate) nonce_keypair: Option<String>,
 }
 
 pub(super) async fn run(
@@ -38,7 +40,10 @@ pub(super) async fn run(
     client: &Client,
     output: OutputFormat,
 ) -> Result<String> {
-    let nonce_keypair = client.signer(&command.nonce_keypair, "nonce account")?;
+    let nonce_keypair = match &command.nonce_keypair {
+        Some(source) => client.signer(source, "nonce account")?,
+        None => Box::new(Keypair::new()),
+    };
     let fee_payer = client.fee_payer()?;
     let fee_payer_address = fee_payer
         .try_pubkey()
