@@ -103,3 +103,7 @@ check-no-std-alloc-%:
 		--manifest-path $(call make-path,$*)/Cargo.toml \
 		-Zbuild-std=alloc,core \
 		$(ARGS)
+
+build-%:
+	cargo $(nightly) build --manifest-path $(call make-path,$*)/Cargo.toml $(ARGS)
+

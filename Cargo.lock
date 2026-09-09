@@ -10338,6 +10338,36 @@ dependencies = [
 ]
 
 [[package]]
+name = "spl-programmatic-signer-client"
+version = "0.1.0"
+dependencies = [
+ "base64 0.22.1",
+ "mollusk-svm",
+ "serde",
+ "serde_json",
+ "solana-account 4.3.2",
+ "solana-address 2.6.1",
+ "solana-hash 4.4.0",
+ "solana-instruction",
+ "solana-keypair",
+ "solana-message",
+ "solana-program-error",
+ "solana-rent",
+ "solana-sdk-ids",
+ "solana-signature",
+ "solana-signer",
+ "solana-system-interface 3.2.0",
+ "solana-transaction",
+ "spl-ed25519-signer-client",
+ "spl-ed25519-signer-interface",
+ "spl-legacy-message-executor-client",
+ "spl-legacy-message-executor-interface",
+ "spl-nonce-client",
+ "spl-nonce-interface",
+ "wincode",
+]
+
+[[package]]
 name = "spl-token-2022-interface"
 version = "3.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
