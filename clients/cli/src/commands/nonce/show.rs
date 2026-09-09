@@ -1,11 +1,11 @@
 use {
-    crate::{client::Client, output::OutputFormat},
+    crate::{
+        client::Client,
+        output::{NonceShowOutput, OutputFormat},
+    },
     anyhow::{Result, anyhow},
     clap::Args,
-    serde::Serialize,
     solana_address::Address,
-    solana_native_token::Sol,
-    std::fmt,
 };
 
 #[derive(Debug, Args)]
@@ -31,24 +31,4 @@ pub(super) async fn run(
         lamports: account.lamports,
         owner: spl_nonce_interface::id().to_string(),
     })
-}
-
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-struct NonceShowOutput {
-    nonce_account: String,
-    authority: String,
-    nonce: String,
-    lamports: u64,
-    owner: String,
-}
-
-impl fmt::Display for NonceShowOutput {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        writeln!(formatter, "Nonce account: {}", self.nonce_account)?;
-        writeln!(formatter, "Authority: {}", self.authority)?;
-        writeln!(formatter, "Nonce: {}", self.nonce)?;
-        writeln!(formatter, "Balance: {}", Sol(self.lamports))?;
-        write!(formatter, "Owner: {}", self.owner)
-    }
 }

@@ -2,14 +2,13 @@
 
 use spl_nonce_interface::state::Nonce;
 
-/// Decodes a complete SPL Nonce account data buffer.
-pub fn decode(account_data: &[u8]) -> wincode::ReadResult<Nonce> {
+/// Decodes a complete initialized SPL Nonce account data buffer.
+/// Returns `None` for uninitialized, malformed, or trailing data.
+pub fn decode(account_data: &[u8]) -> Option<Nonce> {
     if account_data.iter().all(|byte| *byte == 0) {
-        return Err(wincode::ReadError::InvalidValue(
-            "uninitialized SPL Nonce account",
-        ));
+        return None;
     }
-    wincode::deserialize_exact(account_data)
+    wincode::deserialize_exact(account_data).ok()
 }
 
 #[cfg(test)]
@@ -32,17 +31,12 @@ mod tests {
 
     #[test]
     fn rejects_malformed_nonce_data() {
-        assert!(decode(&[1, 2, 3]).is_err());
+        assert!(decode(&[1, 2, 3]).is_none());
     }
 
     #[test]
     fn rejects_uninitialized_nonce_data() {
-        let error = decode(&[0; Nonce::LEN]).unwrap_err();
-
-        assert!(matches!(
-            error,
-            wincode::ReadError::InvalidValue("uninitialized SPL Nonce account")
-        ));
+        assert!(decode(&[0; Nonce::LEN]).is_none());
     }
 
     #[test]
@@ -50,6 +44,6 @@ mod tests {
         let mut account_data = [1; Nonce::LEN + 1];
         account_data[32..Nonce::LEN].fill(2);
 
-        assert!(decode(&account_data).is_err());
+        assert!(decode(&account_data).is_none());
     }
 }

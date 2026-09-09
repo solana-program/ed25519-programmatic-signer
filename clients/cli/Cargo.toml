@@ -1,5 +1,5 @@
 [package]
-name = "psigner"
+name = "spl-programmatic-signer-cli"
 version = "0.1.0"
 description = "Command-line setup client for SPL programmatic signers"
 authors = { workspace = true }
@@ -7,10 +7,6 @@ repository = { workspace = true }
 homepage = { workspace = true }
 license = { workspace = true }
 edition = { workspace = true }
-
-[[bin]]
-name = "psigner"
-path = "src/main.rs"
 
 [lints]
 workspace = true
@@ -36,9 +32,10 @@ solana-transaction = { workspace = true, features = ["wincode"] }
 spl-ed25519-signer-client = { workspace = true }
 spl-nonce-client = { workspace = true }
 spl-nonce-interface = { workspace = true }
-tokio = { workspace = true, features = ["macros", "rt-multi-thread", "time"] }
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
 
 [dev-dependencies]
+solana-signature = { workspace = true }
 libtest-mimic = { workspace = true }
 solana-test-validator = { workspace = true, features = ["dev-context-only-utils"] }
 tempfile = { workspace = true }

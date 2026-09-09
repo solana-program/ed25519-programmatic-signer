@@ -1,16 +1,16 @@
 use {
-    crate::{client::Client, output::OutputFormat},
-    anyhow::{Context, Result, bail},
+    crate::{
+        client::Client,
+        output::{NonceCreateOutput, OutputFormat},
+    },
+    anyhow::{Context, Result, anyhow, bail},
     clap::Args,
-    serde::Serialize,
     solana_address::Address,
     solana_keypair::Keypair,
-    solana_native_token::Sol,
     solana_signer::Signer,
     solana_transaction::Transaction,
     spl_ed25519_signer_client::ProgrammaticSigner,
     spl_nonce_interface::state::Nonce,
-    std::fmt,
 };
 
 #[derive(Debug, Args)]
@@ -84,8 +84,9 @@ pub(super) async fn run(
     let signature = client.send_and_confirm_transaction(&transaction).await?;
 
     let account = client
-        .wait_for_nonce_account(&nonce_account)
+        .nonce_account(&nonce_account)
         .await
+        .and_then(|account| account.ok_or_else(|| anyhow!("created nonce account was not found")))
         .with_context(|| {
             format!(
                 "transaction {signature} confirmed, but failed to read created nonce account \
@@ -100,24 +101,4 @@ pub(super) async fn run(
         nonce: account.state.nonce.to_string(),
         lamports: account.lamports,
     })
-}
-
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-struct NonceCreateOutput {
-    signature: String,
-    nonce_account: String,
-    authority: String,
-    nonce: String,
-    lamports: u64,
-}
-
-impl fmt::Display for NonceCreateOutput {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        writeln!(formatter, "Signature: {}", self.signature)?;
-        writeln!(formatter, "Nonce account: {}", self.nonce_account)?;
-        writeln!(formatter, "Authority: {}", self.authority)?;
-        writeln!(formatter, "Nonce: {}", self.nonce)?;
-        write!(formatter, "Balance: {}", Sol(self.lamports))
-    }
 }

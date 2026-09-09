@@ -14,12 +14,8 @@ use {
     solana_signer::Signer,
     solana_transaction::Transaction,
     spl_nonce_interface::state::Nonce,
-    std::{cell::RefCell, io::ErrorKind, path::Path, rc::Rc, str::FromStr, time::Duration},
-    tokio::time::{sleep, timeout},
+    std::{cell::RefCell, io::ErrorKind, path::Path, rc::Rc, str::FromStr},
 };
-
-const ACCOUNT_READ_TIMEOUT: Duration = Duration::from_secs(10);
-const RPC_POLL_INTERVAL: Duration = Duration::from_millis(500);
 
 #[derive(Debug)]
 pub(crate) struct NonceAccount {
@@ -100,19 +96,6 @@ impl Client {
             .value
             .map(|account| decode_nonce_account(address, account))
             .transpose()
-    }
-
-    pub(crate) async fn wait_for_nonce_account(&self, address: &Address) -> Result<NonceAccount> {
-        timeout(ACCOUNT_READ_TIMEOUT, async {
-            loop {
-                if let Some(account) = self.nonce_account(address).await? {
-                    return Ok(account);
-                }
-                sleep(RPC_POLL_INTERVAL).await;
-            }
-        })
-        .await
-        .map_err(|_| anyhow!("nonce account {address} was not available before timeout"))?
     }
 
     pub(crate) async fn send_and_confirm_transaction(

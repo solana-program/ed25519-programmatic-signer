@@ -1,30 +1,12 @@
 use {
-    crate::common::helpers::{TestEnv, run_psigner},
-    serde::Deserialize,
+    crate::common::helpers::{TestEnv, run_signer},
+    solana_hash::Hash,
     solana_keypair::{Keypair, write_keypair_file},
+    solana_signature::Signature,
     solana_signer::Signer,
+    spl_programmatic_signer_cli::output::{NonceCreateOutput, NonceShowOutput},
     tempfile::NamedTempFile,
 };
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-struct NonceCreateOutput {
-    signature: String,
-    nonce_account: String,
-    authority: String,
-    nonce: String,
-    lamports: u64,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct NonceShowOutput {
-    nonce_account: String,
-    authority: String,
-    nonce: String,
-    lamports: u64,
-    owner: String,
-}
 
 pub async fn creates_and_shows_nonce_account(env: &TestEnv) {
     let nonce_keypair = Keypair::new();
@@ -32,7 +14,7 @@ pub async fn creates_and_shows_nonce_account(env: &TestEnv) {
     write_keypair_file(&nonce_keypair, &nonce_keypair_file).unwrap();
     let nonce_account = nonce_keypair.pubkey().to_string();
 
-    let create = run_psigner(&[
+    let create = run_signer(&[
         "-C",
         &env.config_file_path,
         "--output",
@@ -48,9 +30,14 @@ pub async fn creates_and_shows_nonce_account(env: &TestEnv) {
     assert_eq!(create.nonce_account, nonce_account);
     assert_eq!(create.authority, env.payer_address);
     assert_eq!(create.lamports, env.nonce_rent_lamports);
-    assert!(!create.signature.is_empty());
+    assert_ne!(
+        create.signature.parse::<Signature>().unwrap(),
+        Signature::default()
+    );
+    assert_ne!(create.nonce.parse::<Hash>().unwrap(), Hash::default());
+    assert!(create.lamports > 0);
 
-    let show = run_psigner(&[
+    let show = run_signer(&[
         "-C",
         &env.config_file_path,
         "--output",
@@ -77,7 +64,7 @@ pub async fn creates_nonce_account_with_generated_keypair(env: &TestEnv) {
         ("--nonce-authority", authority),
         ("--cold-authority", programmatic_signer),
     ] {
-        let create = run_psigner(&[
+        let create = run_signer(&[
             "-C",
             &env.config_file_path,
             "--output",
@@ -91,9 +78,14 @@ pub async fn creates_nonce_account_with_generated_keypair(env: &TestEnv) {
         assert_ne!(create.nonce_account, env.payer_address);
         assert_eq!(create.authority, expected_authority.to_string());
         assert_eq!(create.lamports, env.nonce_rent_lamports);
-        assert!(!create.signature.is_empty());
+        assert_ne!(
+            create.signature.parse::<Signature>().unwrap(),
+            Signature::default()
+        );
+        assert_ne!(create.nonce.parse::<Hash>().unwrap(), Hash::default());
+        assert!(create.lamports > 0);
 
-        let show = run_psigner(&[
+        let show = run_signer(&[
             "-C",
             &env.config_file_path,
             "--output",
@@ -117,7 +109,7 @@ pub async fn creates_nonce_account_with_cold_authority(env: &TestEnv) {
     let nonce_keypair_file = NamedTempFile::new().unwrap();
     write_keypair_file(&nonce_keypair, &nonce_keypair_file).unwrap();
 
-    let create = run_psigner(&[
+    let create = run_signer(&[
         "-C",
         &env.config_file_path,
         "--output",

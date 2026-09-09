@@ -1,8 +1,9 @@
 use {
     anyhow::{Context, Result},
     clap::ValueEnum,
-    serde::Serialize,
-    std::fmt::Display,
+    serde::{Deserialize, Serialize},
+    solana_native_token::Sol,
+    std::fmt::{self, Display},
 };
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, ValueEnum)]
@@ -20,5 +21,45 @@ impl OutputFormat {
             Self::Json => serde_json::to_string_pretty(output).context("failed to encode JSON"),
             Self::JsonCompact => serde_json::to_string(output).context("failed to encode JSON"),
         }
+    }
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NonceCreateOutput {
+    pub signature: String,
+    pub nonce_account: String,
+    pub authority: String,
+    pub nonce: String,
+    pub lamports: u64,
+}
+
+impl fmt::Display for NonceCreateOutput {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        writeln!(formatter, "Signature: {}", self.signature)?;
+        writeln!(formatter, "Nonce account: {}", self.nonce_account)?;
+        writeln!(formatter, "Authority: {}", self.authority)?;
+        writeln!(formatter, "Nonce: {}", self.nonce)?;
+        write!(formatter, "Balance: {}", Sol(self.lamports))
+    }
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NonceShowOutput {
+    pub nonce_account: String,
+    pub authority: String,
+    pub nonce: String,
+    pub lamports: u64,
+    pub owner: String,
+}
+
+impl fmt::Display for NonceShowOutput {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        writeln!(formatter, "Nonce account: {}", self.nonce_account)?;
+        writeln!(formatter, "Authority: {}", self.authority)?;
+        writeln!(formatter, "Nonce: {}", self.nonce)?;
+        writeln!(formatter, "Balance: {}", Sol(self.lamports))?;
+        write!(formatter, "Owner: {}", self.owner)
     }
 }

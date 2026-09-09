@@ -166,7 +166,7 @@ fn create_account_creates_and_initializes_nonce_account() {
     let authority_address = Address::new_unique();
     let rent_lamports = mollusk.sysvars.rent.minimum_balance(Nonce::LEN);
 
-    mollusk.process_and_validate_transaction_instructions(
+    let result = mollusk.process_and_validate_transaction_instructions(
         &create_account(
             &payer_address,
             &nonce_account_address,
@@ -187,6 +187,20 @@ fn create_account_creates_and_initializes_nonce_account() {
         ],
         &[Check::success()],
         Some(&payer_address),
+    );
+    let account = result.get_account(&nonce_account_address).unwrap();
+    assert_eq!(account.owner, spl_nonce_interface::id());
+    assert_eq!(account.lamports, rent_lamports);
+    assert_eq!(account.data.len(), Nonce::LEN);
+    let state = decode_state(account);
+    assert_eq!(state.authority, authority_address);
+    assert_eq!(
+        state.nonce,
+        Nonce::derive_initial_nonce(
+            &spl_nonce_interface::id(),
+            &nonce_account_address,
+            &mollusk.sysvars.slot_hashes.first().unwrap().1,
+        ),
     );
 }
 
