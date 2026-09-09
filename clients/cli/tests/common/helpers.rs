@@ -4,6 +4,7 @@ use {
     solana_keypair::write_keypair_file,
     solana_signer::Signer,
     solana_test_validator::{TestValidator, TestValidatorGenesis},
+    spl_nonce_interface::state::Nonce,
     std::process::{Command, Output},
     tempfile::NamedTempFile,
 };
@@ -11,6 +12,7 @@ use {
 pub struct TestEnv {
     pub payer_address: String,
     pub config_file_path: String,
+    pub nonce_rent_lamports: u64,
     _validator: TestValidator,
     _payer_file: NamedTempFile,
     _config_file: NamedTempFile,
@@ -20,6 +22,11 @@ pub async fn setup_test_env() -> TestEnv {
     let mut genesis = TestValidatorGenesis::default_for_tests();
     genesis.add_program("spl_nonce_program", spl_nonce_interface::id());
     let (validator, payer) = genesis.start_async().await;
+    let nonce_rent_lamports = validator
+        .get_async_rpc_client()
+        .get_minimum_balance_for_rent_exemption(Nonce::LEN)
+        .await
+        .unwrap();
 
     let payer_address = payer.pubkey().to_string();
     let payer_file = NamedTempFile::new().unwrap();
@@ -41,6 +48,7 @@ pub async fn setup_test_env() -> TestEnv {
     TestEnv {
         payer_address,
         config_file_path,
+        nonce_rent_lamports,
         _validator: validator,
         _payer_file: payer_file,
         _config_file: config_file,

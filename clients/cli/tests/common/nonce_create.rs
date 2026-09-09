@@ -7,14 +7,13 @@ use {
 };
 
 #[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct NonceCreateOutput {
     signature: String,
     nonce_account: String,
     authority: String,
     nonce: String,
     lamports: u64,
-    rent_lamports: u64,
 }
 
 #[derive(Debug, Deserialize)]
@@ -48,7 +47,7 @@ pub async fn creates_and_shows_nonce_account(env: &TestEnv) {
     let create: NonceCreateOutput = serde_json::from_slice(&create.stdout).unwrap();
     assert_eq!(create.nonce_account, nonce_account);
     assert_eq!(create.authority, env.payer_address);
-    assert_eq!(create.lamports, create.rent_lamports);
+    assert_eq!(create.lamports, env.nonce_rent_lamports);
     assert!(!create.signature.is_empty());
 
     let show = run_psigner(&[
@@ -91,7 +90,7 @@ pub async fn creates_nonce_account_with_generated_keypair(env: &TestEnv) {
         let create: NonceCreateOutput = serde_json::from_slice(&create.stdout).unwrap();
         assert_ne!(create.nonce_account, env.payer_address);
         assert_eq!(create.authority, expected_authority.to_string());
-        assert_eq!(create.lamports, create.rent_lamports);
+        assert_eq!(create.lamports, env.nonce_rent_lamports);
         assert!(!create.signature.is_empty());
 
         let show = run_psigner(&[
@@ -138,5 +137,5 @@ pub async fn creates_nonce_account_with_cold_authority(env: &TestEnv) {
     );
     assert_eq!(create.nonce_account, nonce_keypair.pubkey().to_string());
     assert_eq!(create.authority, programmatic_signer.to_string());
-    assert_eq!(create.lamports, create.rent_lamports);
+    assert_eq!(create.lamports, env.nonce_rent_lamports);
 }

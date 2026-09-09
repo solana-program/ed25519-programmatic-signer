@@ -99,7 +99,6 @@ pub(super) async fn run(
         authority: account.state.authority.to_string(),
         nonce: account.state.nonce.to_string(),
         lamports: account.lamports,
-        rent_lamports,
     })
 }
 
@@ -111,7 +110,6 @@ struct NonceCreateOutput {
     authority: String,
     nonce: String,
     lamports: u64,
-    rent_lamports: u64,
 }
 
 impl fmt::Display for NonceCreateOutput {
@@ -120,11 +118,6 @@ impl fmt::Display for NonceCreateOutput {
         writeln!(formatter, "Nonce account: {}", self.nonce_account)?;
         writeln!(formatter, "Authority: {}", self.authority)?;
         writeln!(formatter, "Nonce: {}", self.nonce)?;
-        writeln!(formatter, "Balance: {}", Sol(self.lamports))?;
-        write!(
-            formatter,
-            "Rent-exempt minimum: {}",
-            Sol(self.rent_lamports)
-        )
+        write!(formatter, "Balance: {}", Sol(self.lamports))
     }
 }
