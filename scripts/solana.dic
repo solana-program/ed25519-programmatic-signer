@@ -69,3 +69,7 @@ BIP39
 RPC
 usb
 preflight
+workflow/S
+invariant/S
+base64
+invariants
