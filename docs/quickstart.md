@@ -339,18 +339,9 @@ mkdir "$WORK/signed"
   --outdir "$WORK/signed"
 ```
 
-**Expected failure:** submitting the second file first returns `nonce mismatch`.
-Continue after that error:
-
-```sh
-"$PCLI" transaction submit "$WORK/signed/second.json" \
-  --url "$RPC" \
-  --commitment confirmed \
-  --fee-payer "$PAYER"
-```
-
-Submit in order. A competing transition would invalidate the planned descendants.
-Use separate nonce accounts when transactions must proceed independently.
+Submit the first file, then the second. A competing transition would invalidate
+the planned descendants. Use separate nonce accounts when transactions must
+proceed independently.
 
 ```sh
 "$PCLI" transaction submit "$WORK/signed/first.json" \
@@ -416,16 +407,8 @@ inner instructions and the same expected nonce as the pending file. Sign and sub
   --fee-payer "$PAYER"
 ```
 
-Cancellation takes effect only when it lands. The following command is expected
-to fail with `nonce mismatch`; continue after that error. If the pending transfer
-had landed first, cancellation would fail instead.
-
-```sh
-"$PCLI" transaction submit "$WORK/pending.signed.json" \
-  --url "$RPC" \
-  --commitment confirmed \
-  --fee-payer "$PAYER"
-```
+Confirmed cancellation invalidates `pending.signed.json`. If the pending transfer
+lands first, cancellation fails instead.
 
 ### Collect multiple cold signatures
 
