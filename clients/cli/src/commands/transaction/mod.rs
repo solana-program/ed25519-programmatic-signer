@@ -5,11 +5,7 @@ mod sign;
 mod verify;
 
 use {
-    crate::{
-        artifact,
-        client::Client,
-        output::{NextNonceOutput, OutputFormat},
-    },
+    crate::{client::Client, output::OutputFormat},
     anyhow::Result,
     clap::{Args, Subcommand},
     std::path::PathBuf,
@@ -37,8 +33,6 @@ enum TransactionSubcommand {
     Simulate(relay::SimulateCommand),
     /// Verify and submit a signed file using the online fee payer.
     Submit(relay::SubmitCommand),
-    /// Predict the next nonce after this exact message succeeds, without RPC.
-    NextNonce(FileCommand),
 }
 
 #[derive(Debug, Args)]
@@ -59,12 +53,5 @@ pub(crate) async fn run(
         TransactionSubcommand::Verify(command) => verify::run(command, client, output).await,
         TransactionSubcommand::Simulate(command) => relay::simulate(command, client, output).await,
         TransactionSubcommand::Submit(command) => relay::submit(command, client, output).await,
-        TransactionSubcommand::NextNonce(command) => {
-            let transaction = artifact::read(&command.transaction)?;
-            output.render(&NextNonceOutput {
-                nonce_account: transaction.nonce_account().to_string(),
-                next_nonce: transaction.next_nonce().to_string(),
-            })
-        }
     }
 }

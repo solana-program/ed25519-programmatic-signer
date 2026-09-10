@@ -175,14 +175,7 @@ fn verify_rejects_wrong_cluster_without_rpc() {
 fn every_workflow_has_parseable_help() {
     let fixture = Fixture::new();
     for command in [
-        "create",
-        "inspect",
-        "sign",
-        "merge",
-        "verify",
-        "simulate",
-        "submit",
-        "next-nonce",
+        "create", "inspect", "sign", "merge", "verify", "simulate", "submit",
     ] {
         fixture.succeeds(&["transaction", command, "--help"]);
     }

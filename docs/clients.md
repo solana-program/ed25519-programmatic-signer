@@ -5,8 +5,8 @@ Build with `make build-clients-cli`; the executable is
 `--fee-payer`, commitment, and signer-source options. Use each command's `--help`
 for flags. Summaries support `--output json` and `--output json-compact`.
 
-`transaction inspect`, `sign`, `merge`, and `next-nonce` work offline. Creation and
-verification accept either `--fetch-nonce` or explicit nonce/genesis snapshots.
+`transaction inspect`, `sign`, and `merge` work offline. Creation and verification
+accept either `--fetch-nonce` or explicit nonce/genesis snapshots.
 Offline snapshots do not establish current chain state. Simulation and submission
 query RPC; submission checks the live nonce, genesis hash, and all signatures.
 
@@ -35,10 +35,10 @@ hardware-wallet signing remains unverified.
 
 ## Chains and cancellation
 
-`transaction next-nonce FILE` predicts the successor conditional on that exact inner
-message succeeding. Build the next source message with that hash, then import it
-using `transaction create ... --after FILE`. Files can be signed together offline
-but must land in order.
+`transaction inspect FILE --output json` includes `nextNonce`, the successor
+conditional on that exact inner message succeeding. Build the next source message
+with that hash, then import it using `transaction create ... --after FILE`. Files
+can be signed together offline but must land in order.
 
 `nonce advance --from-transaction FILE --authority COLD_ADDRESS --outfile cancel.json`
 builds an empty transaction for the cold authority's PDA. Sign and submit it before

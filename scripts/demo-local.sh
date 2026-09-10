@@ -98,7 +98,7 @@ PY
 echo 'Create and cold-sign two dependent SOL transfers before submitting either.'
 source_sol a "$nonce_value"
 wrap a --fetch-nonce
-next="$(psigner transaction next-nonce "$demo_dir/a.json")"
+next="$(psigner --output json-compact transaction inspect "$demo_dir/a.json" | jq -er .nextNonce)"
 source_sol b "$next"
 wrap b --after "$demo_dir/a.json" -u http://127.0.0.1:1
 psigner transaction inspect "$demo_dir/a.json" -u http://127.0.0.1:1

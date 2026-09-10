@@ -129,19 +129,6 @@ impl fmt::Display for VerifyOutput {
 
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct NextNonceOutput {
-    pub nonce_account: String,
-    pub next_nonce: String,
-}
-
-impl fmt::Display for NextNonceOutput {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        self.next_nonce.fmt(formatter)
-    }
-}
-
-#[derive(Debug, Deserialize, Serialize)]
-#[serde(rename_all = "camelCase")]
 pub struct Inspection {
     pub genesis_hash: String,
     pub signer_program: String,

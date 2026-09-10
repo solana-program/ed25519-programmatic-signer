@@ -320,7 +320,7 @@ pub async fn precomputed_chain_runs_in_order(env: &TestEnv) {
         "-u",
         OFFLINE_URL,
         "transaction",
-        "next-nonce",
+        "inspect",
         &demo.file("first.json"),
     ]);
     let next = next["nextNonce"].as_str().unwrap().parse::<Hash>().unwrap();
