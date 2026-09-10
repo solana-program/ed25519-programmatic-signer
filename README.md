@@ -4,14 +4,10 @@ Sign a transaction offline with a cold Ed25519 authority, then submit it through
 programmatic signer PDA using an online fee payer. Three programs provide nonce
 storage, signature verification, and legacy-message execution.
 
-```sh
-make check-clients
-make demo-local
-```
+Start with the [manual quickstart](docs/quickstart.md) to build the CLI, prepare a
+transfer, inspect and sign it offline, and relay it on a local validator. It also
+covers token transfers, multiple signatures, relayer restrictions, and nonce chains.
 
-The demo starts a disposable local validator and exercises SOL and SPL Token
-transfers, offline signing, nonce chains, replay rejection, and cancellation.
-It retains artifacts under `target/local-demo/` and stops its validator on exit.
+Read [how it works](docs/architecture.md) for the program execution path.
 
-- [Quickstart](docs/quickstart.md)
-- [How it works](docs/architecture.md)
+For development, `make check-clients` runs formatting, lint, build, and client tests.

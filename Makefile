@@ -104,11 +104,8 @@ check-no-std-alloc-%:
 		-Zbuild-std=alloc,core \
 		$(ARGS)
 
-# Local CLI checks and end-to-end rehearsal.
-.PHONY: demo-local check-clients build-clients-cli
-
-demo-local: build-clients-cli build-sbf-nonce-program build-sbf-signer-program build-sbf-executor-program
-	bash scripts/demo-local.sh
+# Build the CLI and run its development checks.
+.PHONY: check-clients build-clients-cli
 
 check-clients: build-sbf-nonce-program build-sbf-signer-program build-sbf-executor-program
 	$(MAKE) format-check-clients-cli \
