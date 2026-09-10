@@ -1,5 +1,5 @@
 [package]
-name = "psigner"
+name = "spl-programmatic-signer-cli"
 version = "0.1.0"
 description = "Command-line setup client for SPL programmatic signers"
 authors = { workspace = true }
@@ -9,7 +9,7 @@ license = { workspace = true }
 edition = { workspace = true }
 
 [[bin]]
-name = "psigner"
+name = "spl-programmatic-signer-cli"
 path = "src/main.rs"
 
 [lints]

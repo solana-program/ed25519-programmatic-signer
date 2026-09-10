@@ -56,13 +56,13 @@ pub async fn setup_test_env() -> TestEnv {
 }
 
 pub fn run_psigner(args: &[&str]) -> Output {
-    let output = Command::new(env!("CARGO_BIN_EXE_psigner"))
+    let output = Command::new(env!("CARGO_BIN_EXE_spl-programmatic-signer-cli"))
         .args(args)
         .output()
         .unwrap();
     assert!(
         output.status.success(),
-        "psigner failed:\nstdout:\n{}\nstderr:\n{}",
+        "spl-programmatic-signer-cli failed:\nstdout:\n{}\nstderr:\n{}",
         String::from_utf8_lossy(&output.stdout),
         String::from_utf8_lossy(&output.stderr),
     );
