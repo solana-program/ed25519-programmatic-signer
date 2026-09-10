@@ -756,22 +756,3 @@ Every command above serves a documented flow:
 Offline creation accepts `--nonce-value` and `--genesis-hash`; verification also
 requires `--nonce-authority`. These snapshots do not establish current chain state.
 Submission checks the live nonce, cluster genesis hash, and all signatures again.
-
-## Finish, restart, or troubleshoot
-
-Keep the same terminal session while following a run so its variables remain
-available. Your working files remain under `target/`, and the accounts remain on
-Devnet. To start over, repeat the walkthrough with a fresh working directory and
-fund the new payer. Devnet can reset; after a reset, check the program deployments
-above and create fresh accounts and transaction files.
-
-- `nonce mismatch`: refresh with `nonce show` and rebuild. Replays and canceled
-  files are expected to fail this way.
-- Keep using Devnet for online commands. A different cluster fails
-  genesis verification.
-- The public RPC has rate limits. For a `429` response, wait before
-  retrying, or set `RPC` to another Devnet RPC endpoint.
-- The PDA needs the assets spent by its instructions; the online payer needs SOL
-  for fees. Failed inner execution rolls back the nonce change.
-- Existing output files are never overwritten. Use a fresh name or directory for
-  another attempt.
