@@ -52,15 +52,20 @@ three local keypair files:
 
 ```sh
 PCLI="$PWD/target/debug/spl-programmatic-signer-cli"
+
 WORK=$(mktemp -d "$PWD/target/quickstart.XXXXXX")
+
 RPC=https://api.devnet.solana.com
+
 for key in payer cold recipient; do
   solana-keygen new \
     --silent \
     --no-bip39-passphrase \
     --outfile "$WORK/$key.json"
 done
+
 PAYER="$WORK/payer.json"
+
 COLD="$WORK/cold.json"
 ```
 
@@ -73,9 +78,13 @@ Check the Devnet connection and record the public addresses for this walkthrough
 solana cluster-version \
   --url "$RPC" \
   --commitment confirmed
+
 COLD_ADDRESS=$(solana address --keypair "$COLD")
+
 RECIPIENT=$(solana-keygen pubkey "$WORK/recipient.json")
+
 PDA=$("$PCLI" address "$COLD_ADDRESS")
+
 printf 'Payer: %s\nCold authority: %s\nPDA: %s\nRecipient: %s\n' \
   "$(solana-keygen pubkey "$PAYER")" "$COLD_ADDRESS" "$PDA" "$RECIPIENT"
 ```
@@ -107,16 +116,21 @@ generates the nonce account's creation keypair automatically:
   --fee-payer "$PAYER" \
   --output json-compact \
   --cold-authority "$COLD_ADDRESS" > "$WORK/nonce.json"
+
 NONCE_ACCOUNT=$(jq -er .nonceAccount "$WORK/nonce.json")
+
 NONCE_VALUE=$(jq -er .nonce "$WORK/nonce.json")
+
 "$PCLI" nonce show "$NONCE_ACCOUNT" \
   --url "$RPC" \
   --commitment confirmed
+
 solana transfer "$PDA" 0.1 \
   --url "$RPC" \
   --commitment confirmed \
   --keypair "$PAYER" \
   --allow-unfunded-recipient
+
 solana balance "$PDA" \
   --url "$RPC" \
   --commitment confirmed
@@ -141,6 +155,7 @@ solana transfer "$RECIPIENT" 0.001 \
   --dump-transaction-message \
   --output json-compact \
   --allow-unfunded-recipient > "$WORK/transfer.source.json"
+
 jq '{blockhash, absent}' "$WORK/transfer.source.json"
 ```
 
@@ -161,6 +176,7 @@ Wrap the source message into the transaction file that the cold authority signs:
   --authority "$COLD_ADDRESS" \
   --fetch-nonce \
   --outfile "$WORK/transfer.json"
+
 "$PCLI" transaction simulate inner "$WORK/transfer.json" \
   --url "$RPC" \
   --commitment confirmed \
@@ -208,6 +224,7 @@ succeeds. Signing changes only the signature slots:
 "$PCLI" transaction sign "$WORK/transfer.json" \
   --keypair "$COLD" \
   --outfile "$WORK/transfer.signed.json"
+
 "$PCLI" transaction inspect "$WORK/transfer.signed.json"
 ```
 
@@ -223,6 +240,7 @@ The online relayer checks the signed file against the live nonce and cluster:
   --url "$RPC" \
   --commitment confirmed \
   --fetch-nonce
+
 "$PCLI" transaction simulate relay "$WORK/transfer.signed.json" \
   --url "$RPC" \
   --commitment confirmed \
@@ -238,10 +256,12 @@ it. Now submit with the online payer selected by `--fee-payer "$PAYER"`:
   --url "$RPC" \
   --commitment confirmed \
   --fee-payer "$PAYER"
+
 solana balance "$RECIPIENT" \
   --url "$RPC" \
   --commitment confirmed \
   --lamports
+
 "$PCLI" nonce show "$NONCE_ACCOUNT" \
   --url "$RPC" \
   --commitment confirmed
@@ -285,6 +305,7 @@ NONCE_VALUE=$(
     --output json-compact |
   jq -er .nonce
 )
+
 solana transfer "$RECIPIENT" 0.001 \
   --url "$RPC" \
   --commitment confirmed \
@@ -294,6 +315,7 @@ solana transfer "$RECIPIENT" 0.001 \
   --sign-only \
   --dump-transaction-message \
   --output json-compact > "$WORK/first.source.json"
+
 "$PCLI" transaction create \
   --url "$RPC" \
   --commitment confirmed \
@@ -310,7 +332,9 @@ the successor against its predecessor without querying RPC:
 
 ```sh
 "$PCLI" transaction inspect "$WORK/first.json"
+
 NEXT=$("$PCLI" transaction inspect "$WORK/first.json" --output json-compact | jq -er .nextNonce)
+
 solana transfer "$RECIPIENT" 0.001 \
   --url "$RPC" \
   --commitment confirmed \
@@ -320,14 +344,18 @@ solana transfer "$RECIPIENT" 0.001 \
   --sign-only \
   --dump-transaction-message \
   --output json-compact > "$WORK/second.source.json"
+
 "$PCLI" transaction create \
   --from-sign-only "$WORK/second.source.json" \
   --nonce "$NONCE_ACCOUNT" \
   --authority "$COLD_ADDRESS" \
   --after "$WORK/first.json" \
   --outfile "$WORK/second.json"
+
 "$PCLI" transaction inspect "$WORK/second.json"
+
 mkdir "$WORK/signed"
+
 "$PCLI" transaction sign "$WORK/first.json" "$WORK/second.json" \
   --keypair "$COLD" \
   --outdir "$WORK/signed"
@@ -342,6 +370,7 @@ proceed independently.
   --url "$RPC" \
   --commitment confirmed \
   --fee-payer "$PAYER"
+
 "$PCLI" transaction submit "$WORK/signed/second.json" \
   --url "$RPC" \
   --commitment confirmed \
@@ -360,6 +389,7 @@ NONCE_VALUE=$(
     --output json-compact |
   jq -er .nonce
 )
+
 solana transfer "$RECIPIENT" 0.001 \
   --url "$RPC" \
   --commitment confirmed \
@@ -369,6 +399,7 @@ solana transfer "$RECIPIENT" 0.001 \
   --sign-only \
   --dump-transaction-message \
   --output json-compact > "$WORK/pending.source.json"
+
 "$PCLI" transaction create \
   --url "$RPC" \
   --commitment confirmed \
@@ -377,7 +408,9 @@ solana transfer "$RECIPIENT" 0.001 \
   --authority "$COLD_ADDRESS" \
   --fetch-nonce \
   --outfile "$WORK/pending.json"
+
 "$PCLI" transaction inspect "$WORK/pending.json"
+
 "$PCLI" transaction sign "$WORK/pending.json" \
   --keypair "$COLD" \
   --outfile "$WORK/pending.signed.json"
@@ -391,10 +424,13 @@ inner instructions and the same expected nonce as the pending file. Sign and sub
   --from-transaction "$WORK/pending.json" \
   --authority "$COLD_ADDRESS" \
   --outfile "$WORK/cancel.json"
+
 "$PCLI" transaction inspect "$WORK/cancel.json"
+
 "$PCLI" transaction sign "$WORK/cancel.json" \
   --keypair "$COLD" \
   --outfile "$WORK/cancel.signed.json"
+
 "$PCLI" transaction submit "$WORK/cancel.signed.json" \
   --url "$RPC" \
   --commitment confirmed \
@@ -415,7 +451,9 @@ solana-keygen new \
   --silent \
   --no-bip39-passphrase \
   --outfile "$WORK/cold-2.json"
+
 COLD_ADDRESS_2=$(solana-keygen pubkey "$WORK/cold-2.json")
+
 NONCE_VALUE=$(
   "$PCLI" nonce show "$NONCE_ACCOUNT" \
     --url "$RPC" \
@@ -423,6 +461,7 @@ NONCE_VALUE=$(
     --output json-compact |
   jq -er .nonce
 )
+
 solana transfer "$RECIPIENT" 0.001 \
   --url "$RPC" \
   --commitment confirmed \
@@ -432,6 +471,7 @@ solana transfer "$RECIPIENT" 0.001 \
   --sign-only \
   --dump-transaction-message \
   --output json-compact > "$WORK/multisig.source.json"
+
 "$PCLI" transaction create \
   --url "$RPC" \
   --commitment confirmed \
@@ -441,22 +481,29 @@ solana transfer "$RECIPIENT" 0.001 \
   --authority "$COLD_ADDRESS_2" \
   --fetch-nonce \
   --outfile "$WORK/multisig.json"
+
 "$PCLI" transaction inspect "$WORK/multisig.json"
+
 "$PCLI" transaction sign "$WORK/multisig.json" \
   --keypair "$COLD" \
   --outfile "$WORK/multisig.first.json"
+
 "$PCLI" transaction sign "$WORK/multisig.json" \
   --keypair "$WORK/cold-2.json" \
   --outfile "$WORK/multisig.second.json"
+
 "$PCLI" transaction merge "$WORK/multisig.first.json" "$WORK/multisig.second.json" --outfile "$WORK/multisig.signed.json"
+
 "$PCLI" transaction verify "$WORK/multisig.signed.json" \
   --url "$RPC" \
   --commitment confirmed \
   --fetch-nonce
+
 "$PCLI" transaction simulate relay "$WORK/multisig.signed.json" \
   --url "$RPC" \
   --commitment confirmed \
   --fee-payer "$PAYER"
+
 "$PCLI" transaction submit "$WORK/multisig.signed.json" \
   --url "$RPC" \
   --commitment confirmed \
@@ -478,7 +525,9 @@ solana-keygen new \
   --silent \
   --no-bip39-passphrase \
   --outfile "$WORK/relayer.json"
+
 RELAYER=$(solana-keygen pubkey "$WORK/relayer.json")
+
 NONCE_VALUE=$(
   "$PCLI" nonce show "$NONCE_ACCOUNT" \
     --url "$RPC" \
@@ -486,6 +535,7 @@ NONCE_VALUE=$(
     --output json-compact |
   jq -er .nonce
 )
+
 solana transfer "$RECIPIENT" 0.001 \
   --url "$RPC" \
   --commitment confirmed \
@@ -495,6 +545,7 @@ solana transfer "$RECIPIENT" 0.001 \
   --sign-only \
   --dump-transaction-message \
   --output json-compact > "$WORK/designated.source.json"
+
 "$PCLI" transaction create \
   --url "$RPC" \
   --commitment confirmed \
@@ -504,10 +555,13 @@ solana transfer "$RECIPIENT" 0.001 \
   --submit-signer "$RELAYER" \
   --fetch-nonce \
   --outfile "$WORK/designated.json"
+
 "$PCLI" transaction inspect "$WORK/designated.json"
+
 "$PCLI" transaction sign "$WORK/designated.json" \
   --keypair "$COLD" \
   --outfile "$WORK/designated.cold.json"
+
 "$PCLI" transaction sign "$WORK/designated.cold.json" \
   --keypair "$WORK/relayer.json" \
   --outfile "$WORK/designated.ready.json"
@@ -531,6 +585,7 @@ Supply that key to simulate and submit successfully:
   --commitment confirmed \
   --fee-payer "$PAYER" \
   --submit-signer "$WORK/relayer.json"
+
 "$PCLI" transaction submit "$WORK/designated.ready.json" \
   --url "$RPC" \
   --commitment confirmed \
@@ -553,22 +608,29 @@ for key in mint source-token destination-token; do
     --no-bip39-passphrase \
     --outfile "$WORK/$key.json"
 done
+
 MINT=$(solana-keygen pubkey "$WORK/mint.json")
+
 SOURCE_TOKEN=$(solana-keygen pubkey "$WORK/source-token.json")
+
 DESTINATION_TOKEN=$(solana-keygen pubkey "$WORK/destination-token.json")
+
 spl-token create-token "$WORK/mint.json" \
   -u "$RPC" \
   --decimals 6 \
   --fee-payer "$PAYER" \
   --mint-authority "$PAYER"
+
 spl-token create-account "$MINT" "$WORK/source-token.json" \
   -u "$RPC" \
   --owner "$PDA" \
   --fee-payer "$PAYER"
+
 spl-token create-account "$MINT" "$WORK/destination-token.json" \
   -u "$RPC" \
   --owner "$RECIPIENT" \
   --fee-payer "$PAYER"
+
 spl-token mint "$MINT" 2 "$SOURCE_TOKEN" \
   -u "$RPC" \
   --fee-payer "$PAYER" \
@@ -586,6 +648,7 @@ NONCE_VALUE=$(
     --output json-compact |
   jq -er .nonce
 )
+
 spl-token transfer "$MINT" 1.25 "$DESTINATION_TOKEN" \
   -u "$RPC" \
   --from "$SOURCE_TOKEN" \
@@ -596,6 +659,7 @@ spl-token transfer "$MINT" 1.25 "$DESTINATION_TOKEN" \
   --sign-only \
   --dump-transaction-message \
   --output json-compact > "$WORK/token.source.json"
+
 "$PCLI" transaction create \
   --url "$RPC" \
   --commitment confirmed \
@@ -604,29 +668,37 @@ spl-token transfer "$MINT" 1.25 "$DESTINATION_TOKEN" \
   --authority "$COLD_ADDRESS" \
   --fetch-nonce \
   --outfile "$WORK/token.json"
+
 "$PCLI" transaction simulate inner "$WORK/token.json" \
   --url "$RPC" \
   --commitment confirmed \
   --fee-payer "$PAYER"
+
 "$PCLI" transaction inspect "$WORK/token.json"
+
 "$PCLI" transaction sign "$WORK/token.json" \
   --keypair "$COLD" \
   --outfile "$WORK/token.signed.json"
+
 "$PCLI" transaction verify "$WORK/token.signed.json" \
   --url "$RPC" \
   --commitment confirmed \
   --fetch-nonce
+
 "$PCLI" transaction simulate relay "$WORK/token.signed.json" \
   --url "$RPC" \
   --commitment confirmed \
   --fee-payer "$PAYER"
+
 "$PCLI" transaction submit "$WORK/token.signed.json" \
   --url "$RPC" \
   --commitment confirmed \
   --fee-payer "$PAYER"
+
 spl-token balance \
   -u "$RPC" \
   --address "$SOURCE_TOKEN"
+
 spl-token balance \
   -u "$RPC" \
   --address "$DESTINATION_TOKEN"
@@ -648,6 +720,7 @@ NONCE_VALUE=$(
     --output json-compact |
   jq -er .nonce
 )
+
 solana transfer "$RECIPIENT" 0.001 \
   --url "$RPC" \
   --commitment confirmed \
@@ -658,6 +731,7 @@ solana transfer "$RECIPIENT" 0.001 \
   --sign-only \
   --dump-transaction-message \
   --output json-compact > "$WORK/memo.source.json"
+
 "$PCLI" transaction create \
   --url "$RPC" \
   --commitment confirmed \
@@ -666,7 +740,9 @@ solana transfer "$RECIPIENT" 0.001 \
   --authority "$COLD_ADDRESS" \
   --fetch-nonce \
   --outfile "$WORK/memo.json"
+
 "$PCLI" transaction inspect "$WORK/memo.json"
+
 "$PCLI" transaction simulate inner "$WORK/memo.json" \
   --url "$RPC" \
   --commitment confirmed \
@@ -680,14 +756,17 @@ belong to the same signed message and execute in the same transaction:
 "$PCLI" transaction sign "$WORK/memo.json" \
   --keypair "$COLD" \
   --outfile "$WORK/memo.signed.json"
+
 "$PCLI" transaction verify "$WORK/memo.signed.json" \
   --url "$RPC" \
   --commitment confirmed \
   --fetch-nonce
+
 "$PCLI" transaction simulate relay "$WORK/memo.signed.json" \
   --url "$RPC" \
   --commitment confirmed \
   --fee-payer "$PAYER"
+
 "$PCLI" transaction submit "$WORK/memo.signed.json" \
   --url "$RPC" \
   --commitment confirmed \
