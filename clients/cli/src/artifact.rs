@@ -1,4 +1,4 @@
-//! Transaction-file IO using JSON serialization of `solana_transaction::Transaction`.
+//! Transaction-file IO. Files contain the Solana SDK's legacy Transaction JSON.
 use {
     crate::transaction::WrappedTransaction,
     anyhow::{Context, Result, bail},
