@@ -67,22 +67,17 @@ COLD="$WORK/cold.json"
 Online commands below specify Devnet with `--url "$RPC"`. Commands that sign
 select the payer or authority with `--keypair`, `--fee-payer`, or `--owner`. These
 flags apply to that invocation; your saved Solana CLI configuration stays unchanged.
-Record the cluster and public addresses for this walkthrough:
+Check the Devnet connection and record the public addresses for this walkthrough:
 
 ```sh
 solana cluster-version \
   --url "$RPC" \
   --commitment confirmed
-GENESIS_HASH=$(
-  solana genesis-hash \
-    --url "$RPC" \
-    --commitment confirmed
-)
 COLD_ADDRESS=$(solana address --keypair "$COLD")
 RECIPIENT=$(solana-keygen pubkey "$WORK/recipient.json")
 PDA=$("$PCLI" address "$COLD_ADDRESS")
-printf 'Payer: %s\nCold authority: %s\nPDA: %s\nRecipient: %s\nGenesis hash: %s\n' \
-  "$(solana-keygen pubkey "$PAYER")" "$COLD_ADDRESS" "$PDA" "$RECIPIENT" "$GENESIS_HASH"
+printf 'Payer: %s\nCold authority: %s\nPDA: %s\nRecipient: %s\n' \
+  "$(solana-keygen pubkey "$PAYER")" "$COLD_ADDRESS" "$PDA" "$RECIPIENT"
 ```
 
 The PDA should differ from the cold address. Open the
@@ -204,7 +199,6 @@ Before signing, check that inspection shows:
 
 - A transfer of **1,000,000 lamports** from `PDA` to `RECIPIENT`.
 - `NONCE_ACCOUNT` and `NONCE_VALUE` as the nonce account and expected nonce.
-- The same genesis hash recorded in `GENESIS_HASH` during setup.
 - `COLD_ADDRESS` as the transaction signer, currently marked missing.
 
 The predicted next nonce is what this exact inner message will produce if it
@@ -312,7 +306,7 @@ solana transfer "$RECIPIENT" 0.001 \
 
 `inspect` includes `nextNonce`, conditional on that exact message succeeding.
 Use it to build the second file before submitting the first. `--after` checks
-the successor against its predecessor and supplies the genesis hash without RPC:
+the successor against its predecessor without querying RPC:
 
 ```sh
 "$PCLI" transaction inspect "$WORK/first.json"
