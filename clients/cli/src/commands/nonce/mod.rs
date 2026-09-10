@@ -1,5 +1,5 @@
-mod create;
-mod show;
+pub(crate) mod create;
+pub(crate) mod show;
 
 use {
     crate::{client::Client, output::OutputFormat},

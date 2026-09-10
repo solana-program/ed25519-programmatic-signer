@@ -1,30 +1,10 @@
 use {
     crate::common::helpers::{TestEnv, run_psigner},
-    serde::Deserialize,
     solana_keypair::{Keypair, write_keypair_file},
     solana_signer::Signer,
+    spl_programmatic_signer_cli::{NonceCreateOutput, NonceShowOutput},
     tempfile::NamedTempFile,
 };
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-struct NonceCreateOutput {
-    signature: String,
-    nonce_account: String,
-    authority: String,
-    nonce: String,
-    lamports: u64,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct NonceShowOutput {
-    nonce_account: String,
-    authority: String,
-    nonce: String,
-    lamports: u64,
-    owner: String,
-}
 
 pub async fn creates_and_shows_nonce_account(env: &TestEnv) {
     let nonce_keypair = Keypair::new();

@@ -2,7 +2,7 @@ use {
     crate::{client::Client, output::OutputFormat},
     anyhow::{Context, Result, bail},
     clap::Args,
-    serde::Serialize,
+    serde::{Deserialize, Serialize},
     solana_address::Address,
     solana_keypair::Keypair,
     solana_native_token::Sol,
@@ -102,14 +102,14 @@ pub(super) async fn run(
     })
 }
 
-#[derive(Serialize)]
+#[derive(Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct NonceCreateOutput {
-    signature: String,
-    nonce_account: String,
-    authority: String,
-    nonce: String,
-    lamports: u64,
+pub struct NonceCreateOutput {
+    pub signature: String,
+    pub nonce_account: String,
+    pub authority: String,
+    pub nonce: String,
+    pub lamports: u64,
 }
 
 impl fmt::Display for NonceCreateOutput {
