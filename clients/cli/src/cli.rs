@@ -13,7 +13,6 @@ use {
 
 #[derive(Debug, Parser)]
 #[clap(
-    name = "psigner",
     about = "Manage programmatic signer setup and transaction workflows",
     version,
     subcommand_required = true,
