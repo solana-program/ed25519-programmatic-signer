@@ -1,15 +1,18 @@
 //! Off-chain SPL Nonce account-state decoding.
 
-use spl_nonce_interface::state::Nonce;
+use {crate::error::DecodeError, spl_nonce_interface::state::Nonce};
 
-/// Decodes a complete SPL Nonce account data buffer.
-pub fn decode(account_data: &[u8]) -> wincode::ReadResult<Nonce> {
+/// Decodes initialized SPL Nonce account data.
+pub fn decode(account_data: &[u8]) -> Result<Nonce, DecodeError> {
+    let nonce = wincode::deserialize_exact(account_data).map_err(|_| DecodeError::InvalidData)?;
+
+    // A newly allocated nonce account is zero filled until initialized. Wincode will deserialize
+    // this successfully with hash/address fields as 111... so we handle that case here.
     if account_data.iter().all(|byte| *byte == 0) {
-        return Err(wincode::ReadError::InvalidValue(
-            "uninitialized SPL Nonce account",
-        ));
+        return Err(DecodeError::Uninitialized);
     }
-    wincode::deserialize_exact(account_data)
+
+    Ok(nonce)
 }
 
 #[cfg(test)]
@@ -32,17 +35,20 @@ mod tests {
 
     #[test]
     fn rejects_malformed_nonce_data() {
-        assert!(decode(&[1, 2, 3]).is_err());
+        assert_eq!(decode(&[1, 2, 3]), Err(DecodeError::InvalidData));
     }
 
     #[test]
     fn rejects_uninitialized_nonce_data() {
-        let error = decode(&[0; Nonce::LEN]).unwrap_err();
+        assert_eq!(decode(&[0; Nonce::LEN]), Err(DecodeError::Uninitialized));
+    }
 
-        assert!(matches!(
-            error,
-            wincode::ReadError::InvalidValue("uninitialized SPL Nonce account")
-        ));
+    #[test]
+    fn rejects_wrong_sized_zeroed_data() {
+        let account_data = [0; Nonce::LEN + 1];
+        for len in [0, Nonce::LEN - 1, Nonce::LEN + 1] {
+            assert_eq!(decode(&account_data[..len]), Err(DecodeError::InvalidData));
+        }
     }
 
     #[test]
@@ -50,6 +56,6 @@ mod tests {
         let mut account_data = [1; Nonce::LEN + 1];
         account_data[32..Nonce::LEN].fill(2);
 
-        assert!(decode(&account_data).is_err());
+        assert_eq!(decode(&account_data), Err(DecodeError::InvalidData));
     }
 }
