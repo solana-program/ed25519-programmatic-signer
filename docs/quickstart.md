@@ -732,27 +732,3 @@ existing `--keypair "$COLD"` commands will use that signer source. Keep the URL
 quoted. An existing file prepared for a different authority cannot be signed by
 substituting a different key. Signer URLs also work with `--fee-payer` and
 `--submit-signer`.
-
-## Command reference
-
-The CLI accepts `--url`, `--fee-payer`, `--commitment`, and Solana signer sources.
-Runtime flags take precedence over saved configuration. Use each command's
-`--help` for flags. Summaries support `--output json` and `--output json-compact`.
-Transaction readers accept `-` for stdin; writers use `--outfile` or stdout.
-
-Every command above serves a documented flow:
-
-| Commands | Purpose | RPC |
-| --- | --- | --- |
-| `address` | Derive the asset-owning PDA | No |
-| `nonce create`, `nonce show` | Initialize and refresh nonce state | Yes |
-| `nonce advance` | Build a cancellation | Only with `--nonce`; `--from-transaction` is offline |
-| `transaction create` | Wrap a source message | With `--fetch-nonce`; explicit snapshots and `--after` are offline |
-| `transaction inspect`, `sign`, `merge` | Review and collect signatures; inspect also predicts the successor | No |
-| `transaction verify` | Check signatures, cluster and nonce before relay | With `--fetch-nonce`; explicit snapshots are offline |
-| `transaction simulate inner`, `simulate relay` | Rehearse before signing or submitting | Yes |
-| `transaction submit` | Verify, relay, and confirm | Yes |
-
-Offline creation accepts `--nonce-value` and `--genesis-hash`; verification also
-requires `--nonce-authority`. These snapshots do not establish current chain state.
-Submission checks the live nonce, cluster genesis hash, and all signatures again.
