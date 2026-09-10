@@ -67,8 +67,10 @@ solana -u "$RPC" -k "$PAYER" transfer "$PDA" 0.1 --allow-unfunded-recipient
 
 One machine plays all three roles here. With a real cold authority, generate and
 keep its key on the signing machine; give the coordinator only `COLD_ADDRESS`.
-Transaction files use standard Solana Rust SDK JSON; `.source.json` files contain
-the stock CLI's sign-only message dump. Neither file contains private keys.
+Transaction files use `serde_json` serialization of `solana_transaction::Transaction`;
+`.source.json` files contain the stock CLI's sign-only message dump. Neither file
+contains private keys. Signatures cover the binary message, so JSON formatting
+does not affect them.
 
 ## Prepare, inspect, sign, and submit SOL
 
@@ -340,6 +342,11 @@ shell. Physical hardware signing has not been verified in the local demo.
 
 ## Command reference and troubleshooting
 
+The CLI uses standard Solana `-C`, `-u`, `--fee-payer`, commitment, and signer-source
+options. Use each command's `--help` for flags. Summaries support `--output json`
+and `--output json-compact`. Transaction readers accept `-` for stdin; writers
+use `--outfile` or stdout.
+
 Every command above serves a documented flow:
 
 | Commands | Purpose | RPC |
@@ -353,6 +360,10 @@ Every command above serves a documented flow:
 | `transaction simulate inner`, `simulate relay` | Rehearse before signing or submitting | Yes |
 | `transaction submit` | Verify, relay, and confirm | Yes |
 
+Offline creation accepts `--nonce-value` and `--genesis-hash`; verification also
+requires `--nonce-authority`. These snapshots do not establish current chain state.
+Submission checks the live nonce, cluster genesis hash, and all signatures again.
+
 - `nonce mismatch`: refresh with `nonce show` and rebuild. Replays and canceled
   files are expected to fail this way.
 - Keep using the same local RPC for online commands. A different cluster fails
@@ -360,4 +371,4 @@ Every command above serves a documented flow:
 - The PDA needs the assets spent by its instructions; the online payer needs SOL
   for fees. Failed inner execution rolls back the nonce change.
 - Existing output files are never overwritten. Use a fresh name or directory for
-  another attempt. See [client usage](clients.md) for JSON IO and snapshot options.
+  another attempt.

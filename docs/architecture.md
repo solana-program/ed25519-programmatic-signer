@@ -29,3 +29,9 @@ not independently fetch and compare the cluster genesis hash. Custom relayers mu
 apply that check. Relays must fit the 1232-byte network packet and runtime limits.
 Changing program IDs changes signer PDAs; program upgrades may invalidate pre-signed
 files. A PDA does not become a native keypair account or wallet signer.
+
+For Rust integrations, use the existing per-program clients: `executor/client`
+builds `execute`; `signer/client` builds `wrapped_message` and `submit`;
+`nonce/client` creates and decodes nonce accounts. Compose ordinary SDK messages
+and set the inner blockhash to the nonce and the wrapper blockhash to the cluster
+genesis hash before signing.

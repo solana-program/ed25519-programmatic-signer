@@ -14,5 +14,4 @@ transfers, offline signing, nonce chains, replay rejection, and cancellation.
 It retains artifacts under `target/local-demo/` and stops its validator on exit.
 
 - [Quickstart](docs/quickstart.md)
-- [Client usage](docs/clients.md)
 - [How it works](docs/architecture.md)
