@@ -1,4 +1,4 @@
-//! Transaction-file IO. Files contain standard base64-encoded Solana transaction bytes.
+//! Transaction-file IO. Files contain the Solana SDK's legacy Transaction JSON.
 use {
     crate::transaction::WrappedTransaction,
     anyhow::{Context, Result, bail},
@@ -28,15 +28,11 @@ pub(crate) fn read_text(path: &Path) -> Result<String> {
 }
 
 pub(crate) fn read(path: &Path) -> Result<WrappedTransaction> {
-    let text = read_text(path)?;
-    let bytes = STANDARD
-        .decode(text.trim())
-        .context("transaction file must contain base64")?;
-    WrappedTransaction::from_bytes(&bytes)
+    WrappedTransaction::from_json(&read_text(path)?)
 }
 
 pub(crate) fn write(path: Option<&Path>, transaction: &WrappedTransaction) -> Result<String> {
-    let payload = STANDARD.encode(transaction.to_bytes()?);
+    let payload = transaction.to_json()?;
     let Some(path) = path.filter(|path| *path != Path::new("-")) else {
         return Ok(payload);
     };

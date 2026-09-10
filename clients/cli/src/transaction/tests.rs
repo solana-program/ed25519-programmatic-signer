@@ -44,7 +44,19 @@ fn signing_round_trip_and_nonce_verification() {
     assert!(!transaction.is_fully_signed());
     let next = transaction.next_nonce();
     transaction.sign(&cold).unwrap();
-    let decoded = WrappedTransaction::from_bytes(&transaction.to_bytes().unwrap()).unwrap();
+    // Standard SDK JSON, including reformatting and reordered object keys, preserves
+    // the complete wire transaction and therefore the signed message bytes.
+    let json = transaction.to_json().unwrap();
+    let sdk: Transaction = serde_json::from_str(&json).unwrap();
+    sdk.verify().unwrap();
+    let reformatted = serde_json::from_str::<serde_json::Value>(&json)
+        .unwrap()
+        .to_string();
+    let decoded = WrappedTransaction::from_json(&reformatted).unwrap();
+    assert_eq!(
+        wincode::serialize(&decoded.transaction).unwrap(),
+        wincode::serialize(&transaction.transaction).unwrap()
+    );
     assert!(decoded.is_fully_signed());
     assert_eq!(decoded.next_nonce(), next);
     assert_eq!(decoded.inner(), transaction.inner());
@@ -100,7 +112,7 @@ fn partial_signatures_merge_and_require_a_live_relayer() {
         *first.genesis_hash(),
     )
     .unwrap();
-    let mut second = WrappedTransaction::from_bytes(&first.to_bytes().unwrap()).unwrap();
+    let mut second = WrappedTransaction::from_json(&first.to_json().unwrap()).unwrap();
     let payer = Keypair::new();
     assert!(first.relay(&payer, &[&relayer], Hash::default()).is_err());
     first.sign(&cold).unwrap();
@@ -116,9 +128,9 @@ fn partial_signatures_merge_and_require_a_live_relayer() {
     );
     let relay = first.relay(&payer, &[&relayer], Hash::default()).unwrap();
     relay.verify_and_hash_message().unwrap();
-    let original = first.to_bytes().unwrap();
+    let original = first.to_json().unwrap();
     assert!(first.merge(&fixture().0).is_err());
-    assert_eq!(first.to_bytes().unwrap(), original);
+    assert_eq!(first.to_json().unwrap(), original);
 }
 
 #[test]
@@ -158,14 +170,19 @@ fn rejects_invalid_or_malformed_files() {
     }
     for (index, bad) in cases.iter().enumerate() {
         assert!(
-            WrappedTransaction::from_bytes(&wincode::serialize(bad).unwrap()).is_err(),
+            WrappedTransaction::from_json(
+                &serde_json::to_string(&bad.clone().into_legacy_transaction().unwrap()).unwrap()
+            )
+            .is_err(),
             "case {index}"
         );
     }
-    let mut trailing = transaction.to_bytes().unwrap();
-    trailing.push(0);
-    assert!(WrappedTransaction::from_bytes(&trailing).is_err());
-    assert!(WrappedTransaction::from_bytes(&[]).is_err());
+    let mut trailing = transaction.to_json().unwrap();
+    trailing.push('0');
+    assert!(WrappedTransaction::from_json(&trailing).is_err());
+    for malformed in ["", "{}", r#"{"signatures":[]}"#, r#"{"message":null}"#] {
+        assert!(WrappedTransaction::from_json(malformed).is_err());
+    }
 }
 
 #[test]
@@ -176,7 +193,7 @@ fn rejects_changed_signed_message_and_duplicate_signers() {
         .transaction
         .message
         .set_recent_blockhash(Hash::default());
-    assert!(WrappedTransaction::from_bytes(&transaction.to_bytes().unwrap()).is_err());
+    assert!(WrappedTransaction::from_json(&transaction.to_json().unwrap()).is_err());
     let (transaction, cold, _) = fixture();
     for authorities in [
         vec![],
@@ -233,9 +250,19 @@ fn wrapper_signer_limit_preserves_legacy_encoding() {
         *transaction.genesis_hash(),
     )
     .unwrap();
-    let decoded = WrappedTransaction::from_bytes(&boundary.to_bytes().unwrap()).unwrap();
+    let decoded = WrappedTransaction::from_json(&boundary.to_json().unwrap()).unwrap();
     assert_eq!(decoded.signer_status().count(), 127);
     authorities.push(Address::new_unique());
+    let invalid = VersionedTransaction {
+        message: wrapped_message(
+            &execute(transaction.nonce_account(), transaction.inner()),
+            &authorities,
+        ),
+        signatures: vec![Signature::default(); authorities.len()],
+    }
+    .into_legacy_transaction()
+    .unwrap();
+    assert!(WrappedTransaction::from_json(&serde_json::to_string(&invalid).unwrap()).is_err());
     assert!(
         WrappedTransaction::new(
             transaction.inner().clone(),

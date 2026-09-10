@@ -184,13 +184,13 @@ impl<'a> Demo<'a> {
 pub async fn transfer_offline_signing_simulation_and_replay(env: &TestEnv) {
     let demo = Demo::new(env).await;
     demo.source("inner.json", demo.nonce, TRANSFER, None);
-    demo.create("inner.json", "tx.psigner", &["--fetch-nonce"]);
+    demo.create("inner.json", "tx.json", &["--fetch-nonce"]);
     let inspected: Inspection = demo.typed_json(&[
         "-u",
         OFFLINE_URL,
         "transaction",
         "inspect",
-        &demo.file("tx.psigner"),
+        &demo.file("tx.json"),
     ]);
     assert_eq!(inspected.nonce_account, demo.nonce_account.to_string());
     assert!(
@@ -203,7 +203,7 @@ pub async fn transfer_offline_signing_simulation_and_replay(env: &TestEnv) {
         &[
             "transaction",
             "verify",
-            &demo.file("tx.psigner"),
+            &demo.file("tx.json"),
             "--fetch-nonce",
         ],
         "not fully signed",
@@ -212,24 +212,24 @@ pub async fn transfer_offline_signing_simulation_and_replay(env: &TestEnv) {
         demo.json(&[
             "transaction",
             "verify",
-            &demo.file("tx.psigner"),
+            &demo.file("tx.json"),
             "--fetch-nonce",
             "--allow-partial"
         ])["fullySigned"],
         false
     );
     assert_eq!(
-        demo.json(&["transaction", "simulate", "inner", &demo.file("tx.psigner")])["mode"],
+        demo.json(&["transaction", "simulate", "inner", &demo.file("tx.json")])["mode"],
         "inner"
     );
-    demo.sign("tx.psigner", "signed.psigner");
+    demo.sign("tx.json", "signed.json");
     assert_eq!(
         demo.json(&[
             "-u",
             OFFLINE_URL,
             "transaction",
             "verify",
-            &demo.file("signed.psigner"),
+            &demo.file("signed.json"),
             "--nonce-value",
             &demo.nonce.to_string(),
             "--nonce-authority",
@@ -239,15 +239,15 @@ pub async fn transfer_offline_signing_simulation_and_replay(env: &TestEnv) {
         ])["fullySigned"],
         true
     );
-    assert!(demo.verify("signed.psigner").fully_signed);
+    assert!(demo.verify("signed.json").fully_signed);
     let simulation: SimulationOutput = demo.typed_json(&[
         "transaction",
         "simulate",
         "relay",
-        &demo.file("signed.psigner"),
+        &demo.file("signed.json"),
     ]);
     assert!(simulation.units_consumed.unwrap() > 0);
-    let submitted = demo.submit("signed.psigner");
+    let submitted = demo.submit("signed.json");
     assert_eq!(submitted.expected_next_nonce, submitted.observed_nonce);
     assert_eq!(submitted.observed_nonce, inspected.next_nonce);
     assert_eq!(
@@ -255,18 +255,18 @@ pub async fn transfer_offline_signing_simulation_and_replay(env: &TestEnv) {
         1_000_000_u64.saturating_add(TRANSFER)
     );
     demo.fail(
-        &["transaction", "submit", &demo.file("signed.psigner")],
+        &["transaction", "submit", &demo.file("signed.json")],
         "nonce mismatch",
     );
     demo.fail(
         &[
             "transaction",
             "sign",
-            &demo.file("tx.psigner"),
+            &demo.file("tx.json"),
             "--keypair",
             &demo.file("cold.json"),
             "--outfile",
-            &demo.file("signed.psigner"),
+            &demo.file("signed.json"),
         ],
         "already exists",
     );
@@ -275,24 +275,24 @@ pub async fn transfer_offline_signing_simulation_and_replay(env: &TestEnv) {
 pub async fn cancellation_invalidates_pending_file(env: &TestEnv) {
     let demo = Demo::new(env).await;
     demo.source("inner.json", demo.nonce, TRANSFER, None);
-    demo.create("inner.json", "tx.psigner", &["--fetch-nonce"]);
-    demo.sign("tx.psigner", "signed.psigner");
+    demo.create("inner.json", "tx.json", &["--fetch-nonce"]);
+    demo.sign("tx.json", "signed.json");
     demo.command(&[
         "-u",
         OFFLINE_URL,
         "nonce",
         "advance",
         "--from-transaction",
-        &demo.file("tx.psigner"),
+        &demo.file("tx.json"),
         "--authority",
         &demo.authority.pubkey().to_string(),
         "--outfile",
-        &demo.file("cancel.psigner"),
+        &demo.file("cancel.json"),
     ]);
-    demo.sign("cancel.psigner", "cancel.signed.psigner");
-    demo.submit("cancel.signed.psigner");
+    demo.sign("cancel.json", "cancel.signed.json");
+    demo.submit("cancel.signed.json");
     demo.fail(
-        &["transaction", "submit", &demo.file("signed.psigner")],
+        &["transaction", "submit", &demo.file("signed.json")],
         "nonce mismatch",
     );
     assert_eq!(
@@ -303,10 +303,10 @@ pub async fn cancellation_invalidates_pending_file(env: &TestEnv) {
 
 pub async fn precomputed_chain_runs_in_order(env: &TestEnv) {
     let demo = Demo::new(env).await;
-    demo.source("first.json", demo.nonce, TRANSFER, None);
+    demo.source("first.source.json", demo.nonce, TRANSFER, None);
     demo.create(
+        "first.source.json",
         "first.json",
-        "first.psigner",
         &[
             "-u",
             OFFLINE_URL,
@@ -321,23 +321,23 @@ pub async fn precomputed_chain_runs_in_order(env: &TestEnv) {
         OFFLINE_URL,
         "transaction",
         "next-nonce",
-        &demo.file("first.psigner"),
+        &demo.file("first.json"),
     ]);
     let next = next["nextNonce"].as_str().unwrap().parse::<Hash>().unwrap();
-    demo.source("second.json", next, TRANSFER, None);
+    demo.source("second.source.json", next, TRANSFER, None);
     demo.create(
+        "second.source.json",
         "second.json",
-        "second.psigner",
-        &["-u", OFFLINE_URL, "--after", &demo.file("first.psigner")],
+        &["-u", OFFLINE_URL, "--after", &demo.file("first.json")],
     );
-    demo.sign("first.psigner", "first.signed.psigner");
-    demo.sign("second.psigner", "second.signed.psigner");
+    demo.sign("first.json", "first.signed.json");
+    demo.sign("second.json", "second.signed.json");
     demo.fail(
-        &["transaction", "submit", &demo.file("second.signed.psigner")],
+        &["transaction", "submit", &demo.file("second.signed.json")],
         "nonce mismatch",
     );
-    demo.submit("first.signed.psigner");
-    demo.submit("second.signed.psigner");
+    demo.submit("first.signed.json");
+    demo.submit("second.signed.json");
     assert_eq!(
         env.rpc.get_balance(&demo.recipient).await.unwrap(),
         1_000_000_u64.saturating_add(TRANSFER.saturating_mul(2))
@@ -351,44 +351,44 @@ pub async fn designated_relayer_merges_signatures_and_requires_live_signer(env: 
     demo.source("inner.json", demo.nonce, TRANSFER, Some(relayer.pubkey()));
     demo.create(
         "inner.json",
-        "tx.psigner",
+        "tx.json",
         &[
             "--fetch-nonce",
             "--submit-signer",
             &relayer.pubkey().to_string(),
         ],
     );
-    demo.sign("tx.psigner", "cold.psigner");
+    demo.sign("tx.json", "cold.partial.json");
     demo.command(&[
         "-u",
         OFFLINE_URL,
         "transaction",
         "sign",
-        &demo.file("tx.psigner"),
+        &demo.file("tx.json"),
         "--keypair",
         &demo.file("relayer.json"),
         "--outfile",
-        &demo.file("relayer.psigner"),
+        &demo.file("relayer.partial.json"),
     ]);
     demo.command(&[
         "-u",
         OFFLINE_URL,
         "transaction",
         "merge",
-        &demo.file("cold.psigner"),
-        &demo.file("relayer.psigner"),
+        &demo.file("cold.partial.json"),
+        &demo.file("relayer.partial.json"),
         "--outfile",
-        &demo.file("ready.psigner"),
+        &demo.file("ready.json"),
     ]);
-    assert!(demo.verify("ready.psigner").fully_signed);
+    assert!(demo.verify("ready.json").fully_signed);
     demo.fail(
-        &["transaction", "submit", &demo.file("ready.psigner")],
+        &["transaction", "submit", &demo.file("ready.json")],
         "missing outer signer",
     );
     demo.json(&[
         "transaction",
         "submit",
-        &demo.file("ready.psigner"),
+        &demo.file("ready.json"),
         "--submit-signer",
         &demo.file("relayer.json"),
     ]);
@@ -401,14 +401,14 @@ pub async fn designated_relayer_merges_signatures_and_requires_live_signer(env: 
 pub async fn failed_inner_simulation_and_submission_preserve_nonce(env: &TestEnv) {
     let demo = Demo::new(env).await;
     demo.source("inner.json", demo.nonce, 30_000_000, None);
-    demo.create("inner.json", "tx.psigner", &["--fetch-nonce"]);
-    demo.sign("tx.psigner", "signed.psigner");
+    demo.create("inner.json", "tx.json", &["--fetch-nonce"]);
+    demo.sign("tx.json", "signed.json");
     demo.fail(
         &[
             "transaction",
             "simulate",
             "relay",
-            &demo.file("signed.psigner"),
+            &demo.file("signed.json"),
         ],
         "simulation failed",
     );
@@ -417,11 +417,11 @@ pub async fn failed_inner_simulation_and_submission_preserve_nonce(env: &TestEnv
             "--skip-preflight",
             "transaction",
             "submit",
-            &demo.file("signed.psigner"),
+            &demo.file("signed.json"),
         ],
         "failed to send",
     );
-    assert_eq!(demo.verify("signed.psigner").nonce, demo.nonce.to_string());
+    assert_eq!(demo.verify("signed.json").nonce, demo.nonce.to_string());
     assert_eq!(
         env.rpc.get_balance(&demo.recipient).await.unwrap(),
         1_000_000
@@ -526,32 +526,27 @@ pub async fn token_transfer_is_decoded_and_lands(env: &TestEnv) {
     )
     .unwrap();
     let message = Message::new_with_blockhash(&[transfer], Some(&demo.pda), &demo.nonce);
-    fs::write(demo.path("token.json"), json!({ "blockhash": demo.nonce.to_string(), "message": STANDARD.encode(message.serialize()) }).to_string()).unwrap();
-    demo.create("token.json", "token.psigner", &["--fetch-nonce"]);
+    fs::write(demo.path("token.source.json"), json!({ "blockhash": demo.nonce.to_string(), "message": STANDARD.encode(message.serialize()) }).to_string()).unwrap();
+    demo.create("token.source.json", "token.json", &["--fetch-nonce"]);
     let inspected: Inspection = demo.typed_json(&[
         "-u",
         OFFLINE_URL,
         "transaction",
         "inspect",
-        &demo.file("token.psigner"),
+        &demo.file("token.json"),
     ]);
     let description = &inspected.inner_instructions[0].description;
     assert!(description.contains("1250000 raw token units (6 decimals)"));
     assert!(description.contains(&mint.pubkey().to_string()));
-    demo.json(&[
-        "transaction",
-        "simulate",
-        "inner",
-        &demo.file("token.psigner"),
-    ]);
-    demo.sign("token.psigner", "token.signed.psigner");
+    demo.json(&["transaction", "simulate", "inner", &demo.file("token.json")]);
+    demo.sign("token.json", "token.signed.json");
     demo.json(&[
         "transaction",
         "simulate",
         "relay",
-        &demo.file("token.signed.psigner"),
+        &demo.file("token.signed.json"),
     ]);
-    demo.submit("token.signed.psigner");
+    demo.submit("token.signed.json");
     let destination = env.rpc.get_account(&destination.pubkey()).await.unwrap();
     assert_eq!(
         TokenAccount::unpack(&destination.data).unwrap().amount,

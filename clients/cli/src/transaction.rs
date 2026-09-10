@@ -7,7 +7,7 @@ use {
     solana_sanitize::Sanitize,
     solana_signature::Signature,
     solana_signer::Signer,
-    solana_transaction::versioned::VersionedTransaction,
+    solana_transaction::{Transaction, versioned::VersionedTransaction},
     spl_ed25519_signer_client::{
         ProgrammaticSigner, instruction::submit, message::wrapped_message,
     },
@@ -93,14 +93,19 @@ impl WrappedTransaction {
         })
     }
 
-    pub(crate) fn from_bytes(bytes: &[u8]) -> Result<Self> {
-        Self::from_transaction(
-            wincode::deserialize_exact(bytes).context("invalid transaction bytes")?,
-        )
+    pub(crate) fn from_json(json: &str) -> Result<Self> {
+        let transaction: Transaction =
+            serde_json::from_str(json).context("invalid transaction JSON")?;
+        Self::from_transaction(transaction.into())
     }
 
-    pub(crate) fn to_bytes(&self) -> Result<Vec<u8>> {
-        wincode::serialize(&self.transaction).context("failed to encode transaction")
+    pub(crate) fn to_json(&self) -> Result<String> {
+        let transaction = self
+            .transaction
+            .clone()
+            .into_legacy_transaction()
+            .context("only legacy wrapped messages are supported")?;
+        serde_json::to_string_pretty(&transaction).context("failed to encode transaction JSON")
     }
 
     fn from_transaction(transaction: VersionedTransaction) -> Result<Self> {
@@ -114,6 +119,11 @@ impl WrappedTransaction {
         let VersionedMessage::Legacy(message) = &transaction.message else {
             anyhow::bail!("only legacy wrapped messages are supported");
         };
+        // JSON decoding does not check the legacy wire format's reserved version bit.
+        ensure!(
+            message.header.num_required_signatures < 128,
+            "too many wrapper signers"
+        );
         validate_message(message)?;
         let bytes = message.serialize();
         for (key, signature) in message.account_keys.iter().zip(&transaction.signatures) {

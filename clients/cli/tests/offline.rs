@@ -1,12 +1,11 @@
 use {
-    base64::{Engine as _, engine::general_purpose::STANDARD},
     solana_address::Address,
     solana_hash::Hash,
     solana_keypair::{Keypair, write_keypair_file},
     solana_message::legacy::Message,
     solana_signature::Signature,
     solana_signer::Signer,
-    solana_transaction::versioned::VersionedTransaction,
+    solana_transaction::{Transaction, versioned::VersionedTransaction},
     spl_ed25519_signer_client::{ProgrammaticSigner, message::wrapped_message},
     spl_legacy_message_executor_client::instruction::execute,
     std::{
@@ -47,7 +46,7 @@ impl Fixture {
             authority,
             transaction,
         };
-        fixture.save("tx.psigner", &fixture.transaction);
+        fixture.save("tx.json", &fixture.transaction);
         fixture
     }
     fn path(&self, file: &str) -> String {
@@ -56,7 +55,7 @@ impl Fixture {
     fn save(&self, file: &str, transaction: &VersionedTransaction) {
         fs::write(
             self.path(file),
-            STANDARD.encode(wincode::serialize(transaction).unwrap()),
+            serde_json::to_string(&transaction.clone().into_legacy_transaction().unwrap()).unwrap(),
         )
         .unwrap();
     }
@@ -91,9 +90,9 @@ impl Fixture {
 fn offline_inspection_rejects_invalid_signatures() {
     let mut fixture = Fixture::new();
     fixture.transaction.signatures[0] = [42; 64].into();
-    fixture.save("bad.psigner", &fixture.transaction);
+    fixture.save("bad.json", &fixture.transaction);
     fixture.fails(
-        &["transaction", "inspect", &fixture.path("bad.psigner")],
+        &["transaction", "inspect", &fixture.path("bad.json")],
         "invalid signature",
     );
 }
@@ -101,41 +100,46 @@ fn offline_inspection_rejects_invalid_signatures() {
 #[test]
 fn batch_signing_preserves_existing_files_and_rejects_name_collisions() {
     let fixture = Fixture::new();
-    fixture.save("second.psigner", &fixture.transaction);
+    fixture.save("second.json", &fixture.transaction);
     fs::create_dir(fixture.path("signed")).unwrap();
     fixture.succeeds(&[
         "transaction",
         "sign",
-        &fixture.path("tx.psigner"),
-        &fixture.path("second.psigner"),
+        &fixture.path("tx.json"),
+        &fixture.path("second.json"),
         "--keypair",
         &fixture.path("cold.json"),
         "--outdir",
         &fixture.path("signed"),
     ]);
-    let original = fs::read(fixture.path("signed/tx.psigner")).unwrap();
+    let original = fs::read(fixture.path("signed/tx.json")).unwrap();
+    // Files deserialize directly into the standard SDK type, with valid signatures
+    // over the same message that was supplied before signing.
+    let signed: Transaction = serde_json::from_slice(&original).unwrap();
+    signed.verify().unwrap();
+    assert_eq!(
+        signed.message.serialize(),
+        fixture.transaction.message.serialize()
+    );
     fixture.fails(
         &[
             "transaction",
             "sign",
-            &fixture.path("tx.psigner"),
+            &fixture.path("tx.json"),
             "--keypair",
             &fixture.path("cold.json"),
             "--outfile",
-            &fixture.path("signed/tx.psigner"),
+            &fixture.path("signed/tx.json"),
         ],
         "already exists",
     );
-    assert_eq!(
-        fs::read(fixture.path("signed/tx.psigner")).unwrap(),
-        original
-    );
+    assert_eq!(fs::read(fixture.path("signed/tx.json")).unwrap(), original);
     fixture.fails(
         &[
             "transaction",
             "sign",
-            &fixture.path("tx.psigner"),
-            &fixture.path("second.psigner"),
+            &fixture.path("tx.json"),
+            &fixture.path("second.json"),
             "--keypair",
             &fixture.path("cold.json"),
         ],
@@ -154,7 +158,7 @@ fn verify_rejects_wrong_cluster_without_rpc() {
         &[
             "transaction",
             "verify",
-            &fixture.path("tx.psigner"),
+            &fixture.path("tx.json"),
             "--nonce-value",
             &Hash::new_from_array([1; 32]).to_string(),
             "--nonce-authority",

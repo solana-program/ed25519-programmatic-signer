@@ -35,10 +35,10 @@ solana -u "$RPC" -k "$PAYER" transfer "$PDA" 0.1 --allow-unfunded-recipient
 solana -u "$RPC" transfer "$RECIPIENT" 0.001 \
   --from "$PDA" --fee-payer "$PDA" --blockhash "$NONCE_VALUE" \
   --sign-only --dump-transaction-message --output json-compact \
-  --allow-unfunded-recipient > transfer.json
-"$CLI" -u "$RPC" transaction create --from-sign-only transfer.json \
+  --allow-unfunded-recipient > transfer.source.json
+"$CLI" -u "$RPC" transaction create --from-sign-only transfer.source.json \
   --nonce "$NONCE_ACCOUNT" --authority "$COLD_ADDRESS" --fetch-nonce \
-  --outfile transfer.psigner
+  --outfile transfer.json
 ```
 
 Here `--blockhash` carries the SPL nonce value. Do not pass the stock CLI's native
@@ -49,17 +49,17 @@ Move the file to the offline machine, inspect its recipient, amount, accounts,
 programs, nonce, and genesis hash, then sign it with `COLD`, the cold keypair path:
 
 ```sh
-"$CLI" transaction inspect transfer.psigner
-"$CLI" transaction sign transfer.psigner --keypair "$COLD" \
-  --outfile transfer.signed.psigner
+"$CLI" transaction inspect transfer.json
+"$CLI" transaction sign transfer.json --keypair "$COLD" \
+  --outfile transfer.signed.json
 ```
 
 Return the signed file to the online machine:
 
 ```sh
-"$CLI" -u "$RPC" transaction verify transfer.signed.psigner --fetch-nonce
-"$CLI" -u "$RPC" --fee-payer "$PAYER" transaction simulate relay transfer.signed.psigner
-"$CLI" -u "$RPC" --fee-payer "$PAYER" transaction submit transfer.signed.psigner
+"$CLI" -u "$RPC" transaction verify transfer.signed.json --fetch-nonce
+"$CLI" -u "$RPC" --fee-payer "$PAYER" transaction simulate relay transfer.signed.json
+"$CLI" -u "$RPC" --fee-payer "$PAYER" transaction submit transfer.signed.json
 ```
 
 Submission reports its confirmed signature and predicted/observed successor nonce.

@@ -78,12 +78,12 @@ sol transfer "$recipient" 0.001 --allow-unfunded-recipient >/dev/null
 source_sol() {
   sol transfer "$recipient" 0.001 --from "$pda" --fee-payer "$pda" \
     --blockhash "$2" --sign-only --dump-transaction-message --output json-compact \
-    --allow-unfunded-recipient > "$demo_dir/$1.json"
+    --allow-unfunded-recipient > "$demo_dir/$1.source.json"
 }
 wrap() {
   local name="$1"; shift
-  psigner transaction create --from-sign-only "$demo_dir/$name.json" \
-    --nonce "$nonce_account" --authority "$cold" --outfile "$demo_dir/$name.psigner" "$@"
+  psigner transaction create --from-sign-only "$demo_dir/$name.source.json" \
+    --nonce "$nonce_account" --authority "$cold" --outfile "$demo_dir/$name.json" "$@"
 }
 reject_submit() {
   if psigner transaction submit "$1" > "$demo_dir/rejected.log" 2>&1; then
@@ -98,31 +98,31 @@ PY
 echo 'Create and cold-sign two dependent SOL transfers before submitting either.'
 source_sol a "$nonce_value"
 wrap a --fetch-nonce
-next="$(psigner transaction next-nonce "$demo_dir/a.psigner")"
+next="$(psigner transaction next-nonce "$demo_dir/a.json")"
 source_sol b "$next"
-wrap b --after "$demo_dir/a.psigner" -u http://127.0.0.1:1
-psigner transaction inspect "$demo_dir/a.psigner" -u http://127.0.0.1:1
+wrap b --after "$demo_dir/a.json" -u http://127.0.0.1:1
+psigner transaction inspect "$demo_dir/a.json" -u http://127.0.0.1:1
 mkdir "$demo_dir/signed"
-psigner transaction sign "$demo_dir/a.psigner" "$demo_dir/b.psigner" \
+psigner transaction sign "$demo_dir/a.json" "$demo_dir/b.json" \
   --keypair "$demo_dir/cold.json" --outdir "$demo_dir/signed" -u http://127.0.0.1:1
-reject_submit "$demo_dir/signed/b.psigner"
-psigner transaction simulate relay "$demo_dir/signed/a.psigner"
-psigner --output json-compact transaction submit "$demo_dir/signed/a.psigner" > "$demo_dir/submitted-a.json"
-psigner --output json-compact transaction submit "$demo_dir/signed/b.psigner" > "$demo_dir/submitted-b.json"
+reject_submit "$demo_dir/signed/b.json"
+psigner transaction simulate relay "$demo_dir/signed/a.json"
+psigner --output json-compact transaction submit "$demo_dir/signed/a.json" > "$demo_dir/submitted-a.json"
+psigner --output json-compact transaction submit "$demo_dir/signed/b.json" > "$demo_dir/submitted-b.json"
 jq -e '.expectedNextNonce == .observedNonce' "$demo_dir/submitted-a.json" "$demo_dir/submitted-b.json" >/dev/null
-reject_submit "$demo_dir/signed/a.psigner"
+reject_submit "$demo_dir/signed/a.json"
 echo 'Cancel a pending transfer by submitting an empty inner message first.'
 nonce_value="$(jq -er .observedNonce "$demo_dir/submitted-b.json")"
 source_sol pending "$nonce_value"
 wrap pending --fetch-nonce
-psigner transaction sign "$demo_dir/pending.psigner" --keypair "$demo_dir/cold.json" \
-  --outfile "$demo_dir/pending.signed.psigner" -u http://127.0.0.1:1
-psigner nonce advance --from-transaction "$demo_dir/pending.psigner" --authority "$cold" \
-  --outfile "$demo_dir/cancel.psigner" -u http://127.0.0.1:1
-psigner transaction sign "$demo_dir/cancel.psigner" --keypair "$demo_dir/cold.json" \
-  --outfile "$demo_dir/cancel.signed.psigner" -u http://127.0.0.1:1
-psigner transaction submit "$demo_dir/cancel.signed.psigner"
-reject_submit "$demo_dir/pending.signed.psigner"
+psigner transaction sign "$demo_dir/pending.json" --keypair "$demo_dir/cold.json" \
+  --outfile "$demo_dir/pending.signed.json" -u http://127.0.0.1:1
+psigner nonce advance --from-transaction "$demo_dir/pending.json" --authority "$cold" \
+  --outfile "$demo_dir/cancel.json" -u http://127.0.0.1:1
+psigner transaction sign "$demo_dir/cancel.json" --keypair "$demo_dir/cold.json" \
+  --outfile "$demo_dir/cancel.signed.json" -u http://127.0.0.1:1
+psigner transaction submit "$demo_dir/cancel.signed.json"
+reject_submit "$demo_dir/pending.signed.json"
 echo 'Create a local mint and import an actual spl-token sign-only transfer.'
 mint="$(solana-keygen pubkey "$demo_dir/mint.json")"
 source_token="$(solana-keygen pubkey "$demo_dir/source-token.json")"
@@ -134,14 +134,14 @@ token mint "$mint" 2 "$source_token" --fee-payer "$demo_dir/payer.json" --mint-a
 nonce_value="$(psigner --output json-compact nonce show "$nonce_account" | jq -er .nonce)"
 token transfer "$mint" 1.25 "$destination_token" --from "$source_token" \
   --owner "$pda" --fee-payer "$pda" --blockhash "$nonce_value" --mint-decimals 6 \
-  --sign-only --dump-transaction-message --output json-compact > "$demo_dir/token.json"
+  --sign-only --dump-transaction-message --output json-compact > "$demo_dir/token.source.json"
 wrap token --fetch-nonce
-psigner transaction inspect "$demo_dir/token.psigner" -u http://127.0.0.1:1
-psigner transaction simulate inner "$demo_dir/token.psigner"
-psigner transaction sign "$demo_dir/token.psigner" --keypair "$demo_dir/cold.json" \
-  --outfile "$demo_dir/token.signed.psigner" -u http://127.0.0.1:1
-psigner transaction simulate relay "$demo_dir/token.signed.psigner"
-psigner transaction submit "$demo_dir/token.signed.psigner"
+psigner transaction inspect "$demo_dir/token.json" -u http://127.0.0.1:1
+psigner transaction simulate inner "$demo_dir/token.json"
+psigner transaction sign "$demo_dir/token.json" --keypair "$demo_dir/cold.json" \
+  --outfile "$demo_dir/token.signed.json" -u http://127.0.0.1:1
+psigner transaction simulate relay "$demo_dir/token.signed.json"
+psigner transaction submit "$demo_dir/token.signed.json"
 [[ "$(token balance --address "$destination_token")" == 1.25 ]]
 [[ "$(token balance --address "$source_token")" == 0.75 ]]
 [[ "$(sol balance "$recipient" --lamports)" == '3000000 lamports' ]]

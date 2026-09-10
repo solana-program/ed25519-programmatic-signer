@@ -10,19 +10,21 @@ verification accept either `--fetch-nonce` or explicit nonce/genesis snapshots.
 Offline snapshots do not establish current chain state. Simulation and submission
 query RPC; submission checks the live nonce, genesis hash, and all signatures.
 
-A `.psigner` file is a base64-encoded Solana transaction containing the wrapper and
-partial signature slots. Relay it with this CLI rather than sending the wrapper
-as a network transaction. Readers accept `-` for stdin; writers use `--outfile` or
-stdout. Existing files are never overwritten.
+Transaction files use `.json` and the Solana Rust SDK's existing
+`solana_transaction::Transaction` serialization (`serde_json`), containing the wrapper
+message and partial signature slots. No custom envelope is added. JSON formatting
+does not affect signatures, which cover the binary message. Relay the wrapper with
+this CLI. Readers accept `-` for stdin; writers use `--outfile` or stdout. Existing
+files are never overwritten.
 
 ## Multiple signatures
 
 Signers may produce separate copies of the same message, then merge them:
 
 ```sh
-spl-programmatic-signer-cli transaction sign unsigned.psigner --keypair cold-a.json --outfile a.psigner
-spl-programmatic-signer-cli transaction sign unsigned.psigner --keypair cold-b.json --outfile b.psigner
-spl-programmatic-signer-cli transaction merge a.psigner b.psigner --outfile signed.psigner
+spl-programmatic-signer-cli transaction sign unsigned.json --keypair cold-a.json --outfile a.json
+spl-programmatic-signer-cli transaction sign unsigned.json --keypair cold-b.json --outfile b.json
+spl-programmatic-signer-cli transaction merge a.json b.json --outfile signed.json
 ```
 
 For a batch, pass several input files and an existing `--outdir`. A designated
@@ -38,7 +40,7 @@ message succeeding. Build the next source message with that hash, then import it
 using `transaction create ... --after FILE`. Files can be signed together offline
 but must land in order.
 
-`nonce advance --from-transaction FILE --authority COLD_ADDRESS --outfile cancel.psigner`
+`nonce advance --from-transaction FILE --authority COLD_ADDRESS --outfile cancel.json`
 builds an empty transaction for the cold authority's PDA. Sign and submit it before
 the competing transaction to cancel that nonce. Creating the cancellation file alone
 does not change chain state. A competing transition also invalidates planned descendants.
