@@ -8,7 +8,7 @@ on:
 env:
   IDL_PACKAGES: "['workspace']"
   JS_PACKAGES: "['clients-js']"
-  RUST_PACKAGES: "['executor-client', 'executor-interface', 'executor-program', 'nonce-client', 'nonce-interface', 'nonce-program', 'signer-client', 'signer-interface', 'signer-program']"
+  RUST_PACKAGES: "['clients-cli', 'executor-client', 'executor-interface', 'executor-program', 'nonce-client', 'nonce-interface', 'nonce-program', 'signer-client', 'signer-interface', 'signer-program']"
   SBPF_PROGRAM_PACKAGES: "['executor-program', 'nonce-program', 'signer-program']"
   NO_STD_CORE_PACKAGES: "['nonce-interface', 'nonce-program']"
   NO_STD_ALLOC_PACKAGES: "['executor-client', 'executor-interface', 'executor-program', 'nonce-client', 'signer-client', 'signer-interface', 'signer-program']"

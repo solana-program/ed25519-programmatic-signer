@@ -10,7 +10,7 @@ use {
     solana_instruction::AccountMeta,
     solana_program_error::ProgramError,
     solana_rent::Rent,
-    spl_nonce_client::instruction::initialize,
+    spl_nonce_client::instruction::{create_account, initialize},
     spl_nonce_interface::state::{NONCE_INIT_TAG, Nonce},
 };
 
@@ -156,6 +156,56 @@ fn initialize_writes_expected_state() {
         ])
     );
     assert_eq!(state.authority, authority_address);
+}
+
+#[test]
+fn create_account_creates_and_initializes_nonce_account() {
+    let mollusk = init_mollusk();
+    let payer_address = Address::new_unique();
+    let nonce_account_address = Address::new_unique();
+    let authority_address = Address::new_unique();
+    let rent_lamports = mollusk.sysvars.rent.minimum_balance(Nonce::LEN);
+    let expected_account = NonceAccountBuilder::new()
+        .key(nonce_account_address)
+        .lamports(rent_lamports)
+        .initialized(
+            authority_address,
+            &mollusk.sysvars.slot_hashes.first().unwrap().1,
+        )
+        .build()
+        .1;
+
+    mollusk.process_and_validate_transaction_instructions(
+        &create_account(
+            &payer_address,
+            &nonce_account_address,
+            &authority_address,
+            rent_lamports,
+        ),
+        &[
+            (
+                payer_address,
+                Account {
+                    lamports: rent_lamports,
+                    ..Account::default()
+                },
+            ),
+            (nonce_account_address, Account::default()),
+            (authority_address, Account::default()),
+            mollusk.sysvars.keyed_account_for_slot_hashes_sysvar(),
+        ],
+        &[
+            Check::success(),
+            Check::account(&payer_address).lamports(0).build(),
+            Check::account(&nonce_account_address)
+                .owner(&expected_account.owner)
+                .lamports(expected_account.lamports)
+                .space(Nonce::LEN)
+                .data(&expected_account.data)
+                .build(),
+        ],
+        Some(&payer_address),
+    );
 }
 
 #[test]
