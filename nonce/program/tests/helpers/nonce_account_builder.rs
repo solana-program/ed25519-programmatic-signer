@@ -1,5 +1,5 @@
 use {
-    solana_account::Account, solana_address::Address, solana_rent::Rent,
+    solana_account::Account, solana_address::Address, solana_hash::Hash, solana_rent::Rent,
     spl_nonce_interface::state::Nonce,
 };
 
@@ -43,6 +43,19 @@ impl NonceAccountBuilder {
 
     pub fn data(mut self, data: Vec<u8>) -> Self {
         self.data = Some(data);
+        self
+    }
+
+    pub fn initialized(mut self, authority: Address, recent_slot_hash: &Hash) -> Self {
+        let state = Nonce {
+            nonce: Nonce::derive_initial_nonce(
+                &spl_nonce_interface::id(),
+                &self.key,
+                recent_slot_hash,
+            ),
+            authority,
+        };
+        self.data = Some(wincode::serialize(&state).unwrap());
         self
     }
 

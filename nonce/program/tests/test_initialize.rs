@@ -165,6 +165,15 @@ fn create_account_creates_and_initializes_nonce_account() {
     let nonce_account_address = Address::new_unique();
     let authority_address = Address::new_unique();
     let rent_lamports = mollusk.sysvars.rent.minimum_balance(Nonce::LEN);
+    let expected_account = NonceAccountBuilder::new()
+        .key(nonce_account_address)
+        .lamports(rent_lamports)
+        .initialized(
+            authority_address,
+            &mollusk.sysvars.slot_hashes.first().unwrap().1,
+        )
+        .build()
+        .1;
 
     mollusk.process_and_validate_transaction_instructions(
         &create_account(
@@ -185,7 +194,16 @@ fn create_account_creates_and_initializes_nonce_account() {
             (authority_address, Account::default()),
             mollusk.sysvars.keyed_account_for_slot_hashes_sysvar(),
         ],
-        &[Check::success()],
+        &[
+            Check::success(),
+            Check::account(&payer_address).lamports(0).build(),
+            Check::account(&nonce_account_address)
+                .owner(&expected_account.owner)
+                .lamports(expected_account.lamports)
+                .space(Nonce::LEN)
+                .data(&expected_account.data)
+                .build(),
+        ],
         Some(&payer_address),
     );
 }
