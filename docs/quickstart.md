@@ -5,17 +5,22 @@ then submit it with an online fee payer. Run steps 1–7 in order. After that, c
 from the optional recipes for tokens, multiple signatures, designated relayers,
 nonce chains, cancellation, and other program instructions.
 
-All transactions here use a fresh local validator running this checkout's programs.
-The commands and program IDs below are not a guide to a public-network deployment.
+All transactions here use **Devnet** and its test SOL. The three programs are
+already deployed; you only need to build the CLI:
+
+| Program | Devnet address |
+| --- | --- |
+| Nonce | [Noncediea1fH12usShuQAz28UhgAeuE5Maf32LsMUQB](https://explorer.solana.com/address/Noncediea1fH12usShuQAz28UhgAeuE5Maf32LsMUQB?cluster=devnet) |
+| Signer | [EdSigVfK1DkeMrjFNDMjwfQaJPhPTtX7jW8uPv3oKEgN](https://explorer.solana.com/address/EdSigVfK1DkeMrjFNDMjwfQaJPhPTtX7jW8uPv3oKEgN?cluster=devnet) |
+| Executor | [ExecxgyHYsAXB4c5dZodV1zJZ9hqfsDCYkRDRATrpkFR](https://explorer.solana.com/address/ExecxgyHYsAXB4c5dZodV1zJZ9hqfsDCYkRDRATrpkFR?cluster=devnet) |
 
 ## Before you start
 
-Use Bash in two terminals, both opened at the repository root. You need:
+Use Bash in one terminal opened at the repository root. You need:
 
 - Rust from `rust-toolchain.toml` and `nightly-2026-01-22` for the CLI build. If the
   nightly is missing, install it with `rustup toolchain install nightly-2026-01-22`.
-- Solana CLI **3.1.8**, including `solana-keygen`, `solana-test-validator`, and the
-  `cargo build-sbf` tools.
+- Solana CLI **3.1.8**, including `solana-keygen`.
 - `make` and `jq`. The token recipe additionally needs SPL Token CLI **5.5.0**.
 
 Three roles participate. You will play all three on one machine using disposable
@@ -32,36 +37,22 @@ It is derived from the cold authority, but has no private key. The **SPL Nonce
 account** holds a value that changes when a transaction succeeds, preventing replay.
 See [how it works](architecture.md) for the program execution path.
 
-## 1. Build and start the local validator — terminal A
+## 1. Build the CLI
 
-Build the CLI and the three programs:
-
-```sh
-make build-clients-cli build-sbf-nonce-program build-sbf-signer-program build-sbf-executor-program
-```
-
-Start a validator with a fresh ledger and the programs loaded at their declared IDs:
+Build the command-line client from this checkout:
 
 ```sh
-solana-test-validator --ledger "$(mktemp -d "$PWD/target/quickstart-ledger.XXXXXX")" \
-  --bind-address 127.0.0.1 --rpc-port 18899 --faucet-port 18901 \
-  --bpf-program Noncediea1fH12usShuQAz28UhgAeuE5Maf32LsMUQB target/deploy/spl_nonce_program.so \
-  --bpf-program EdSigVfK1DkeMrjFNDMjwfQaJPhPTtX7jW8uPv3oKEgN target/deploy/spl_ed25519_signer_program.so \
-  --bpf-program ExecxgyHYsAXB4c5dZodV1zJZ9hqfsDCYkRDRATrpkFR target/deploy/spl_legacy_message_executor_program.so
+make build-clients-cli
 ```
 
-Wait until processed slots advance, then leave this terminal running. Ports
-18899–18901 must be available. If you choose different ports, use the matching RPC
-URL in step 2. Run all remaining commands in terminal B.
-
-## 2. Create keys and an isolated CLI configuration — terminal B
+## 2. Create keys and an isolated CLI configuration
 
 Create a new working directory and three local keypair files:
 
 ```sh
 CLI="$PWD/target/debug/spl-programmatic-signer-cli"
 WORK=$(mktemp -d "$PWD/target/quickstart.XXXXXX")
-RPC=http://127.0.0.1:18899
+RPC=https://api.devnet.solana.com
 for key in payer cold recipient; do
   solana-keygen new --silent --no-bip39-passphrase --outfile "$WORK/$key.json"
 done
@@ -80,16 +71,23 @@ GENESIS_HASH=$(solana -C "$CONFIG" genesis-hash)
 COLD_ADDRESS=$(solana -C "$CONFIG" address -k "$COLD")
 RECIPIENT=$(solana-keygen pubkey "$WORK/recipient.json")
 PDA=$("$CLI" -C "$CONFIG" address "$COLD_ADDRESS")
-solana -C "$CONFIG" airdrop 10 "$(solana-keygen pubkey "$PAYER")"
-solana -C "$CONFIG" balance
-printf 'Cold authority: %s\nPDA: %s\nRecipient: %s\nGenesis hash: %s\n' \
-  "$COLD_ADDRESS" "$PDA" "$RECIPIENT" "$GENESIS_HASH"
+printf 'Payer: %s\nCold authority: %s\nPDA: %s\nRecipient: %s\nGenesis hash: %s\n' \
+  "$(solana-keygen pubkey "$PAYER")" "$COLD_ADDRESS" "$PDA" "$RECIPIENT" "$GENESIS_HASH"
 ```
 
-The payer balance should be **10 SOL**, and the PDA should differ from the cold
-address. The local faucet funds the payer; it does not fund the cold authority.
-For actual offline use, the cold key stays on the signing machine and only its
-public address is given to the coordinator.
+The PDA should differ from the cold address. Request **1 Devnet SOL** for the
+online payer, enough for the walkthrough and all optional recipes:
+
+```sh
+solana -C "$CONFIG" airdrop 1 "$(solana-keygen pubkey "$PAYER")"
+solana -C "$CONFIG" balance
+```
+
+If the airdrop is rate-limited, fund the payer address through the
+[Solana Devnet faucet](https://faucet.solana.com/) or an existing Devnet wallet,
+then check the balance again before continuing. The cold authority needs no SOL.
+For actual offline use, its key stays on the signing machine and only its public
+address is given to the coordinator.
 
 ## 3. Create a nonce and fund the PDA
 
@@ -156,7 +154,7 @@ JSON whitespace does not invalidate them. These wrapped files are inputs to
 
 ## 5. Inspect, then sign offline
 
-Run these commands in terminal B for this local exercise. With separate machines,
+Run these commands in the same terminal for this exercise. With separate machines,
 move `transfer.json` to the signing machine, adjust the file paths, and inspect it
 there. `inspect` and `sign` do not query RPC; a separate signing machine can omit
 `-C "$CONFIG"` and use its own cold key.
@@ -221,10 +219,10 @@ message using the current nonce, or prepare a chain as below.
 
 ## Optional recipes
 
-These recipes reuse terminal B's keys, configuration, funded PDA, recipient, and
-nonce account after step 7. Each reads the nonce it needs, so you may choose them
+These recipes reuse the same session's keys, configuration, funded PDA, recipient,
+and nonce account after step 7. Each reads the nonce it needs, so you may choose them
 independently. Run each recipe once in this working directory; use new filenames
-if you repeat one. Keep the validator running until you finish.
+if you repeat one.
 
 ### Pre-sign a chain and sign a batch
 
@@ -383,8 +381,8 @@ payer cannot bypass the required relayer's live signature.
 
 ### Transfer SPL tokens
 
-Create a local six-decimal mint and two token accounts, then mint two tokens to
-the PDA. These setup transactions use the online payer:
+Create a six-decimal test mint and two token accounts on Devnet, then mint two
+tokens to the PDA. These setup transactions use the online payer:
 
 ```sh
 for key in mint source-token destination-token; do
@@ -509,15 +507,18 @@ Submission checks the live nonce, cluster genesis hash, and all signatures again
 
 ## Finish, restart, or troubleshoot
 
-Stop the validator with Ctrl-C in terminal A when finished. The working files and
-ledger remain under `target/`. A fresh ledger has a new genesis and nonce state;
-restart the walkthrough with a fresh working directory for that ledger. Keep the
-same terminal B session while following a run so its variables remain available.
+Keep the same terminal session while following a run so its variables remain
+available. Your working files remain under `target/`, and the accounts remain on
+Devnet. To start over, repeat the walkthrough with a fresh working directory and
+fund the new payer. Devnet can reset; after a reset, check the program deployments
+above and create fresh accounts and transaction files.
 
 - `nonce mismatch`: refresh with `nonce show` and rebuild. Replays and canceled
   files are expected to fail this way.
-- Keep using the same local RPC for online commands. A different cluster fails
+- Keep using Devnet for online commands. A different cluster fails
   genesis verification.
+- The public RPC and faucet have rate limits. For a `429` response, wait before
+  retrying, or set the walkthrough configuration to another Devnet RPC endpoint.
 - The PDA needs the assets spent by its instructions; the online payer needs SOL
   for fees. Failed inner execution rolls back the nonce change.
 - Existing output files are never overwritten. Use a fresh name or directory for
