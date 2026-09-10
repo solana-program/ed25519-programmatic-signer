@@ -21,10 +21,11 @@ Use Bash in one terminal opened at the repository root. You need:
 - Rust from `rust-toolchain.toml` and `nightly-2026-01-22` for the CLI build. If the
   nightly is missing, install it with `rustup toolchain install nightly-2026-01-22`.
 - Solana CLI **3.1.8**, including `solana-keygen`.
+- A keypair in your Solana CLI configuration for the online payer.
 - `make` and `jq`. The token transfer workflow also needs SPL Token CLI **5.5.0**.
 
-Three roles participate. You will play all three on one machine using disposable
-keys, while keeping their responsibilities distinct:
+Three roles participate. You will play all three on one machine using an existing
+funded payer and disposable cold and recipient keys:
 
 | Role | What it does | Key or account |
 | --- | --- | --- |
@@ -47,8 +48,8 @@ make build-clients-cli
 
 ## 2. Create keys and select Devnet
 
-Set `PCLI` to the programmatic signer CLI, then create a working directory and
-three local keypair files:
+Set `PCLI` to the programmatic signer CLI and use your configured Solana keypair
+as the online payer. Create a working directory and two disposable keypairs:
 
 ```sh
 PCLI="$PWD/target/debug/spl-programmatic-signer-cli"
@@ -57,14 +58,14 @@ WORK=$(mktemp -d "$PWD/target/quickstart.XXXXXX")
 
 RPC=https://api.devnet.solana.com
 
-for key in payer cold recipient; do
+PAYER=$(solana config get keypair | sed 's/^Key Path: //; s/[[:space:]]*$//')
+
+for key in cold recipient; do
   solana-keygen new \
     --silent \
     --no-bip39-passphrase \
     --outfile "$WORK/$key.json"
 done
-
-PAYER="$WORK/payer.json"
 
 COLD="$WORK/cold.json"
 ```
@@ -72,13 +73,9 @@ COLD="$WORK/cold.json"
 Online commands below specify Devnet with `--url "$RPC"`. Commands that sign
 select the payer or authority with `--keypair`, `--fee-payer`, or `--owner`. These
 flags apply to that invocation; your saved Solana CLI configuration stays unchanged.
-Check the Devnet connection and record the public addresses for this walkthrough:
+Record the public addresses for this walkthrough:
 
 ```sh
-solana cluster-version \
-  --url "$RPC" \
-  --commitment confirmed
-
 COLD_ADDRESS=$(solana address --keypair "$COLD")
 
 RECIPIENT=$(solana-keygen pubkey "$WORK/recipient.json")
@@ -89,10 +86,7 @@ printf 'Payer: %s\nCold authority: %s\nPDA: %s\nRecipient: %s\n' \
   "$(solana-keygen pubkey "$PAYER")" "$COLD_ADDRESS" "$PDA" "$RECIPIENT"
 ```
 
-The PDA should differ from the cold address. Open the
-[Solana Devnet faucet](https://faucet.solana.com/), select Devnet, and paste the
-**Payer** address printed above. Request at least **1 Devnet SOL**, enough for the
-walkthrough and all additional workflows. Once it arrives, check the payer's balance:
+The PDA should differ from the cold address. Check the payer's Devnet balance:
 
 ```sh
 solana balance "$(solana-keygen pubkey "$PAYER")" \
@@ -100,9 +94,12 @@ solana balance "$(solana-keygen pubkey "$PAYER")" \
   --commitment confirmed
 ```
 
-Confirm the payer is funded before continuing. The cold authority needs no SOL.
-For actual offline use, its key stays on the signing machine and only its public
-address is given to the coordinator.
+If needed, request test SOL from the [Solana Devnet faucet](https://faucet.solana.com/)
+using the **Payer** address above. **1 Devnet SOL** is enough for the walkthrough
+and all additional workflows. Wait for funding before continuing.
+
+The cold authority needs no SOL. For actual offline use, its key stays on the
+signing machine and only its public address is given to the coordinator.
 
 ## 3. Create a nonce and fund the PDA
 
@@ -121,24 +118,15 @@ NONCE_ACCOUNT=$(jq -er .nonceAccount "$WORK/nonce.json")
 
 NONCE_VALUE=$(jq -er .nonce "$WORK/nonce.json")
 
-"$PCLI" nonce show "$NONCE_ACCOUNT" \
-  --url "$RPC" \
-  --commitment confirmed
-
 solana transfer "$PDA" 0.1 \
   --url "$RPC" \
   --commitment confirmed \
   --keypair "$PAYER" \
   --allow-unfunded-recipient
-
-solana balance "$PDA" \
-  --url "$RPC" \
-  --commitment confirmed
 ```
 
-The nonce's authority should match `PDA`, and the PDA balance should be **0.1 SOL**.
-These are the assets the inner transfer will spend. The online payer separately
-pays for account creation and network fees.
+The PDA now holds **0.1 SOL** for inner transfers. The online payer separately pays
+for account creation and network fees.
 
 ## 4. Prepare the transfer without signing or submitting it
 
@@ -155,15 +143,12 @@ solana transfer "$RECIPIENT" 0.001 \
   --dump-transaction-message \
   --output json-compact \
   --allow-unfunded-recipient > "$WORK/transfer.source.json"
-
-jq '{blockhash, absent}' "$WORK/transfer.source.json"
 ```
 
-The output should list the PDA as an absent signer and show `NONCE_VALUE` as the
-blockhash. This is expected: a PDA cannot sign with a keypair. Here `--blockhash`
-carries the SPL nonce value; do not use Solana's native `--nonce` option, which
-uses a different protocol. `--fee-payer "$PDA"` identifies an inner signer; the
-online payer will pay the actual network fee when relaying.
+Here `--blockhash` carries the SPL nonce value; do not use Solana's native `--nonce`
+option, which uses a different protocol. The PDA cannot sign with a keypair.
+`--fee-payer "$PDA"` identifies an inner signer; the online payer pays the actual
+network fee when relaying.
 
 Wrap the source message into the transaction file that the cold authority signs:
 
@@ -195,10 +180,8 @@ Keep the three transaction files distinct:
 | `transfer.json` | Wrapped transaction with empty signature slots | Cold signer |
 | `transfer.signed.json` | The same wrapped message with signatures added in step 5 | Relayer |
 
-These files contain no private keys. Wrapped files use JSON serialization of
-`solana_transaction::Transaction`; signatures cover the binary message, so changing
-JSON whitespace does not invalidate them. These wrapped files are inputs to
-`transaction submit`, which builds the live network transaction.
+These files contain no private keys. Give the unsigned wrapped file to the cold
+signer, then return the signed file to the relayer.
 
 ## 5. Inspect, then sign offline
 
@@ -224,32 +207,24 @@ succeeds. Signing changes only the signature slots:
 "$PCLI" transaction sign "$WORK/transfer.json" \
   --keypair "$COLD" \
   --outfile "$WORK/transfer.signed.json"
-
-"$PCLI" transaction inspect "$WORK/transfer.signed.json"
 ```
 
-The authority should now be marked signed, with the same transfer and nonce.
 Return only the signed transaction file to the relayer; keep the cold key offline.
 
-## 6. Verify, simulate the relay, and submit
+## 6. Simulate the relay and submit
 
-The online relayer checks the signed file against the live nonce and cluster:
+Relay simulation verifies the signatures, live nonce, and cluster, then checks the
+complete programmatic signing and nonce execution path without sending it:
 
 ```sh
-"$PCLI" transaction verify "$WORK/transfer.signed.json" \
-  --url "$RPC" \
-  --commitment confirmed \
-  --fetch-nonce
-
 "$PCLI" transaction simulate relay "$WORK/transfer.signed.json" \
   --url "$RPC" \
   --commitment confirmed \
   --fee-payer "$PAYER"
 ```
 
-Expect `Fully signed: true` and `relay simulation succeeded`. Relay simulation
-checks the complete programmatic signing and nonce execution path without sending
-it. Now submit with the online payer selected by `--fee-payer "$PAYER"`:
+Expect `relay simulation succeeded`. Now submit with the online payer selected
+by `--fee-payer "$PAYER"`:
 
 ```sh
 "$PCLI" transaction submit "$WORK/transfer.signed.json" \
@@ -261,10 +236,6 @@ solana balance "$RECIPIENT" \
   --url "$RPC" \
   --commitment confirmed \
   --lamports
-
-"$PCLI" nonce show "$NONCE_ACCOUNT" \
-  --url "$RPC" \
-  --commitment confirmed
 ```
 
 Submission prints a confirmed signature and predicted/observed successor nonce.
@@ -273,14 +244,14 @@ changed to the predicted successor; the original file no longer matches it.
 
 ## 7. Check replay protection
 
-Submit the same file again. **This command is expected to fail** with
-`nonce mismatch`; continue after that error. A different error needs investigation.
+Verify the submitted file against the live nonce. **This command is expected to
+fail** with `nonce mismatch`, showing why the same transfer cannot be replayed:
 
 ```sh
-"$PCLI" transaction submit "$WORK/transfer.signed.json" \
+"$PCLI" transaction verify "$WORK/transfer.signed.json" \
   --url "$RPC" \
   --commitment confirmed \
-  --fee-payer "$PAYER"
+  --fetch-nonce
 ```
 
 The transfer cannot land twice. To send another transaction, build a new source
@@ -333,7 +304,10 @@ the successor against its predecessor without querying RPC:
 ```sh
 "$PCLI" transaction inspect "$WORK/first.json"
 
-NEXT=$("$PCLI" transaction inspect "$WORK/first.json" --output json-compact | jq -er .nextNonce)
+NEXT=$(
+  "$PCLI" transaction inspect "$WORK/first.json" --output json-compact |
+  jq -er .nextNonce
+)
 
 solana transfer "$RECIPIENT" 0.001 \
   --url "$RPC" \
@@ -494,11 +468,6 @@ solana transfer "$RECIPIENT" 0.001 \
 
 "$PCLI" transaction merge "$WORK/multisig.first.json" "$WORK/multisig.second.json" --outfile "$WORK/multisig.signed.json"
 
-"$PCLI" transaction verify "$WORK/multisig.signed.json" \
-  --url "$RPC" \
-  --commitment confirmed \
-  --fetch-nonce
-
 "$PCLI" transaction simulate relay "$WORK/multisig.signed.json" \
   --url "$RPC" \
   --commitment confirmed \
@@ -511,22 +480,16 @@ solana transfer "$RECIPIENT" 0.001 \
 ```
 
 Each authority independently inspects and signs a copy. Merge accepts only copies
-of exactly the same message with valid signatures. Verification should report
-`Fully signed: true` after merging both approvals.
+of exactly the same message with valid signatures. Relay simulation checks that
+all required approvals are present.
 
 ### Require a designated relayer
 
-Ordinarily anyone holding a fully signed file may relay it. To restrict that,
-make a separate relayer key an inner signer and name it with `--submit-signer`.
-Here it is the inner fee-payer slot; the funded online payer still pays network fees:
+Ordinarily anyone holding a fully signed file may relay it. To restrict submission
+to your online payer, make it an inner signer and name it with `--submit-signer`:
 
 ```sh
-solana-keygen new \
-  --silent \
-  --no-bip39-passphrase \
-  --outfile "$WORK/relayer.json"
-
-RELAYER=$(solana-keygen pubkey "$WORK/relayer.json")
+RELAYER=$(solana-keygen pubkey "$PAYER")
 
 NONCE_VALUE=$(
   "$PCLI" nonce show "$NONCE_ACCOUNT" \
@@ -563,81 +526,65 @@ solana transfer "$RECIPIENT" 0.001 \
   --outfile "$WORK/designated.cold.json"
 
 "$PCLI" transaction sign "$WORK/designated.cold.json" \
-  --keypair "$WORK/relayer.json" \
+  --keypair "$PAYER" \
   --outfile "$WORK/designated.ready.json"
 ```
 
-Without the live relayer key, simulation is expected to fail with `missing outer
-signer` even though both file signatures are present:
+Simulate and submit with the designated payer. `--fee-payer` supplies its live
+signature as well as paying the network fee:
 
 ```sh
 "$PCLI" transaction simulate relay "$WORK/designated.ready.json" \
   --url "$RPC" \
   --commitment confirmed \
   --fee-payer "$PAYER"
-```
-
-Supply that key to simulate and submit successfully:
-
-```sh
-"$PCLI" transaction simulate relay "$WORK/designated.ready.json" \
-  --url "$RPC" \
-  --commitment confirmed \
-  --fee-payer "$PAYER" \
-  --submit-signer "$WORK/relayer.json"
 
 "$PCLI" transaction submit "$WORK/designated.ready.json" \
   --url "$RPC" \
   --commitment confirmed \
-  --fee-payer "$PAYER" \
-  --submit-signer "$WORK/relayer.json"
+  --fee-payer "$PAYER"
 ```
 
 The relayer signs both the file and the live outer transaction. A different fee
-payer cannot bypass the required relayer's live signature.
+payer cannot bypass the required relayer's live signature. When those roles use
+different keys, pass the relayer's key with `--submit-signer` to simulation and
+submission alongside `--fee-payer`.
 
 ### Transfer SPL tokens
 
-Create a six-decimal test mint and two token accounts on Devnet, then mint two
-tokens to the PDA. These setup transactions use the online payer:
+Use [Circle's Devnet USDC mint](https://developers.circle.com/stablecoins/usdc-contract-addresses).
+Create associated token accounts for the PDA and recipient, paid for by the
+online payer:
 
 ```sh
-for key in mint source-token destination-token; do
-  solana-keygen new \
-    --silent \
-    --no-bip39-passphrase \
-    --outfile "$WORK/$key.json"
-done
+USDC_MINT=4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU
 
-MINT=$(solana-keygen pubkey "$WORK/mint.json")
-
-SOURCE_TOKEN=$(solana-keygen pubkey "$WORK/source-token.json")
-
-DESTINATION_TOKEN=$(solana-keygen pubkey "$WORK/destination-token.json")
-
-spl-token create-token "$WORK/mint.json" \
-  -u "$RPC" \
-  --decimals 6 \
-  --fee-payer "$PAYER" \
-  --mint-authority "$PAYER"
-
-spl-token create-account "$MINT" "$WORK/source-token.json" \
+spl-token create-account "$USDC_MINT" \
   -u "$RPC" \
   --owner "$PDA" \
   --fee-payer "$PAYER"
 
-spl-token create-account "$MINT" "$WORK/destination-token.json" \
+spl-token create-account "$USDC_MINT" \
   -u "$RPC" \
   --owner "$RECIPIENT" \
   --fee-payer "$PAYER"
 
-spl-token mint "$MINT" 2 "$SOURCE_TOKEN" \
-  -u "$RPC" \
-  --fee-payer "$PAYER" \
-  --mint-authority "$PAYER"
+DESTINATION_TOKEN=$(
+  spl-token address \
+    -u "$RPC" \
+    --token "$USDC_MINT" \
+    --owner "$RECIPIENT" \
+    --verbose \
+    --output json-compact |
+  jq -er .associatedTokenAddress
+)
+
+printf 'Send Devnet USDC to the PDA: %s\n' "$PDA"
 ```
 
-Build a checked transfer of 1.25 tokens, inspect the mint, amount and decimals,
+Open the [Circle faucet](https://faucet.circle.com/), choose **USDC** and **Solana
+Devnet**, and paste the **PDA** address printed above. After funding arrives,
+build a checked transfer of **1 USDC**, inspect the mint, amount and six decimals,
 then follow the same signing and relay flow:
 
 ```sh
@@ -649,9 +596,8 @@ NONCE_VALUE=$(
   jq -er .nonce
 )
 
-spl-token transfer "$MINT" 1.25 "$DESTINATION_TOKEN" \
+spl-token transfer "$USDC_MINT" 1 "$DESTINATION_TOKEN" \
   -u "$RPC" \
-  --from "$SOURCE_TOKEN" \
   --owner "$PDA" \
   --fee-payer "$PDA" \
   --blockhash "$NONCE_VALUE" \
@@ -680,11 +626,6 @@ spl-token transfer "$MINT" 1.25 "$DESTINATION_TOKEN" \
   --keypair "$COLD" \
   --outfile "$WORK/token.signed.json"
 
-"$PCLI" transaction verify "$WORK/token.signed.json" \
-  --url "$RPC" \
-  --commitment confirmed \
-  --fetch-nonce
-
 "$PCLI" transaction simulate relay "$WORK/token.signed.json" \
   --url "$RPC" \
   --commitment confirmed \
@@ -697,15 +638,11 @@ spl-token transfer "$MINT" 1.25 "$DESTINATION_TOKEN" \
 
 spl-token balance \
   -u "$RPC" \
-  --address "$SOURCE_TOKEN"
-
-spl-token balance \
-  -u "$RPC" \
   --address "$DESTINATION_TOKEN"
 ```
 
-The source holds 0.75 tokens and the recipient holds 1.25. A token-owning PDA
-need not hold SOL; the online payer covers account creation and relay fees.
+The recipient now holds **1 USDC**. A token-owning PDA need not hold SOL; the online
+payer covers account creation and relay fees.
 
 ### Include other program instructions
 
@@ -756,11 +693,6 @@ belong to the same signed message and execute in the same transaction:
 "$PCLI" transaction sign "$WORK/memo.json" \
   --keypair "$COLD" \
   --outfile "$WORK/memo.signed.json"
-
-"$PCLI" transaction verify "$WORK/memo.signed.json" \
-  --url "$RPC" \
-  --commitment confirmed \
-  --fetch-nonce
 
 "$PCLI" transaction simulate relay "$WORK/memo.signed.json" \
   --url "$RPC" \
