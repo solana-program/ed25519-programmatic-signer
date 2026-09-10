@@ -75,17 +75,16 @@ printf 'Payer: %s\nCold authority: %s\nPDA: %s\nRecipient: %s\nGenesis hash: %s\
   "$(solana-keygen pubkey "$PAYER")" "$COLD_ADDRESS" "$PDA" "$RECIPIENT" "$GENESIS_HASH"
 ```
 
-The PDA should differ from the cold address. Request **1 Devnet SOL** for the
-online payer, enough for the walkthrough and all optional recipes:
+The PDA should differ from the cold address. Open the
+[Solana Devnet faucet](https://faucet.solana.com/), select Devnet, and paste the
+**Payer** address printed above. Request at least **1 Devnet SOL**, enough for the
+walkthrough and all optional recipes. Once it arrives, check the payer's balance:
 
 ```sh
-solana --url "$RPC" --commitment confirmed airdrop 1 "$(solana-keygen pubkey "$PAYER")"
 solana --url "$RPC" --commitment confirmed balance "$(solana-keygen pubkey "$PAYER")"
 ```
 
-If the airdrop is rate-limited, fund the payer address through the
-[Solana Devnet faucet](https://faucet.solana.com/) or an existing Devnet wallet,
-then check the balance again before continuing. The cold authority needs no SOL.
+Confirm the payer is funded before continuing. The cold authority needs no SOL.
 For actual offline use, its key stays on the signing machine and only its public
 address is given to the coordinator.
 
@@ -556,7 +555,7 @@ above and create fresh accounts and transaction files.
   files are expected to fail this way.
 - Keep using Devnet for online commands. A different cluster fails
   genesis verification.
-- The public RPC and faucet have rate limits. For a `429` response, wait before
+- The public RPC has rate limits. For a `429` response, wait before
   retrying, or set `RPC` to another Devnet RPC endpoint.
 - The PDA needs the assets spent by its instructions; the online payer needs SOL
   for fees. Failed inner execution rolls back the nonce change.
