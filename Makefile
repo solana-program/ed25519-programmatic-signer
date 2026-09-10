@@ -104,23 +104,18 @@ check-no-std-alloc-%:
 		-Zbuild-std=alloc,core \
 		$(ARGS)
 
-# Local-only rehearsals. No deployment or publishing targets are invoked.
-.PHONY: demo-local check-clients
+# Local CLI checks and end-to-end rehearsal.
+.PHONY: demo-local check-clients build-clients-cli
 
 demo-local: build-clients-cli build-sbf-nonce-program build-sbf-signer-program build-sbf-executor-program
 	bash scripts/demo-local.sh
 
-check-clients:
-	$(MAKE) format-check-clients-cli format-check-clients-rust \
-		clippy-clients-cli clippy-clients-rust \
-		build-doc-clients-cli build-doc-clients-rust \
-		powerset-clients-cli powerset-clients-rust \
-		build-sbf-nonce-program build-sbf-signer-program build-sbf-executor-program \
-		test-clients-cli test-clients-rust
+check-clients: build-sbf-nonce-program build-sbf-signer-program build-sbf-executor-program
+	$(MAKE) format-check-clients-cli \
+		clippy-clients-cli \
+		build-doc-clients-cli \
+		powerset-clients-cli \
+		test-clients-cli
 
-example-%:
-	cargo $(nightly) run --manifest-path $(call make-path,$*)/Cargo.toml $(ARGS)
-
-build-%:
-	cargo $(nightly) build --manifest-path $(call make-path,$*)/Cargo.toml $(ARGS)
-
+build-clients-cli:
+	cargo $(nightly) build --manifest-path clients/cli/Cargo.toml $(ARGS)

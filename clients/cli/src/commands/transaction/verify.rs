@@ -9,7 +9,6 @@ use {
     solana_address::Address,
     solana_hash::Hash,
     spl_nonce_interface::state::Nonce,
-    spl_programmatic_signer_client::{inspect, is_fully_signed, verify},
     std::path::PathBuf,
 };
 
@@ -37,7 +36,6 @@ pub(super) async fn run(
     output: OutputFormat,
 ) -> Result<String> {
     let transaction = artifact::read(&command.transaction)?;
-    let summary = inspect(&transaction)?;
     let (state, genesis_hash) = if command.fetch_nonce {
         let genesis_hash = client.genesis_hash().await?;
         if command
@@ -47,7 +45,7 @@ pub(super) async fn run(
             bail!("genesis hash does not match RPC cluster");
         }
         (
-            client.require_nonce(&summary.nonce_account).await?,
+            client.require_nonce(transaction.nonce_account()).await?,
             genesis_hash,
         )
     } else {
@@ -62,14 +60,14 @@ pub(super) async fn run(
             genesis_hash,
         )
     };
-    verify(&transaction, &state, &summary.nonce_account, &genesis_hash)?;
-    let fully_signed = is_fully_signed(&transaction);
+    transaction.verify(&state, &genesis_hash)?;
+    let fully_signed = transaction.is_fully_signed();
     if !fully_signed && !command.allow_partial {
         bail!("transaction is not fully signed; use --allow-partial to inspect partial progress");
     }
     output.render(&VerifyOutput {
         fully_signed,
-        nonce_account: summary.nonce_account.to_string(),
+        nonce_account: transaction.nonce_account().to_string(),
         nonce: state.nonce.to_string(),
         genesis_hash: genesis_hash.to_string(),
     })

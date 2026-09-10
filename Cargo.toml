@@ -2,7 +2,6 @@
 resolver = "2"
 members = [
     "clients/cli",
-    "clients/rust",
     "executor/client",
     "executor/interface",
     "executor/program",
@@ -22,8 +21,8 @@ license = "Apache-2.0"
 edition = "2021"
 
 [workspace.dependencies]
-base64 = "0.22.1"
 anyhow = "1.0.104"
+base64 = "0.22.1"
 brine-ed25519 = "0.7.0"
 clap = "3.2.25"
 codama-macros = "0.13.1"
@@ -67,7 +66,6 @@ spl-legacy-message-executor-client = { path = "executor/client" }
 spl-legacy-message-executor-interface = { path = "executor/interface" }
 spl-nonce-client = { path = "nonce/client" }
 spl-nonce-interface = { path = "nonce/interface" }
-spl-programmatic-signer-client = { path = "clients/rust" }
 spl-token-interface = "3.0.0"
 
 [workspace.lints.rust.unexpected_cfgs]

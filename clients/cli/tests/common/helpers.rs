@@ -33,8 +33,9 @@ pub async fn setup_test_env() -> TestEnv {
         spl_legacy_message_executor_interface::id(),
     );
     let (validator, payer) = genesis.start_async().await;
-    let nonce_rent_lamports = validator
-        .get_async_rpc_client()
+    let commitment = CommitmentConfig::confirmed();
+    let rpc = RpcClient::new_with_commitment(validator.rpc_url(), commitment);
+    let nonce_rent_lamports = rpc
         .get_minimum_balance_for_rent_exemption(Nonce::LEN)
         .await
         .unwrap();
@@ -50,14 +51,14 @@ pub async fn setup_test_env() -> TestEnv {
         json_rpc_url: validator.rpc_url(),
         websocket_url: validator.rpc_pubsub_url(),
         keypair_path: payer_file.path().to_str().unwrap().to_string(),
-        commitment: CommitmentConfig::confirmed().commitment.to_string(),
+        commitment: commitment.commitment.to_string(),
         ..SolanaConfig::default()
     }
     .save(&config_file_path)
     .unwrap();
 
     TestEnv {
-        rpc: validator.get_async_rpc_client(),
+        rpc,
         payer,
         payer_address,
         config_file_path,

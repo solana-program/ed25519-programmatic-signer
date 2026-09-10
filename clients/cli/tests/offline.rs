@@ -3,9 +3,12 @@ use {
     solana_address::Address,
     solana_hash::Hash,
     solana_keypair::{Keypair, write_keypair_file},
+    solana_message::legacy::Message,
+    solana_signature::Signature,
     solana_signer::Signer,
     solana_transaction::versioned::VersionedTransaction,
-    spl_programmatic_signer_client::{TransactionPlan, build_transaction, sign_transaction},
+    spl_ed25519_signer_client::{ProgrammaticSigner, message::wrapped_message},
+    spl_legacy_message_executor_client::instruction::execute,
     std::{
         fs,
         process::{Command, Output},
@@ -25,12 +28,20 @@ impl Fixture {
         let authority = Keypair::new();
         write_keypair_file(&authority, dir.path().join("cold.json")).unwrap();
         write_keypair_file(&Keypair::new(), dir.path().join("payer.json")).unwrap();
-        let transaction = build_transaction(
-            &TransactionPlan::cancellation(Address::new_unique(), authority.pubkey()).unwrap(),
-            Hash::new_from_array([1; 32]),
-            Hash::new_from_array([2; 32]),
-        )
-        .unwrap();
+        let pda = ProgrammaticSigner::derive_address(
+            &spl_ed25519_signer_client::id(),
+            &authority.pubkey(),
+        );
+        let inner = Message::new_with_blockhash(&[], Some(&pda), &Hash::new_from_array([1; 32]));
+        let mut message = wrapped_message(
+            &execute(&Address::new_unique(), &inner),
+            &[authority.pubkey()],
+        );
+        message.set_recent_blockhash(Hash::new_from_array([2; 32]));
+        let transaction = VersionedTransaction {
+            message,
+            signatures: vec![Signature::default()],
+        };
         let fixture = Self {
             dir,
             authority,
@@ -77,25 +88,8 @@ impl Fixture {
 }
 
 #[test]
-fn offline_relay_assembly_and_signature_validation() {
+fn offline_inspection_rejects_invalid_signatures() {
     let mut fixture = Fixture::new();
-    sign_transaction(&mut fixture.transaction, &fixture.authority).unwrap();
-    fixture.save("signed.psigner", &fixture.transaction);
-    let output = fixture.succeeds(&[
-        "--fee-payer",
-        &fixture.path("payer.json"),
-        "transaction",
-        "submit",
-        &fixture.path("signed.psigner"),
-        "--no-send",
-        "--blockhash",
-        &Hash::new_from_array([3; 32]).to_string(),
-    ]);
-    let bytes = STANDARD
-        .decode(String::from_utf8(output.stdout).unwrap().trim())
-        .unwrap();
-    let relay: VersionedTransaction = wincode::deserialize_exact(&bytes).unwrap();
-    relay.verify_and_hash_message().unwrap();
     fixture.transaction.signatures[0] = [42; 64].into();
     fixture.save("bad.psigner", &fixture.transaction);
     fixture.fails(
@@ -152,7 +146,10 @@ fn batch_signing_preserves_existing_files_and_rejects_name_collisions() {
 #[test]
 fn verify_rejects_wrong_cluster_without_rpc() {
     let fixture = Fixture::new();
-    let summary = spl_programmatic_signer_client::inspect(&fixture.transaction).unwrap();
+    let pda = ProgrammaticSigner::derive_address(
+        &spl_ed25519_signer_client::id(),
+        &fixture.authority.pubkey(),
+    );
     fixture.fails(
         &[
             "transaction",
@@ -161,7 +158,7 @@ fn verify_rejects_wrong_cluster_without_rpc() {
             "--nonce-value",
             &Hash::new_from_array([1; 32]).to_string(),
             "--nonce-authority",
-            &summary.inner_required_signers[0].to_string(),
+            &pda.to_string(),
             "--genesis-hash",
             &Hash::new_from_array([9; 32]).to_string(),
             "--allow-partial",

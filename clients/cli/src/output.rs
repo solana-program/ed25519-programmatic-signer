@@ -7,7 +7,7 @@ use {
 };
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, ValueEnum)]
-pub(crate) enum OutputFormat {
+pub enum OutputFormat {
     #[default]
     Display,
     Json,
@@ -15,7 +15,7 @@ pub(crate) enum OutputFormat {
 }
 
 impl OutputFormat {
-    pub(crate) fn render(self, output: &(impl Display + Serialize)) -> Result<String> {
+    pub fn render(self, output: &(impl Display + Serialize)) -> Result<String> {
         match self {
             Self::Display => Ok(output.to_string()),
             Self::Json => serde_json::to_string_pretty(output).context("failed to encode JSON"),

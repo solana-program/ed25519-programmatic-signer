@@ -3,6 +3,7 @@ use {
         artifact,
         client::Client,
         output::{OutputFormat, SimulationOutput, SubmitOutput},
+        transaction::WrappedTransaction,
     },
     anyhow::{Context, Result, bail},
     clap::{Args, Subcommand},
@@ -11,7 +12,6 @@ use {
     solana_message::{VersionedMessage, legacy::Message},
     solana_signature::Signature,
     solana_transaction::versioned::VersionedTransaction,
-    spl_programmatic_signer_client::{inspect, nonce::next_nonce, submit_transaction, verify},
     std::{collections::BTreeSet, path::PathBuf},
 };
 
@@ -20,13 +20,6 @@ pub(crate) struct SubmitCommand {
     transaction: PathBuf,
     #[clap(long = "submit-signer", multiple_occurrences = true)]
     submit_signers: Vec<String>,
-    /// Build a relay file without sending. Requires an explicit recent blockhash.
-    #[clap(long, requires = "blockhash")]
-    no_send: bool,
-    #[clap(long, requires = "no-send")]
-    blockhash: Option<Hash>,
-    #[clap(long, requires = "no-send")]
-    outfile: Option<PathBuf>,
 }
 
 pub(super) async fn submit(
@@ -35,21 +28,16 @@ pub(super) async fn submit(
     output: OutputFormat,
 ) -> Result<String> {
     let transaction = artifact::read(&command.transaction)?;
-    if !command.no_send {
-        verify_live(&transaction, client).await?;
-    }
-    let blockhash = match command.blockhash {
-        Some(hash) => hash,
-        None => client.latest_blockhash().await?,
-    };
-    let relay = build_relay(&transaction, client, &command.submit_signers, blockhash)?;
-    if command.no_send {
-        return artifact::write(command.outfile.as_deref(), &relay);
-    }
+    verify_live(&transaction, client).await?;
+    let relay = build_relay(
+        &transaction,
+        client,
+        &command.submit_signers,
+        client.latest_blockhash().await?,
+    )?;
     let signature = client.send_and_confirm_transaction(&relay).await?;
-    let summary = inspect(&transaction)?;
     let state = client
-        .require_nonce(&summary.nonce_account)
+        .require_nonce(transaction.nonce_account())
         .await
         .with_context(|| {
             format!(
@@ -58,8 +46,8 @@ pub(super) async fn submit(
         })?;
     output.render(&SubmitOutput {
         signature,
-        nonce_account: summary.nonce_account.to_string(),
-        expected_next_nonce: next_nonce(&transaction)?.to_string(),
+        nonce_account: transaction.nonce_account().to_string(),
+        expected_next_nonce: transaction.next_nonce().to_string(),
         observed_nonce: state.nonce.to_string(),
     })
 }
@@ -93,34 +81,28 @@ pub(super) async fn simulate(
     let (mode, transaction, verify_signatures) = match command.mode {
         SimulateMode::Inner(command) => {
             let file = artifact::read(&command.transaction)?;
-            let summary = inspect(&file)?;
-            spl_programmatic_signer_client::verify_genesis_hash(
-                &file,
-                &client.genesis_hash().await?,
-            )?;
+            file.verify_genesis_hash(&client.genesis_hash().await?)?;
+            let inner = file.inner();
             let payer = client.fee_payer()?.try_pubkey()?;
             // Recompile the business instructions with the actual online fee payer. The
             // programmatic owner may hold tokens without any SOL to pay transaction fees.
-            let instructions = summary
-                .inner_instructions
+            let instructions = inner
+                .instructions
                 .iter()
                 .map(|instruction| Instruction {
-                    program_id: summary.inner_account_keys
-                        [usize::from(instruction.program_id_index)],
+                    program_id: inner.account_keys[usize::from(instruction.program_id_index)],
                     accounts: instruction
                         .accounts
                         .iter()
                         .map(|index| {
                             let index = usize::from(*index);
                             AccountMeta {
-                                pubkey: summary.inner_account_keys[index],
-                                is_signer: summary.inner_message.is_signer(index),
-                                is_writable: summary
-                                    .inner_message
-                                    .is_maybe_writable_with_reserved_addresses(
-                                        index,
-                                        None::<&BTreeSet<_>>,
-                                    ),
+                                pubkey: inner.account_keys[index],
+                                is_signer: inner.is_signer(index),
+                                is_writable: inner.is_maybe_writable_with_reserved_addresses(
+                                    index,
+                                    None::<&BTreeSet<_>>,
+                                ),
                             }
                         })
                         .collect(),
@@ -163,20 +145,13 @@ pub(super) async fn simulate(
     })
 }
 
-async fn verify_live(transaction: &VersionedTransaction, client: &Client) -> Result<()> {
-    let summary = inspect(transaction)?;
-    let state = client.require_nonce(&summary.nonce_account).await?;
-    verify(
-        transaction,
-        &state,
-        &summary.nonce_account,
-        &client.genesis_hash().await?,
-    )?;
-    Ok(())
+async fn verify_live(transaction: &WrappedTransaction, client: &Client) -> Result<()> {
+    let state = client.require_nonce(transaction.nonce_account()).await?;
+    transaction.verify(&state, &client.genesis_hash().await?)
 }
 
 fn build_relay(
-    transaction: &VersionedTransaction,
+    transaction: &WrappedTransaction,
     client: &Client,
     sources: &[String],
     blockhash: Hash,
@@ -190,10 +165,5 @@ fn build_relay(
         .iter()
         .map(|signer| signer.as_ref())
         .collect::<Vec<_>>();
-    Ok(submit_transaction(
-        transaction,
-        payer.as_ref(),
-        &signer_refs,
-        blockhash,
-    )?)
+    transaction.relay(payer.as_ref(), &signer_refs, blockhash)
 }

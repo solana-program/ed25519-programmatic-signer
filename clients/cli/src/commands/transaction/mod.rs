@@ -61,11 +61,9 @@ pub(crate) async fn run(
         TransactionSubcommand::Submit(command) => relay::submit(command, client, output).await,
         TransactionSubcommand::NextNonce(command) => {
             let transaction = artifact::read(&command.transaction)?;
-            let summary = spl_programmatic_signer_client::inspect(&transaction)?;
             output.render(&NextNonceOutput {
-                nonce_account: summary.nonce_account.to_string(),
-                next_nonce: spl_programmatic_signer_client::nonce::next_nonce(&transaction)?
-                    .to_string(),
+                nonce_account: transaction.nonce_account().to_string(),
+                next_nonce: transaction.next_nonce().to_string(),
             })
         }
     }

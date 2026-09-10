@@ -413,7 +413,12 @@ pub async fn failed_inner_simulation_and_submission_preserve_nonce(env: &TestEnv
         "simulation failed",
     );
     demo.fail(
-        &["transaction", "submit", &demo.file("signed.psigner")],
+        &[
+            "--skip-preflight",
+            "transaction",
+            "submit",
+            &demo.file("signed.psigner"),
+        ],
         "failed to send",
     );
     assert_eq!(demo.verify("signed.psigner").nonce, demo.nonce.to_string());

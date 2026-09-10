@@ -7,24 +7,23 @@ use {
     base64::{Engine as _, engine::general_purpose::STANDARD},
     solana_address::Address,
     solana_system_interface::{instruction::SystemInstruction, program as system_program},
-    spl_programmatic_signer_client::{inspect, nonce::next_nonce},
     spl_token_interface::instruction::TokenInstruction,
     std::{collections::BTreeSet, path::Path},
 };
 
 pub(super) fn run(path: &Path, output: OutputFormat) -> Result<String> {
     let transaction = artifact::read(path)?;
-    let summary = inspect(&transaction)?;
-    let instructions = summary
-        .inner_instructions
+    let inner = transaction.inner();
+    let instructions = inner
+        .instructions
         .iter()
         .map(|instruction| {
-            // inspect() validates every compiled index before presentation.
-            let program = summary.inner_account_keys[usize::from(instruction.program_id_index)];
+            // File decoding validates every compiled index before presentation.
+            let program = inner.account_keys[usize::from(instruction.program_id_index)];
             let accounts = instruction
                 .accounts
                 .iter()
-                .map(|index| summary.inner_account_keys[usize::from(*index)].to_string())
+                .map(|index| inner.account_keys[usize::from(*index)].to_string())
                 .collect::<Vec<_>>();
             Instruction {
                 program_id: program.to_string(),
@@ -34,32 +33,30 @@ pub(super) fn run(path: &Path, output: OutputFormat) -> Result<String> {
             }
         })
         .collect();
-    let inner_accounts = summary
-        .inner_account_keys
+    let inner_accounts = inner
+        .account_keys
         .iter()
         .enumerate()
         .map(|(index, key)| Account {
             address: key.to_string(),
-            is_signer: summary.inner_message.is_signer(index),
-            is_writable: summary
-                .inner_message
+            is_signer: inner.is_signer(index),
+            is_writable: inner
                 .is_maybe_writable_with_reserved_addresses(index, None::<&BTreeSet<_>>),
         })
         .collect();
     output.render(&Inspection {
-        genesis_hash: summary.genesis_hash.to_string(),
+        genesis_hash: transaction.genesis_hash().to_string(),
         signer_program: spl_ed25519_signer_client::id().to_string(),
-        executor_program: summary.executor_program.to_string(),
+        executor_program: spl_legacy_message_executor_interface::id().to_string(),
         nonce_program: spl_nonce_interface::id().to_string(),
-        nonce_account: summary.nonce_account.to_string(),
-        expected_nonce: summary.inner_message.recent_blockhash().to_string(),
-        next_nonce: next_nonce(&transaction)?.to_string(),
-        transaction_signers: summary
-            .wrapper_signers
-            .iter()
-            .map(|signer| SignerStatus {
-                address: signer.address.to_string(),
-                signed: signer.signed,
+        nonce_account: transaction.nonce_account().to_string(),
+        expected_nonce: inner.recent_blockhash.to_string(),
+        next_nonce: transaction.next_nonce().to_string(),
+        transaction_signers: transaction
+            .signer_status()
+            .map(|(address, signed)| SignerStatus {
+                address: address.to_string(),
+                signed,
             })
             .collect(),
         inner_accounts,

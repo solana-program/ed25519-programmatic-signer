@@ -2,7 +2,6 @@ use {
     crate::{artifact, client::Client},
     anyhow::{Context, Result, bail},
     clap::Args,
-    spl_programmatic_signer_client::{merge_transactions, sign_transaction},
     std::{collections::HashSet, path::PathBuf},
 };
 
@@ -49,7 +48,7 @@ pub(super) fn run(command: SignCommand, client: &Client) -> Result<String> {
         .collect::<Result<Vec<_>>>()?;
     for (transaction, _) in &mut transactions {
         for signer in &signers {
-            sign_transaction(transaction, signer.as_ref())?;
+            transaction.sign(signer.as_ref())?;
         }
     }
     transactions
@@ -70,7 +69,7 @@ pub(crate) struct MergeCommand {
 pub(super) fn merge(command: MergeCommand) -> Result<String> {
     let mut transaction = artifact::read(&command.transactions[0])?;
     for path in &command.transactions[1..] {
-        merge_transactions(&mut transaction, &artifact::read(path)?)?;
+        transaction.merge(&artifact::read(path)?)?;
     }
     artifact::write(command.outfile.as_deref(), &transaction)
 }

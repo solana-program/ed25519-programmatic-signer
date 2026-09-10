@@ -1,10 +1,9 @@
 use {
-    crate::{artifact, client::Client},
+    crate::{artifact, client::Client, transaction::WrappedTransaction},
     anyhow::{Result, bail},
     clap::{ArgGroup, Args},
     solana_address::Address,
-    solana_hash::Hash,
-    spl_programmatic_signer_client::{inspect, nonce::advance_transaction},
+    solana_message::legacy::Message,
     std::path::PathBuf,
 };
 
@@ -25,37 +24,37 @@ pub(crate) struct AdvanceCommand {
 }
 
 pub(super) async fn run(command: AdvanceCommand, client: &Client) -> Result<String> {
+    let authority = spl_ed25519_signer_client::ProgrammaticSigner::derive_address(
+        &spl_ed25519_signer_client::id(),
+        &command.authority,
+    );
     let (account, nonce, genesis_hash) = match command.from_transaction {
         Some(path) => {
-            let summary = inspect(&artifact::read(&path)?)?;
-            let authority = spl_ed25519_signer_client::ProgrammaticSigner::derive_address(
-                &spl_ed25519_signer_client::id(),
-                &command.authority,
-            );
-            if !summary.inner_required_signers.contains(&authority) {
+            let transaction = artifact::read(&path)?;
+            if !transaction.inner().signer_keys().contains(&&authority) {
                 bail!("authority's PDA is not a required signer of the source file");
             }
             (
-                summary.nonce_account,
-                Hash::new_from_array(summary.inner_message.recent_blockhash().to_bytes()),
-                summary.genesis_hash,
+                *transaction.nonce_account(),
+                transaction.inner().recent_blockhash,
+                *transaction.genesis_hash(),
             )
         }
         None => {
             let account = command.nonce.unwrap();
             let state = client.require_nonce(&account).await?;
-            let authority = spl_ed25519_signer_client::ProgrammaticSigner::derive_address(
-                &spl_ed25519_signer_client::id(),
-                &command.authority,
-            );
             if state.authority != authority {
                 bail!("nonce is not controlled by this cold authority's PDA");
             }
             (account, state.nonce, client.genesis_hash().await?)
         }
     };
-    artifact::write(
-        command.outfile.as_deref(),
-        &advance_transaction(account, command.authority, nonce, genesis_hash)?,
-    )
+    let transaction = WrappedTransaction::new(
+        Message::new_with_blockhash(&[], Some(&authority), &nonce),
+        account,
+        &[command.authority],
+        &[],
+        genesis_hash,
+    )?;
+    artifact::write(command.outfile.as_deref(), &transaction)
 }
