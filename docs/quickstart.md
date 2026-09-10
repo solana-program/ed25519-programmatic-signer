@@ -1,8 +1,8 @@
 # Quickstart
 
 This walkthrough teaches you to prepare a SOL transfer, inspect and sign it offline,
-then submit it with an online fee payer. Run steps 1–7 in order. After that, choose
-from the optional recipes for tokens, multiple signatures, designated relayers,
+then submit it with an online fee payer. Run steps 1–7 in order. After that, explore
+additional workflows for tokens, multiple signatures, designated relayers,
 nonce chains, cancellation, and other program instructions.
 
 All transactions here use **Devnet** and its test SOL. The three programs are
@@ -21,7 +21,7 @@ Use Bash in one terminal opened at the repository root. You need:
 - Rust from `rust-toolchain.toml` and `nightly-2026-01-22` for the CLI build. If the
   nightly is missing, install it with `rustup toolchain install nightly-2026-01-22`.
 - Solana CLI **3.1.8**, including `solana-keygen`.
-- `make` and `jq`. The token recipe additionally needs SPL Token CLI **5.5.0**.
+- `make` and `jq`. The token transfer workflow also needs SPL Token CLI **5.5.0**.
 
 Three roles participate. You will play all three on one machine using disposable
 keys, while keeping their responsibilities distinct:
@@ -88,7 +88,7 @@ printf 'Payer: %s\nCold authority: %s\nPDA: %s\nRecipient: %s\nGenesis hash: %s\
 The PDA should differ from the cold address. Open the
 [Solana Devnet faucet](https://faucet.solana.com/), select Devnet, and paste the
 **Payer** address printed above. Request at least **1 Devnet SOL**, enough for the
-walkthrough and all optional recipes. Once it arrives, check the payer's balance:
+walkthrough and all additional workflows. Once it arrives, check the payer's balance:
 
 ```sh
 solana balance "$(solana-keygen pubkey "$PAYER")" \
@@ -272,11 +272,11 @@ Submit the same file again. **This command is expected to fail** with
 The transfer cannot land twice. To send another transaction, build a new source
 message using the current nonce, or prepare a chain as below.
 
-## Optional recipes
+## Additional workflows
 
-These recipes reuse the same session's keys, Devnet URL, funded PDA, recipient,
+These workflows reuse the same session's keys, Devnet URL, funded PDA, recipient,
 and nonce account after step 7. Each reads the nonce it needs, so you may choose them
-independently. Run each recipe once in this working directory; use new filenames
+independently. Run each workflow once in this working directory; use new filenames
 if you repeat one.
 
 ### Pre-sign a chain and sign a batch
