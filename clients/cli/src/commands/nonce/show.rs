@@ -1,6 +1,6 @@
 use {
     crate::{client::Client, output::OutputFormat},
-    anyhow::{Result, anyhow},
+    anyhow::Result,
     clap::Args,
     serde::Serialize,
     solana_address::Address,
@@ -19,10 +19,7 @@ pub(super) async fn run(
     client: &Client,
     output: OutputFormat,
 ) -> Result<String> {
-    let account = client
-        .nonce_account(&command.nonce_account)
-        .await?
-        .ok_or_else(|| anyhow!("account {} was not found", command.nonce_account))?;
+    let account = client.nonce_account(&command.nonce_account).await?;
 
     output.render(&NonceShowOutput {
         nonce_account: command.nonce_account.to_string(),

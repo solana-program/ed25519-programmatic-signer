@@ -84,7 +84,7 @@ pub(super) async fn run(
     let signature = client.send_and_confirm_transaction(&transaction).await?;
 
     let account = client
-        .wait_for_nonce_account(&nonce_account)
+        .nonce_account(&nonce_account)
         .await
         .with_context(|| {
             format!(

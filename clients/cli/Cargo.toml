@@ -36,7 +36,7 @@ solana-transaction = { workspace = true, features = ["wincode"] }
 spl-ed25519-signer-client = { workspace = true }
 spl-nonce-client = { workspace = true }
 spl-nonce-interface = { workspace = true }
-tokio = { workspace = true, features = ["macros", "rt-multi-thread", "time"] }
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
 
 [dev-dependencies]
 libtest-mimic = { workspace = true }
