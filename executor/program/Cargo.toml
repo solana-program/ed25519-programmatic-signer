@@ -24,7 +24,6 @@ solana-sanitize = { workspace = true }
 spl-legacy-message-executor-interface = { workspace = true }
 spl-nonce-client = { workspace = true, features = ["cpi"] }
 spl-nonce-interface = { workspace = true }
-wincode = { workspace = true }
 
 [dev-dependencies]
 mollusk-svm = { workspace = true }
@@ -36,3 +35,4 @@ solana-rent = { workspace = true }
 solana-program-error = { workspace = true }
 solana-system-interface = { workspace = true, features = ["wincode"] }
 spl-legacy-message-executor-client = { workspace = true }
+wincode = { workspace = true }

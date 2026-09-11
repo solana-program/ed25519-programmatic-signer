@@ -2,7 +2,6 @@ use {
     pinocchio::{AccountView, Address, ProgramResult, error::ProgramError},
     solana_hash::Hash,
     spl_nonce_interface::{error::Error, state::Nonce},
-    wincode::ZeroCopy,
 };
 
 /// Consumes the stored nonce and advances it to a fresh value.
@@ -20,21 +19,12 @@ pub fn process_advance(
     if !nonce_account.owned_by(program_id) {
         return Err(ProgramError::IllegalOwner);
     }
-    if nonce_account.data_len() != Nonce::LEN {
-        return Err(Error::InvalidNonceAccount.into());
-    }
 
     // Clone view so address later can be borrowed off the original
     let mut view = nonce_account.clone();
 
-    // A caller-created nonce account remains zero-filled until initialized.
-    // Because both `Nonce` fields accept any 32-byte value, wincode accepts
-    // the zero-filled data as a valid value. Reject the uninitialized state.
     let mut data = view.try_borrow_mut()?;
-    if data.iter().all(|byte| *byte == 0) {
-        return Err(Error::InvalidNonceAccount.into());
-    }
-    let state = Nonce::from_bytes_mut(&mut data).map_err(|_| Error::InvalidNonceAccount)?;
+    let state = Nonce::view_initialized_mut(&mut data).map_err(|_| Error::InvalidNonceAccount)?;
 
     if authority.address() != &state.authority {
         return Err(Error::AuthorityMismatch.into());

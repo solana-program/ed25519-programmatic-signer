@@ -21,7 +21,6 @@ workspace = true
 pinocchio = { workspace = true }
 solana-hash = { workspace = true }
 spl-nonce-interface = { workspace = true }
-wincode = { workspace = true }
 
 [dev-dependencies]
 mollusk-svm = { workspace = true }
@@ -33,3 +32,4 @@ solana-rent = { workspace = true }
 solana-sha256-hasher = { workspace = true, features = ["sha2"] }
 spl-nonce-client = { workspace = true }
 test-case = { workspace = true }
+wincode = { workspace = true }
