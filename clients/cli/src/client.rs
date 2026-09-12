@@ -4,7 +4,10 @@ use {
     clap::ArgMatches,
     solana_account::Account,
     solana_address::Address,
-    solana_clap_v3_utils::{input_parsers::parse_url_or_moniker, keypair::signer_from_path},
+    solana_clap_v3_utils::{
+        input_parsers::{parse_url_or_moniker, signer::SignerSource},
+        keypair::signer_from_source,
+    },
     solana_cli_config::{CONFIG_FILE, Config as SolanaCliConfig},
     solana_commitment_config::CommitmentConfig,
     solana_hash::Hash,
@@ -26,7 +29,8 @@ pub(crate) struct NonceAccount {
 pub(crate) struct Client {
     rpc: RpcClient,
     fee_payer: Option<String>,
-    default_fee_payer: String,
+    default_keypair: String,
+    override_keypair: Option<SignerSource>,
     skip_preflight: bool,
     matches: ArgMatches,
     wallet_manager: RefCell<Option<Rc<RemoteWalletManager>>>,
@@ -55,7 +59,8 @@ impl Client {
         Ok(Self {
             rpc: RpcClient::new_with_commitment(url, commitment),
             fee_payer: args.fee_payer,
-            default_fee_payer: config.keypair_path,
+            default_keypair: config.keypair_path,
+            override_keypair: args.keypair,
             skip_preflight: args.skip_preflight,
             matches,
             wallet_manager: RefCell::new(None),
@@ -63,13 +68,29 @@ impl Client {
     }
 
     pub(crate) fn fee_payer(&self) -> Result<Box<dyn Signer>> {
-        let source = self.fee_payer.as_deref().unwrap_or(&self.default_fee_payer);
-        self.signer(source, "fee payer")
+        match self.fee_payer.as_deref() {
+            Some(source) => self.signer(source, "fee payer"),
+            None => self.default_signer("fee payer"),
+        }
+    }
+
+    pub(crate) fn default_signer(&self, name: &str) -> Result<Box<dyn Signer>> {
+        match &self.override_keypair {
+            Some(source) => self.load_signer(source, name),
+            None => self.signer(&self.default_keypair, name),
+        }
     }
 
     pub(crate) fn signer(&self, source: &str, name: &str) -> Result<Box<dyn Signer>> {
+        let source = SignerSource::parse(source)
+            .map_err(|error| anyhow!(error.to_string()))
+            .with_context(|| format!("invalid {name} signer source"))?;
+        self.load_signer(&source, name)
+    }
+
+    fn load_signer(&self, source: &SignerSource, name: &str) -> Result<Box<dyn Signer>> {
         let mut wallet_manager = self.wallet_manager.borrow_mut();
-        signer_from_path(&self.matches, source, name, &mut wallet_manager)
+        signer_from_source(&self.matches, source, name, &mut wallet_manager)
             .map_err(|error| anyhow!(error.to_string()))
             .with_context(|| format!("failed to load {name}"))
     }
