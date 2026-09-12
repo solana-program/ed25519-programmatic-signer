@@ -3,7 +3,10 @@ mod client;
 mod commands;
 mod output;
 
-pub use commands::nonce::{create::NonceCreateOutput, show::NonceShowOutput};
+pub use commands::{
+    nonce::{create::NonceCreateOutput, show::NonceShowOutput},
+    tx::sign_only_data::CliSignOnlyDataExt,
+};
 use {
     anyhow::Result,
     clap::{CommandFactory, FromArgMatches},

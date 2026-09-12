@@ -22,9 +22,11 @@ edition = "2021"
 
 [workspace.dependencies]
 anyhow = "1.0.104"
+base64 = "0.23.1"
 brine-ed25519 = "0.7.0"
 clap = "3.2.25"
 codama-macros = "0.13.1"
+gag = "1.0.0"
 libtest-mimic = "0.8.2"
 mollusk-svm = "0.15.0"
 pinocchio = { version = "0.11.2", default-features = false }
@@ -34,11 +36,12 @@ solana-account = "4.3.0"
 solana-address = "2.6.1"
 solana-clap-v3-utils = "4.2.1"
 solana-cli-config = "4.2.1"
+solana-cli-output = "4.2.2"
 solana-commitment-config = "3.1.1"
 solana-hash = "4.4.0"
-solana-instruction = { version = "3.4.0", default-features = false }
+solana-instruction = { version = "3.4.1", default-features = false }
 solana-keypair = "3.1.2"
-solana-message = { version = "4.4.0", default-features = false }
+solana-message = { version = "4.4.1", default-features = false }
 solana-native-token = "3.0.0"
 solana-program-error = "3.0.1"
 solana-remote-wallet = "4.2.1"

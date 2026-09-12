@@ -28,7 +28,7 @@ pub(crate) struct CreateCommand {
     #[clap(long)]
     pub(crate) cold_authority: Option<Address>,
 
-    /// Keypair for the new nonce account. Its public key determines the account address.
+    /// Keypair that determines the address of the new nonce account.
     /// Accepts a keypair file, usb:// URL, prompt:// URL, or ASK.
     /// If omitted, generates a temporary keypair used only for account creation.
     #[clap(long)]
@@ -47,10 +47,10 @@ pub(super) async fn run(
     let fee_payer = client.fee_payer()?;
     let fee_payer_address = fee_payer
         .try_pubkey()
-        .context("failed to read fee payer pubkey")?;
+        .context("failed to read fee payer address")?;
     let nonce_account = nonce_keypair
         .try_pubkey()
-        .context("failed to read nonce account pubkey")?;
+        .context("failed to read nonce account address")?;
     if fee_payer_address == nonce_account {
         bail!("fee payer and nonce account must use different keypairs");
     }

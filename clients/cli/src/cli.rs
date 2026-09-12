@@ -1,11 +1,15 @@
 use {
     crate::{
-        commands::{address::AddressCommand, nonce::NonceCommand},
+        commands::{address::AddressCommand, nonce::NonceCommand, tx::TxCommand},
         output::OutputFormat,
     },
-    clap::{Args, Parser, Subcommand, ValueHint},
+    clap::{Args, Parser, Subcommand, ValueHint, builder::ValueParser},
     solana_clap_v3_utils::{
-        input_parsers::parse_url_or_moniker, keypair::SKIP_SEED_PHRASE_VALIDATION_ARG,
+        input_parsers::{
+            parse_url_or_moniker,
+            signer::{SignerSource, SignerSourceParserBuilder},
+        },
+        keypair::SKIP_SEED_PHRASE_VALIDATION_ARG,
     },
     solana_commitment_config::CommitmentConfig,
     std::path::PathBuf,
@@ -55,6 +59,11 @@ pub(crate) struct ClientArgs {
     )]
     pub(crate) config: Option<PathBuf>,
 
+    /// Default signer source.
+    /// Overrides the keypair in the Solana CLI configuration.
+    #[clap(short = 'k', long, global = true, value_parser = keypair_source_parser())]
+    pub(crate) keypair: Option<SignerSource>,
+
     /// Solana RPC URL or cluster moniker. Full monikers and their first letters are supported.
     #[clap(
         short = 'u',
@@ -70,7 +79,7 @@ pub(crate) struct ClientArgs {
     pub(crate) commitment: Option<CommitmentConfig>,
 
     /// Fee payer signer source: a keypair file, usb:// URL, prompt:// URL, or the ASK keyword.
-    /// Uses Solana CLI config when omitted.
+    /// Defaults to --keypair or the configured keypair.
     #[clap(long, global = true)]
     pub(crate) fee_payer: Option<String>,
 
@@ -85,4 +94,10 @@ pub(crate) enum Command {
     Address(AddressCommand),
     /// Manage SPL Nonce accounts used by programmatic signer transactions.
     Nonce(NonceCommand),
+    /// Sign programmatic approval transactions offline, without constructing a Submit relay.
+    Tx(TxCommand),
+}
+
+fn keypair_source_parser() -> ValueParser {
+    SignerSourceParserBuilder::default().allow_all().build()
 }
