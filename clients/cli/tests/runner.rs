@@ -1,4 +1,9 @@
 use {
+    self::test_tx_submit_validator::{
+        rejects_invalid_nonce_accounts_before_wallet_loading,
+        rejects_nonce_authority_outside_inner_signers, submits_approved_transfer_once,
+        submits_with_file_and_cli_signatures,
+    },
     crate::common::{
         helpers::setup_test_env,
         nonce_create::{
@@ -10,7 +15,8 @@ use {
     std::{process::ExitCode, sync::Arc},
 };
 
-mod common;
+pub mod common;
+mod test_tx_submit_validator;
 
 macro_rules! async_trial {
     ($test:ident, $env:ident, $runtime:ident) => {{
@@ -40,6 +46,18 @@ fn main() -> ExitCode {
             env,
             runtime_handle
         ),
+        async_trial!(
+            rejects_invalid_nonce_accounts_before_wallet_loading,
+            env,
+            runtime_handle
+        ),
+        async_trial!(
+            rejects_nonce_authority_outside_inner_signers,
+            env,
+            runtime_handle
+        ),
+        async_trial!(submits_approved_transfer_once, env, runtime_handle),
+        async_trial!(submits_with_file_and_cli_signatures, env, runtime_handle),
     ];
     libtest_mimic::run(&arguments, tests).exit_code()
 }

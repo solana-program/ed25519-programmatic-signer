@@ -1,5 +1,7 @@
+mod approval;
 mod sign;
 mod sign_only_data;
+mod submit;
 
 use {
     crate::{client::Client, output::OutputFormat},
@@ -17,10 +19,17 @@ pub(crate) struct TxCommand {
 enum TxSubcommand {
     /// Review and sign an execution message offline, returning an address/signature pair.
     Sign(sign::SignCommand),
+    /// Submit an execution message with collected approval signatures.
+    Submit(submit::SubmitCommand),
 }
 
-pub(crate) fn run(command: TxCommand, client: &Client, output: OutputFormat) -> Result<String> {
+pub(crate) async fn run(
+    command: TxCommand,
+    client: &Client,
+    output: OutputFormat,
+) -> Result<String> {
     match command.command {
         TxSubcommand::Sign(command) => sign::run(command, client, output),
+        TxSubcommand::Submit(command) => submit::run(command, client, output).await,
     }
 }
