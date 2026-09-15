@@ -21,11 +21,6 @@ pub struct TestEnv {
 pub async fn setup_test_env() -> TestEnv {
     let mut genesis = TestValidatorGenesis::default_for_tests();
     genesis.add_program("spl_nonce_program", spl_nonce_interface::id());
-
-    // Genesis programs become usable at slot 1. Root it before startup so the
-    // CLI's confirmed preflight cannot read slot 0 and report "Program is not deployed".
-    genesis.warp_slot(1);
-
     let (validator, payer) = genesis.start_async().await;
     let nonce_rent_lamports = validator
         .get_async_rpc_client()
@@ -44,7 +39,7 @@ pub async fn setup_test_env() -> TestEnv {
         json_rpc_url: validator.rpc_url(),
         websocket_url: validator.rpc_pubsub_url(),
         keypair_path: payer_file.path().to_str().unwrap().to_string(),
-        commitment: CommitmentConfig::confirmed().commitment.to_string(),
+        commitment: CommitmentConfig::processed().commitment.to_string(),
         ..SolanaConfig::default()
     }
     .save(&config_file_path)
