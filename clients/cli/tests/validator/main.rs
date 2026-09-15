@@ -1,6 +1,6 @@
 use {
-    crate::common::{
-        helpers::setup_test_env,
+    self::{
+        common::helpers::setup_test_env,
         nonce_create::{
             creates_and_shows_nonce_account, creates_nonce_account_with_cold_authority,
             creates_nonce_account_with_generated_keypair,
@@ -10,7 +10,9 @@ use {
     std::{process::ExitCode, sync::Arc},
 };
 
+#[path = "../common/mod.rs"]
 mod common;
+mod nonce_create;
 
 macro_rules! async_trial {
     ($test:ident, $env:ident, $runtime:ident) => {{

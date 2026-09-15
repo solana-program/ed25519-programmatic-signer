@@ -44,5 +44,5 @@ solana-test-validator = { workspace = true, features = ["dev-context-only-utils"
 tempfile = { workspace = true }
 
 [[test]]
-name = "runner"
+name = "validator"
 harness = false
