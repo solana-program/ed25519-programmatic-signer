@@ -25,7 +25,7 @@ pub enum Instruction {
     /// 1. Verifies the account is uninitialized, rent-exempt, and owned by this program.
     /// 2. Derives the initial `nonce` by hashing the initialization tag, nonce account
     ///    address, program id, and latest slot hash.
-    /// 3. Writes `Nonce { nonce, authority }` into the account data.
+    /// 3. Writes `Nonce { nonce, authority, initialize_slot }` into the account data.
     ///
     /// Instruction data is the discriminator only.
     ///

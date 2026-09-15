@@ -3,7 +3,7 @@ use {
     pinocchio::{
         AccountView, Address, ProgramResult,
         error::ProgramError,
-        sysvars::{Sysvar, rent::Rent},
+        sysvars::{Sysvar, clock::Clock, rent::Rent},
     },
     spl_nonce_interface::state::Nonce,
 };
@@ -40,11 +40,13 @@ pub fn process_initialize(program_id: &Address, accounts: &mut [AccountView]) ->
     let recent_slot_hash = recent_slot_hash(slot_hashes_account)?;
     let initial_nonce =
         Nonce::derive_initial_nonce(program_id, nonce_account.address(), &recent_slot_hash);
+    let initialize_slot = Clock::get()?.slot;
 
     // Write the initialized state into the account
     *state = Nonce {
         nonce: initial_nonce,
         authority: authority.address().into(),
+        initialize_slot: initialize_slot.into(),
     };
 
     Ok(())
