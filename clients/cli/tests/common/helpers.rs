@@ -39,7 +39,7 @@ pub async fn setup_test_env() -> TestEnv {
         json_rpc_url: validator.rpc_url(),
         websocket_url: validator.rpc_pubsub_url(),
         keypair_path: payer_file.path().to_str().unwrap().to_string(),
-        commitment: CommitmentConfig::confirmed().commitment.to_string(),
+        commitment: CommitmentConfig::processed().commitment.to_string(),
         ..SolanaConfig::default()
     }
     .save(&config_file_path)
