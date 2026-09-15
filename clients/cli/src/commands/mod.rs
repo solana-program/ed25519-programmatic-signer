@@ -1,5 +1,6 @@
 pub(crate) mod address;
 pub(crate) mod nonce;
+pub(crate) mod tx;
 
 use {
     crate::{
@@ -16,6 +17,10 @@ pub(crate) async fn run(cli: Cli, matches: ArgMatches) -> Result<String> {
         Command::Nonce(command) => {
             let client = Client::new(cli.client, matches)?;
             nonce::run(command, &client, cli.output).await
+        }
+        Command::Tx(command) => {
+            let client = Client::new(cli.client, matches)?;
+            tx::run(command, &client, cli.output)
         }
     }
 }
