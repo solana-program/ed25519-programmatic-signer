@@ -1,5 +1,5 @@
 use {
-    crate::helpers::common::{decode_state, init_mollusk, initialize_nonce_account},
+    crate::helpers::common::{decode_state, init_mollusk, initialize_nonce_account_at},
     mollusk_svm::{
         Mollusk,
         result::{Check, InstructionResult},
@@ -14,7 +14,9 @@ use {
 pub struct AdvanceBuilder<'a> {
     mollusk: Mollusk,
     authority: Address,
+    nonce_address: Address,
     nonce_account: Option<(Address, Account)>,
+    excess_lamports: u64,
     current_nonce: Option<Hash>,
     transition_commitment: Hash,
     authority_is_signer: bool,
@@ -27,7 +29,9 @@ impl Default for AdvanceBuilder<'_> {
         Self {
             mollusk: init_mollusk(),
             authority: Address::from([2; 32]),
+            nonce_address: Address::new_unique(),
             nonce_account: None,
+            excess_lamports: 0,
             current_nonce: None,
             transition_commitment: Hash::new_from_array([3; 32]),
             authority_is_signer: true,
@@ -38,6 +42,22 @@ impl Default for AdvanceBuilder<'_> {
 }
 
 impl<'a> AdvanceBuilder<'a> {
+    /// Sets the address used when no nonce account override is supplied.
+    pub fn nonce_address(mut self, nonce_address: Address) -> Self {
+        self.nonce_address = nonce_address;
+        self
+    }
+
+    pub fn initialization_slot(mut self, slot: u64) -> Self {
+        self.mollusk.sysvars.clock.slot = slot;
+        self
+    }
+
+    pub fn excess_lamports(mut self, lamports: u64) -> Self {
+        self.excess_lamports = lamports;
+        self
+    }
+
     pub fn nonce_account(mut self, nonce_account: (Address, Account)) -> Self {
         self.nonce_account = Some(nonce_account);
         self
@@ -69,10 +89,13 @@ impl<'a> AdvanceBuilder<'a> {
     }
 
     pub fn execute(mut self) -> InstructionResult {
-        let (nonce_account_address, nonce_account) = self
-            .nonce_account
-            .take()
-            .unwrap_or_else(|| initialize_nonce_account(&self.mollusk, &self.authority));
+        let (nonce_account_address, nonce_account) =
+            self.nonce_account.take().unwrap_or_else(|| {
+                let (address, mut account) =
+                    initialize_nonce_account_at(&self.mollusk, &self.authority, self.nonce_address);
+                account.lamports = account.lamports.checked_add(self.excess_lamports).unwrap();
+                (address, account)
+            });
         let current_nonce = self
             .current_nonce
             .unwrap_or_else(|| decode_state(&nonce_account).nonce);
