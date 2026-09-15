@@ -5,11 +5,11 @@ use {
     solana_cli_output::CliSignOnlyData,
     solana_message::VersionedMessage,
     solana_signature::Signature,
-    std::{collections::BTreeSet, path::Path, str::FromStr},
+    std::{collections::BTreeMap, path::Path, str::FromStr},
 };
 
-/// Read a sign-only file and return its message and the authorities with verified signatures.
-pub fn read_file(path: &Path) -> Result<(VersionedMessage, BTreeSet<Address>)> {
+/// Read a sign-only file and return its message and the verified approval signatures.
+pub(super) fn read_file(path: &Path) -> Result<(VersionedMessage, BTreeMap<Address, Signature>)> {
     let file_bytes =
         std::fs::read(path).with_context(|| format!("failed to read {}", path.display()))?;
     let data =
@@ -24,7 +24,7 @@ pub fn read_file(path: &Path) -> Result<(VersionedMessage, BTreeSet<Address>)> {
 }
 
 /// The message's required signer addresses, which are the approval authorities.
-pub fn required_authorities(message: &VersionedMessage) -> Result<&[Address]> {
+pub(super) fn required_authorities(message: &VersionedMessage) -> Result<&[Address]> {
     let authorities = message
         .static_account_keys()
         .get(..usize::from(message.header().num_required_signatures))
@@ -35,13 +35,13 @@ pub fn required_authorities(message: &VersionedMessage) -> Result<&[Address]> {
 
 /// Verify each supplied address/signature pair against the message and its required authorities.
 /// Valid duplicates collapse to one entry. An invalid duplicate still fails verification.
-fn verify_supplied_signatures(
+pub(super) fn verify_supplied_signatures(
     entries: &[String],
     message: &VersionedMessage,
-) -> Result<BTreeSet<Address>> {
+) -> Result<BTreeMap<Address, Signature>> {
     let authorities = required_authorities(message)?;
     let msg_bytes = message.serialize();
-    let mut signed_authorities = BTreeSet::new();
+    let mut signed_authorities = BTreeMap::new();
     for entry in entries {
         let (address, signature) = entry
             .split_once('=')
@@ -50,9 +50,9 @@ fn verify_supplied_signatures(
         let signature = Signature::from_str(signature).context("invalid signer signature")?;
         ensure!(
             authorities.contains(&address) && signature.verify(address.as_ref(), &msg_bytes),
-            "invalid existing approval signature"
+            "invalid approval signature for {address}"
         );
-        signed_authorities.insert(address);
+        signed_authorities.insert(address, signature);
     }
     Ok(signed_authorities)
 }

@@ -1,7 +1,8 @@
 use {
     solana_cli_config::Config as SolanaConfig,
     solana_commitment_config::CommitmentConfig,
-    solana_keypair::write_keypair_file,
+    solana_keypair::{Keypair, write_keypair_file},
+    solana_rpc_client::nonblocking::rpc_client::RpcClient,
     solana_signer::Signer,
     solana_test_validator::{TestValidator, TestValidatorGenesis},
     spl_nonce_interface::state::Nonce,
@@ -13,6 +14,8 @@ use {
 };
 
 pub struct TestEnv {
+    pub payer: Keypair,
+    pub rpc: RpcClient,
     pub payer_address: String,
     pub config_file_path: String,
     pub nonce_rent_lamports: u64,
@@ -24,9 +27,17 @@ pub struct TestEnv {
 pub async fn setup_test_env() -> TestEnv {
     let mut genesis = TestValidatorGenesis::default_for_tests();
     genesis.add_program("spl_nonce_program", spl_nonce_interface::id());
+    genesis.add_program(
+        "spl_ed25519_signer_program",
+        spl_ed25519_signer_client::id(),
+    );
+    genesis.add_program(
+        "spl_legacy_message_executor_program",
+        spl_legacy_message_executor_interface::id(),
+    );
     let (validator, payer) = genesis.start_async().await;
-    let nonce_rent_lamports = validator
-        .get_async_rpc_client()
+    let rpc = RpcClient::new_with_commitment(validator.rpc_url(), CommitmentConfig::confirmed());
+    let nonce_rent_lamports = rpc
         .get_minimum_balance_for_rent_exemption(Nonce::LEN)
         .await
         .unwrap();
@@ -49,6 +60,8 @@ pub async fn setup_test_env() -> TestEnv {
     .unwrap();
 
     TestEnv {
+        payer,
+        rpc,
         payer_address,
         config_file_path,
         nonce_rent_lamports,
@@ -87,4 +100,12 @@ pub fn run_psigner_with_input(args: &[&str], input: &str) -> Output {
         .write_all(input.as_bytes())
         .unwrap();
     child.wait_with_output().unwrap()
+}
+
+/// Assert that a CLI failure emits no success output and explains the expected error.
+pub fn assert_failure(output: &Output, expected: &str) {
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(!output.status.success(), "unexpected success: {stderr}");
+    assert!(output.stdout.is_empty());
+    assert!(stderr.contains(expected), "expected {expected:?}: {stderr}");
 }
