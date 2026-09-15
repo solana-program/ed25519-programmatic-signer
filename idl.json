@@ -354,13 +354,22 @@
                 "type": {
                   "kind": "publicKeyTypeNode"
                 }
+              },
+              {
+                "kind": "structFieldTypeNode",
+                "name": "initializeSlot",
+                "type": {
+                  "kind": "numberTypeNode",
+                  "format": "u64",
+                  "endian": "le"
+                }
               }
             ]
           },
           "discriminators": [
             {
               "kind": "sizeDiscriminatorNode",
-              "size": 64
+              "size": 72
             }
           ]
         }
