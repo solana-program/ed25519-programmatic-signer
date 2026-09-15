@@ -127,7 +127,8 @@ fn decode_nonce_account(address: &Address, account: Account) -> Result<NonceAcco
             spl_nonce_interface::id()
         );
     }
-    let state = spl_nonce_client::state::decode(&account.data)
+    let state = Nonce::view_initialized(&account.data)
+        .cloned()
         .with_context(|| format!("account {address} contains invalid SPL Nonce data"))?;
     Ok(NonceAccount {
         state,

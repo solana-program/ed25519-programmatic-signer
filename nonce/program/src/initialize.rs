@@ -6,7 +6,6 @@ use {
         sysvars::{Sysvar, rent::Rent},
     },
     spl_nonce_interface::state::Nonce,
-    wincode::ZeroCopy,
 };
 
 /// Turns a caller-created, program-owned account into a [`Nonce`]
@@ -22,17 +21,14 @@ pub fn process_initialize(program_id: &Address, accounts: &mut [AccountView]) ->
         return Err(ProgramError::IllegalOwner);
     }
 
-    // Ensure's the precise length matches the layout
-    if nonce_account.data_len() != Nonce::LEN {
-        return Err(ProgramError::InvalidAccountData);
-    }
+    let mut view = nonce_account.clone();
+    let mut data = view.try_borrow_mut()?;
+    let state = Nonce::view_mut(&mut data).map_err(|_| ProgramError::InvalidAccountData)?;
 
-    // A fresh account is zero-filled. Any nonzero byte means it is already initialized.
-    let data = nonce_account.try_borrow()?;
-    if data.iter().any(|byte| *byte != 0) {
+    // Initialization requires zeroed state
+    if state.is_initialized() {
         return Err(ProgramError::AccountAlreadyInitialized);
     }
-    drop(data);
 
     let rent_required = Rent::get()?.try_minimum_balance(Nonce::LEN)?;
     if nonce_account.lamports() < rent_required {
@@ -44,11 +40,11 @@ pub fn process_initialize(program_id: &Address, accounts: &mut [AccountView]) ->
     let initial_nonce =
         Nonce::derive_initial_nonce(program_id, nonce_account.address(), &recent_slot_hash);
 
-    // Write data into the account
-    let mut data = nonce_account.try_borrow_mut()?;
-    let state = Nonce::from_bytes_mut(&mut data).map_err(|_| ProgramError::InvalidAccountData)?;
-    state.nonce = initial_nonce;
-    state.authority.clone_from(authority.address());
+    // Write the initialized state into the account
+    *state = Nonce {
+        nonce: initial_nonce,
+        authority: authority.address().into(),
+    };
 
     Ok(())
 }
