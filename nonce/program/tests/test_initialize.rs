@@ -133,6 +133,7 @@ fn initialize_writes_expected_state() {
     let nonce_account_address = Address::new_unique();
     let authority_address = Address::new_unique();
     let result = InitializeBuilder::default()
+        .slot(42)
         .nonce_account(
             NonceAccountBuilder::new()
                 .key(Address::from(&nonce_account_address))
@@ -156,6 +157,7 @@ fn initialize_writes_expected_state() {
         ])
     );
     assert_eq!(state.authority, authority_address);
+    assert_eq!(state.initialize_slot, 42);
 }
 
 #[test]
@@ -171,6 +173,7 @@ fn create_account_creates_and_initializes_nonce_account() {
         .initialized(
             authority_address,
             &mollusk.sysvars.slot_hashes.first().unwrap().1,
+            mollusk.sysvars.clock.slot,
         )
         .build()
         .1;

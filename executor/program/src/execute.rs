@@ -25,7 +25,9 @@ pub fn process_execute(
     if !nonce_account.owned_by(&spl_nonce_interface::ID) {
         return Err(ProgramError::IllegalOwner);
     }
-    let Nonce { nonce, authority } = Nonce::view_initialized(&nonce_account.try_borrow()?)
+    let Nonce {
+        nonce, authority, ..
+    } = Nonce::view_initialized(&nonce_account.try_borrow()?)
         .cloned()
         .map_err(|_| Error::InvalidNonceAccount)?;
 
