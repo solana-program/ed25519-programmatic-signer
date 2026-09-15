@@ -21,7 +21,7 @@ pub const NONCE_STEP_TAG: &[u8] = b"spl-nonce::step::v1";
 #[cfg_attr(
     feature = "codama",
     derive(CodamaAccount),
-    codama(discriminator(size = 64))
+    codama(discriminator(size = 72))
 )]
 pub struct Nonce {
     /// Single-use value that prevents a signed message from being replayed. `Advance`
@@ -31,10 +31,12 @@ pub struct Nonce {
     pub nonce: Hash,
     /// Address allowed to consume this nonce and advance its value.
     pub authority: Address,
+    /// Slot the Nonce was initialized at
+    pub initialize_slot: u64,
 }
 
 impl Nonce {
-    pub const LEN: usize = HASH_BYTES + ADDRESS_BYTES;
+    pub const LEN: usize = HASH_BYTES + ADDRESS_BYTES + core::mem::size_of::<u64>();
 
     /// Derives the value for a newly initialized nonce account.
     pub fn derive_initial_nonce(
@@ -115,7 +117,7 @@ impl Nonce {
         Ok(state)
     }
 
-    /// Returns whether the nonce state is initialized, meaning either field is nonzero.
+    /// Returns whether the nonce state is initialized, meaning any field is nonzero.
     #[inline]
     pub fn is_initialized(&self) -> bool {
         self != &Self::default()
@@ -138,6 +140,7 @@ mod tests {
         let account = Nonce {
             nonce: Hash::new_from_array([1; 32]),
             authority: Address::new_from_array([2; 32]),
+            initialize_slot: 42,
         };
 
         assert_eq!(
@@ -165,6 +168,7 @@ mod tests {
                 .parse::<Hash>()
                 .unwrap(),
             authority: Address::default(),
+            initialize_slot: 42,
         };
         assert_eq!(
             state.derive_next_nonce(&program_id, &nonce_account, &transition_commitment),
@@ -174,15 +178,19 @@ mod tests {
         );
     }
 
-    #[test_case(1, 0; "zero authority")]
-    #[test_case(0, 2; "zero nonce")]
-    #[test_case(1, 2; "both fields nonzero")]
-    fn views_decode_initialized_state(nonce: u8, authority: u8) {
-        let mut data = [nonce; Nonce::LEN];
-        data[32..].fill(authority);
+    #[test_case(1, 0, 0; "nonzero nonce only")]
+    #[test_case(0, 2, 0; "nonzero authority only")]
+    #[test_case(0, 0, 42; "nonzero initialize slot only")]
+    #[test_case(1, 2, 42; "all fields nonzero")]
+    fn views_decode_initialized_state(nonce: u8, authority: u8, initialize_slot: u64) {
+        let mut data = [0; Nonce::LEN];
+        data[..32].fill(nonce);
+        data[32..64].fill(authority);
+        data[64..].copy_from_slice(&initialize_slot.to_le_bytes());
         let expected = Nonce {
             nonce: Hash::new_from_array([nonce; 32]),
             authority: Address::new_from_array([authority; 32]),
+            initialize_slot,
         };
 
         assert!(expected.is_initialized());
@@ -211,10 +219,10 @@ mod tests {
     }
 
     #[test_case(0, 0; "empty")]
-    #[test_case(63, 0; "truncated zeroed")]
-    #[test_case(63, 1; "truncated nonzero")]
-    #[test_case(65, 0; "trailing zeroed")]
-    #[test_case(65, 1; "trailing nonzero")]
+    #[test_case(Nonce::LEN - 1, 0; "truncated zeroed")]
+    #[test_case(Nonce::LEN - 1, 1; "truncated nonzero")]
+    #[test_case(Nonce::LEN + 1, 0; "trailing zeroed")]
+    #[test_case(Nonce::LEN + 1, 1; "trailing nonzero")]
     fn views_reject_wrong_lengths(len: usize, value: u8) {
         let mut data = vec![value; len];
         assert_eq!(Nonce::view(&data), Err(DecodeError::InvalidData));
@@ -240,9 +248,11 @@ mod tests {
         *state = Nonce {
             nonce: Hash::new_from_array([2; 32]),
             authority: Address::new_from_array([3; 32]),
+            initialize_slot: 42,
         };
 
         assert_eq!(&data[..32], &[2; 32]);
-        assert_eq!(&data[32..], &[3; 32]);
+        assert_eq!(&data[32..64], &[3; 32]);
+        assert_eq!(&data[64..], &42u64.to_le_bytes());
     }
 }

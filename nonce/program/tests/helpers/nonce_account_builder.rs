@@ -46,7 +46,12 @@ impl NonceAccountBuilder {
         self
     }
 
-    pub fn initialized(mut self, authority: Address, recent_slot_hash: &Hash) -> Self {
+    pub fn initialized(
+        mut self,
+        authority: Address,
+        recent_slot_hash: &Hash,
+        initialize_slot: u64,
+    ) -> Self {
         let state = Nonce {
             nonce: Nonce::derive_initial_nonce(
                 &spl_nonce_interface::id(),
@@ -54,6 +59,7 @@ impl NonceAccountBuilder {
                 recent_slot_hash,
             ),
             authority,
+            initialize_slot,
         };
         self.data = Some(wincode::serialize(&state).unwrap());
         self

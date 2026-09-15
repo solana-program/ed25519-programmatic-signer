@@ -191,7 +191,8 @@ fn advance_rejects_readonly_nonce_account() {
 #[test]
 fn advance_writes_expected_state() {
     let authority = Address::from([2; 32]);
-    let mollusk = init_mollusk();
+    let mut mollusk = init_mollusk();
+    mollusk.sysvars.clock.slot = 42;
     let (nonce_account_address, nonce_account) = initialize_nonce_account(&mollusk, &authority);
     let old_nonce = decode_state(&nonce_account).nonce;
     let transition_commitment = Hash::new_from_array([7; 32]);
@@ -217,6 +218,7 @@ fn advance_writes_expected_state() {
         ])
     );
     assert_eq!(state.authority, authority);
+    assert_eq!(state.initialize_slot, 42);
 }
 
 #[test]
