@@ -13,9 +13,16 @@ pub fn decode_state(account: &Account) -> Nonce {
 }
 
 pub fn initialize_nonce_account(mollusk: &Mollusk, authority: &Address) -> (Address, Account) {
-    let (nonce_account_address, nonce_account) = NonceAccountBuilder::new()
-        .key(Address::new_unique())
-        .build();
+    initialize_nonce_account_at(mollusk, authority, Address::new_unique())
+}
+
+pub fn initialize_nonce_account_at(
+    mollusk: &Mollusk,
+    authority: &Address,
+    nonce_address: Address,
+) -> (Address, Account) {
+    let (nonce_account_address, nonce_account) =
+        NonceAccountBuilder::new().key(nonce_address).build();
     let instruction = initialize(&nonce_account_address, authority);
     let result = mollusk.process_and_validate_instruction(
         &instruction,
