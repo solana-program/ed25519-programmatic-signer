@@ -60,3 +60,21 @@ pub fn advance(
         ],
     )
 }
+
+/// Creates a `Withdraw` instruction. Withdrawing the full balance closes the account.
+pub fn withdraw(
+    authority: &Address,
+    nonce_account: &Address,
+    destination: &Address,
+    lamports: u64,
+) -> Instruction {
+    Instruction::new_with_wincode(
+        spl_nonce_interface::id(),
+        &NonceInstruction::Withdraw { lamports },
+        vec![
+            AccountMeta::new_readonly(*authority, true),
+            AccountMeta::new(*nonce_account, false),
+            AccountMeta::new(*destination, false),
+        ],
+    )
+}

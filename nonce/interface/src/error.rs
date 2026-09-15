@@ -29,6 +29,14 @@ pub enum Error {
         ))
     )]
     NonceMismatch = 2,
+    /// A nonce account cannot be closed until after its initialization slot.
+    #[cfg_attr(
+        feature = "codama",
+        codama(error(
+            message = "A nonce account cannot be closed during the same slot it was initialized in"
+        ))
+    )]
+    CloseSameSlot = 3,
 }
 
 impl From<Error> for ProgramError {
