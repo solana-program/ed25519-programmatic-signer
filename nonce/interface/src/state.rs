@@ -75,7 +75,7 @@ impl Nonce {
         if account_data.len() != Self::LEN {
             return Err(DecodeError::InvalidData);
         }
-        Self::from_bytes(account_data).map_err(|_| DecodeError::InvalidData)
+        Ok(Self::from_bytes(account_data).expect("all values valid after length check"))
     }
 
     /// Mutably borrows nonce state from account data.
@@ -87,7 +87,7 @@ impl Nonce {
         if account_data.len() != Self::LEN {
             return Err(DecodeError::InvalidData);
         }
-        Self::from_bytes_mut(account_data).map_err(|_| DecodeError::InvalidData)
+        Ok(Self::from_bytes_mut(account_data).expect("all values valid after length check"))
     }
 
     /// Borrows initialized nonce state from account data.
@@ -130,11 +130,15 @@ mod tests {
         super::{Address, Hash, Nonce},
         crate::error::DecodeError,
         alloc::vec,
+        core::mem::{align_of, size_of},
         test_case::test_case,
     };
 
     #[test]
-    fn len_matches_wincode_serialized_size() {
+    fn layout_matches_wincode_serialized_size() {
+        assert_eq!(size_of::<Nonce>(), Nonce::LEN);
+        assert_eq!(align_of::<Nonce>(), 1);
+
         let account = Nonce {
             nonce: Hash::new_from_array([1; 32]),
             authority: Address::new_from_array([2; 32]),
