@@ -23,7 +23,8 @@ pub fn process_initialize(program_id: &Address, accounts: &mut [AccountView]) ->
 
     let mut view = nonce_account.clone();
     let mut data = view.try_borrow_mut()?;
-    let state = Nonce::view_mut(&mut data).map_err(|_| ProgramError::InvalidAccountData)?;
+    let state =
+        Nonce::view_uninitialized_mut(&mut data).map_err(|_| ProgramError::InvalidAccountData)?;
 
     // Initialization requires zeroed state
     if state.is_initialized() {

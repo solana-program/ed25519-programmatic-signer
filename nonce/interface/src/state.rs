@@ -69,9 +69,9 @@ impl Nonce {
     /// Borrows nonce state from account data.
     ///
     /// Requires exactly [`Self::LEN`] bytes and accepts the all-zero, uninitialized state.
-    /// Use [`Self::view_initialized`] when initialized state is required.
+    /// Use [`Self::view`] when initialized state is required.
     #[inline]
-    pub fn view(account_data: &[u8]) -> Result<&Self, DecodeError> {
+    pub fn view_uninitialized(account_data: &[u8]) -> Result<&Self, DecodeError> {
         if account_data.len() != Self::LEN {
             return Err(DecodeError::InvalidData);
         }
@@ -80,10 +80,10 @@ impl Nonce {
 
     /// Mutably borrows nonce state from account data.
     ///
-    /// Performs the same checks as [`Self::view`], accepting uninitialized state.
+    /// Performs the same checks as [`Self::view_uninitialized`], accepting uninitialized state.
     /// Changes to the returned state update the account data in place.
     #[inline]
-    pub fn view_mut(account_data: &mut [u8]) -> Result<&mut Self, DecodeError> {
+    pub fn view_uninitialized_mut(account_data: &mut [u8]) -> Result<&mut Self, DecodeError> {
         if account_data.len() != Self::LEN {
             return Err(DecodeError::InvalidData);
         }
@@ -94,8 +94,8 @@ impl Nonce {
     ///
     /// Requires exactly [`Self::LEN`] bytes and rejects the all-zero, uninitialized state.
     #[inline]
-    pub fn view_initialized(account_data: &[u8]) -> Result<&Self, DecodeError> {
-        let state = Self::view(account_data)?;
+    pub fn view(account_data: &[u8]) -> Result<&Self, DecodeError> {
+        let state = Self::view_uninitialized(account_data)?;
         if !state.is_initialized() {
             return Err(DecodeError::Uninitialized);
         }
@@ -104,11 +104,11 @@ impl Nonce {
 
     /// Mutably borrows initialized nonce state from account data.
     ///
-    /// Performs the same checks as [`Self::view_initialized`]. Changes to the returned state
+    /// Performs the same checks as [`Self::view`]. Changes to the returned state
     /// update the account data in place.
     #[inline]
-    pub fn view_initialized_mut(account_data: &mut [u8]) -> Result<&mut Self, DecodeError> {
-        let state = Self::view_mut(account_data)?;
+    pub fn view_mut(account_data: &mut [u8]) -> Result<&mut Self, DecodeError> {
+        let state = Self::view_uninitialized_mut(account_data)?;
         if !state.is_initialized() {
             return Err(DecodeError::Uninitialized);
         }
@@ -186,10 +186,10 @@ mod tests {
         };
 
         assert!(expected.is_initialized());
+        assert_eq!(Nonce::view_uninitialized(&data).unwrap(), &expected);
+        assert_eq!(Nonce::view_uninitialized_mut(&mut data).unwrap(), &expected);
         assert_eq!(Nonce::view(&data).unwrap(), &expected);
         assert_eq!(Nonce::view_mut(&mut data).unwrap(), &expected);
-        assert_eq!(Nonce::view_initialized(&data).unwrap(), &expected);
-        assert_eq!(Nonce::view_initialized_mut(&mut data).unwrap(), &expected);
     }
 
     #[test]
@@ -198,16 +198,10 @@ mod tests {
         let expected = Nonce::default();
 
         assert!(!expected.is_initialized());
-        assert_eq!(Nonce::view(&data).unwrap(), &expected);
-        assert_eq!(Nonce::view_mut(&mut data).unwrap(), &expected);
-        assert_eq!(
-            Nonce::view_initialized(&data),
-            Err(DecodeError::Uninitialized)
-        );
-        assert_eq!(
-            Nonce::view_initialized_mut(&mut data),
-            Err(DecodeError::Uninitialized)
-        );
+        assert_eq!(Nonce::view_uninitialized(&data).unwrap(), &expected);
+        assert_eq!(Nonce::view_uninitialized_mut(&mut data).unwrap(), &expected);
+        assert_eq!(Nonce::view(&data), Err(DecodeError::Uninitialized));
+        assert_eq!(Nonce::view_mut(&mut data), Err(DecodeError::Uninitialized));
     }
 
     #[test_case(0, 0; "empty")]
@@ -220,17 +214,17 @@ mod tests {
         assert_eq!(Nonce::view(&data), Err(DecodeError::InvalidData));
         assert_eq!(Nonce::view_mut(&mut data), Err(DecodeError::InvalidData));
         assert_eq!(
-            Nonce::view_initialized(&data),
+            Nonce::view_uninitialized(&data),
             Err(DecodeError::InvalidData)
         );
         assert_eq!(
-            Nonce::view_initialized_mut(&mut data),
+            Nonce::view_uninitialized_mut(&mut data),
             Err(DecodeError::InvalidData)
         );
     }
 
-    #[test_case(Nonce::view_mut, 0; "initialize")]
-    #[test_case(Nonce::view_initialized_mut, 1; "update")]
+    #[test_case(Nonce::view_uninitialized_mut, 0; "initialize")]
+    #[test_case(Nonce::view_mut, 1; "update")]
     fn mutable_views_update_the_original_bytes(
         view: fn(&mut [u8]) -> Result<&mut Nonce, DecodeError>,
         initial: u8,
