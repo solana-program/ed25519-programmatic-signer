@@ -23,3 +23,6 @@ solana-signature = { workspace = true }
 solana-signer = { workspace = true }
 solana-transaction = { workspace = true, features = ["wincode"] }
 spl-ed25519-signer-interface = { workspace = true }
+
+[dev-dependencies]
+test-case = { workspace = true }

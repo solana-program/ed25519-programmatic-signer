@@ -10170,6 +10170,7 @@ dependencies = [
  "solana-signer",
  "solana-transaction",
  "spl-ed25519-signer-interface",
+ "test-case",
 ]
 
 [[package]]

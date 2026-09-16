@@ -64,11 +64,16 @@ pub fn wrapped_message(
             continue;
         }
         if meta.is_writable {
-            writable_unsigned.push(meta.pubkey);
-        } else {
+            if !writable_unsigned.contains(&meta.pubkey) {
+                writable_unsigned.push(meta.pubkey);
+            }
+        } else if !readonly_unsigned.contains(&meta.pubkey) {
             readonly_unsigned.push(meta.pubkey);
         }
     }
+
+    // A writable occurrence wins over any readonly occurrences.
+    readonly_unsigned.retain(|key| !writable_unsigned.contains(key));
 
     // The readonly unsigned range is a suffix, so the invoked executor program id sits ahead
     // of the readonly accounts and is counted with them.
