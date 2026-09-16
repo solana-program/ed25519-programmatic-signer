@@ -39,7 +39,7 @@ pub fn process_execute(
         validate_message_accounts(message_accounts, &wrapped_message, authority)?;
 
     // The advance ix requires an owned nonce
-    let current_nonce = nonce.clone();
+    let current_nonce = *nonce;
     drop(nonce_data);
 
     // Consume the nonce before invoking the message instructions to prevent recursive execution.
