@@ -19,6 +19,7 @@ workspace = true
 
 [dependencies]
 pinocchio = { workspace = true, features = ["alloc", "cpi"] }
+solana-hash = { workspace = true, features = ["copy"] }
 solana-message = { workspace = true }
 solana-sanitize = { workspace = true }
 spl-legacy-message-executor-interface = { workspace = true }
@@ -29,7 +30,6 @@ spl-nonce-interface = { workspace = true }
 mollusk-svm = { workspace = true }
 solana-account = { workspace = true }
 solana-address = { workspace = true }
-solana-hash = { workspace = true }
 solana-instruction = { workspace = true }
 solana-rent = { workspace = true }
 solana-program-error = { workspace = true }

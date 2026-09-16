@@ -49,8 +49,13 @@ pub enum DecodeError {
 impl fmt::Display for DecodeError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Uninitialized => formatter.write_str("uninitialized SPL Nonce account"),
-            Self::InvalidData => formatter.write_str("invalid SPL Nonce account data"),
+            Self::Uninitialized => formatter.write_str(
+                "The account data is correctly sized but contains the all-zero, uninitialized \
+                 state.",
+            ),
+            Self::InvalidData => {
+                formatter.write_str("The account data is malformed or contains trailing bytes.")
+            }
         }
     }
 }

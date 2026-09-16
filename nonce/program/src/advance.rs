@@ -24,7 +24,7 @@ pub fn process_advance(
     let mut view = nonce_account.clone();
 
     let mut data = view.try_borrow_mut()?;
-    let state = Nonce::view_initialized_mut(&mut data).map_err(|_| Error::InvalidNonceAccount)?;
+    let state = Nonce::view_mut(&mut data).map_err(|_| Error::InvalidNonceAccount)?;
 
     if authority.address() != &state.authority {
         return Err(Error::AuthorityMismatch.into());
