@@ -11,7 +11,7 @@ use {
 };
 
 #[path = "../common/mod.rs"]
-mod common;
+pub mod common;
 mod nonce_create;
 
 macro_rules! async_trial {

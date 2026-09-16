@@ -1,3 +1,4 @@
+mod approval;
 mod sign;
 mod sign_only_data;
 

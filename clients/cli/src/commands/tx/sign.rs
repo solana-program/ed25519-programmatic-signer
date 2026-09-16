@@ -1,19 +1,19 @@
 use {
-    super::sign_only_data::required_authorities,
+    super::{
+        approval::{ApprovalDetails, validate_approval_message},
+        sign_only_data::required_authorities,
+    },
     crate::{client::Client, commands::tx::sign_only_data, output::OutputFormat},
-    anyhow::{Context, Result, bail, ensure},
+    anyhow::{Context, Result, ensure},
     clap::{Args, ValueHint},
     indoc::formatdoc,
     serde::Serialize,
     solana_address::Address,
-    solana_hash::Hash,
-    solana_message::{VersionedMessage, legacy},
-    solana_sanitize::Sanitize,
+    solana_message::VersionedMessage,
     solana_signature::Signature,
     solana_signer::Signer,
     solana_transaction_status::{Encodable, EncodableWithMeta, UiTransactionEncoding},
     spl_ed25519_signer_client::ProgrammaticSigner,
-    spl_legacy_message_executor_interface::instruction::Instruction as ExecutorInstruction,
     std::{collections::BTreeSet, fmt, io, path::PathBuf},
 };
 
@@ -66,81 +66,6 @@ impl fmt::Display for SignOutput {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}={}", self.address, self.signature)
     }
-}
-
-/// An approval's outer message, inner message, and nonce account for review.
-struct ApprovalDetails<'a> {
-    outer_message: &'a VersionedMessage,
-    inner_message: legacy::Message,
-    nonce_account: Address,
-}
-
-/// Sanitize both messages, check the outer approval, and verify the Execute account layout.
-/// These offline checks do not establish execution validity.
-fn validate_approval_message(outer_message: &VersionedMessage) -> Result<ApprovalDetails<'_>> {
-    outer_message.sanitize().context("invalid outer message")?;
-
-    let outer_account_keys = outer_message.static_account_keys();
-    let [execute_instruction] = outer_message.instructions() else {
-        bail!("expected exactly one Execute instruction");
-    };
-    ensure!(
-        outer_account_keys.get(usize::from(execute_instruction.program_id_index))
-            == Some(&spl_legacy_message_executor_interface::id()),
-        "expected the Legacy Message Executor"
-    );
-
-    // Keep approval signatures unusable for direct transactions that can charge fees to the authority
-    ensure!(
-        outer_message.recent_blockhash() == &Hash::default(),
-        "outer message must use the default blockhash to prevent native transaction fees"
-    );
-
-    ensure!(
-        execute_instruction
-            .accounts
-            .iter()
-            .all(|index| usize::from(*index) < outer_account_keys.len()),
-        "Execute accounts must use static account keys because ALTs are not resolved"
-    );
-
-    let ExecutorInstruction::Execute(inner_message) =
-        ExecutorInstruction::try_from_bytes(&execute_instruction.data)
-            .context("invalid Execute instruction")?;
-    inner_message.sanitize().context("invalid inner message")?;
-
-    // Legacy sanitization permits duplicates, but the executor rejects them.
-    ensure!(
-        !inner_message.has_duplicates(),
-        "inner message must not contain duplicate account keys"
-    );
-
-    let [
-        nonce_account_index,
-        nonce_program_index,
-        inner_account_indices @ ..,
-    ] = execute_instruction.accounts.as_slice()
-    else {
-        bail!("expected the nonce account and SPL Nonce program in Execute accounts");
-    };
-    let nonce_account = outer_account_keys[usize::from(*nonce_account_index)];
-    ensure!(
-        outer_account_keys[usize::from(*nonce_program_index)] == spl_nonce_interface::id(),
-        "expected the SPL Nonce program as the second Execute account"
-    );
-    ensure!(
-        inner_account_indices
-            .iter()
-            .map(|index| &outer_account_keys[usize::from(*index)])
-            .eq(&inner_message.account_keys),
-        "Execute accounts must mirror the inner message accounts"
-    );
-
-    Ok(ApprovalDetails {
-        outer_message,
-        inner_message,
-        nonce_account,
-    })
 }
 
 fn render_signing_summary(
