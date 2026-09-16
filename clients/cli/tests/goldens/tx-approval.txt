@@ -1,0 +1,94 @@
+=== Authorization status ===
+Approval message hash: 7pLyM2ZtFa9583Vr2GRQsfoghmf15yiWBqTRpZu6AV5K
+
+Approval signatures: 0 of 1 present
+  AKnL4NNf3DGWZJS6cPknBuEGnVsV4A4m5tgebLHaRSZ9: not included (your signing key)
+
+PDA your signature authorizes as a signer for Execute:
+  3jCYn5zriQtvK6iEkWyDc3M6dkHvmR9XccrZyjJF96tF
+
+=== Replay protection ===
+SPL nonce account address: 8qbHbw2BbbTHBW1sbeqakYXVKRQM8Ne7pLK7m6CVfeR
+Expected nonce value (inner message's recent blockhash): YMN9Qj5jPNp7j14VPcML1B6xGgcPWVZUGLFU3Mnyfaf
+
+=== Outer message ===
+One Execute call through the Legacy Message Executor (ExecxgyHYsAXB4c5dZodV1zJZ9hqfsDCYkRDRATrpkFR).
+Your signature authorizes this Execute call, including its accounts, permissions, and the inner message. This message passes the inner message below to the executor.
+
+legacy message:
+{
+  "header": {
+    "numRequiredSignatures": 1,
+    "numReadonlySignedAccounts": 0,
+    "numReadonlyUnsignedAccounts": 3
+  },
+  "accountKeys": [
+    "AKnL4NNf3DGWZJS6cPknBuEGnVsV4A4m5tgebLHaRSZ9",
+    "8qbHbw2BbbTHBW1sbeqakYXVKRQM8Ne7pLK7m6CVfeR",
+    "3jCYn5zriQtvK6iEkWyDc3M6dkHvmR9XccrZyjJF96tF",
+    "CktRuQ2mttgRGkXJtyksdKHjUdc2C4TgDzyB98oEzy8",
+    "ExecxgyHYsAXB4c5dZodV1zJZ9hqfsDCYkRDRATrpkFR",
+    "Noncediea1fH12usShuQAz28UhgAeuE5Maf32LsMUQB",
+    "11111111111111111111111111111111"
+  ],
+  "recentBlockhash": "11111111111111111111111111111111",
+  "instructions": [
+    {
+      "programIdIndex": 4,
+      "accounts": [
+        1,
+        5,
+        2,
+        3,
+        6
+      ],
+      "data": "187PYrYozuWSemSRti1zzcgAELjnFK3PAGyT3Q6vNPXj8qE77ET9MbgyrCGFCtd4EQL8W9Fpx6KJF9vBYSikabbcfDZ1Gtvxx7rBG5cDDHdRWV6D8oEhmVi83NQvjW3ce1R9B9e1MzzzkHGaomZs7nBG7vXKxsm3X2Fyctpvx869GVvjY5FMT6muaYfQj1kgGDdhd3eTiwqpT",
+      "stackHeight": 1
+    }
+  ]
+}
+
+=== Inner message (what the executor program invokes via CPI) ===
+The Execute instruction's data above is base58-encoded and contains the Execute discriminator followed by the serialized inner message shown below.
+
+Legacy message:
+{
+  "accountKeys": [
+    {
+      "pubkey": "3jCYn5zriQtvK6iEkWyDc3M6dkHvmR9XccrZyjJF96tF",
+      "writable": true,
+      "signer": true,
+      "source": "transaction"
+    },
+    {
+      "pubkey": "CktRuQ2mttgRGkXJtyksdKHjUdc2C4TgDzyB98oEzy8",
+      "writable": true,
+      "signer": false,
+      "source": "transaction"
+    },
+    {
+      "pubkey": "11111111111111111111111111111111",
+      "writable": false,
+      "signer": false,
+      "source": "transaction"
+    }
+  ],
+  "recentBlockhash": "YMN9Qj5jPNp7j14VPcML1B6xGgcPWVZUGLFU3Mnyfaf",
+  "instructions": [
+    {
+      "program": "system",
+      "programId": "11111111111111111111111111111111",
+      "parsed": {
+        "info": {
+          "destination": "CktRuQ2mttgRGkXJtyksdKHjUdc2C4TgDzyB98oEzy8",
+          "lamports": 1,
+          "source": "3jCYn5zriQtvK6iEkWyDc3M6dkHvmR9XccrZyjJF96tF"
+        },
+        "type": "transfer"
+      },
+      "stackHeight": 1
+    }
+  ]
+}
+
+Signing returns your address and signature. Nothing is submitted.

@@ -5,7 +5,10 @@ use {
     solana_signer::Signer,
     solana_test_validator::{TestValidator, TestValidatorGenesis},
     spl_nonce_interface::state::Nonce,
-    std::process::{Command, Output},
+    std::{
+        io::Write,
+        process::{Command, Output, Stdio},
+    },
     tempfile::NamedTempFile,
 };
 
@@ -56,10 +59,7 @@ pub async fn setup_test_env() -> TestEnv {
 }
 
 pub fn run_psigner(args: &[&str]) -> Output {
-    let output = Command::new(env!("CARGO_BIN_EXE_spl-programmatic-signer-cli"))
-        .args(args)
-        .output()
-        .unwrap();
+    let output = run_psigner_with_input(args, "");
     assert!(
         output.status.success(),
         "spl-programmatic-signer-cli failed:\nstdout:\n{}\nstderr:\n{}",
@@ -67,4 +67,24 @@ pub fn run_psigner(args: &[&str]) -> Output {
         String::from_utf8_lossy(&output.stderr),
     );
     output
+}
+
+/// Run the CLI with preset input such as `"y\n"` to answer a confirmation prompt.
+/// Input is written as soon as the process starts and buffered until the CLI reads
+/// it. After writing, stdin is closed and this helper waits for the process to exit.
+pub fn run_psigner_with_input(args: &[&str], input: &str) -> Output {
+    let mut child = Command::new(env!("CARGO_BIN_EXE_spl-programmatic-signer-cli"))
+        .args(args)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    child
+        .stdin
+        .take()
+        .unwrap()
+        .write_all(input.as_bytes())
+        .unwrap();
+    child.wait_with_output().unwrap()
 }
