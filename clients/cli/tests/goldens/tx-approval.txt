@@ -8,8 +8,8 @@ PDA your signature authorizes as a signer for Execute:
   3jCYn5zriQtvK6iEkWyDc3M6dkHvmR9XccrZyjJF96tF
 
 === Replay protection ===
-SPL nonce account: 8qbHbw2BbbTHBW1sbeqakYXVKRQM8Ne7pLK7m6CVfeR
-Expected nonce (inner message's recent blockhash): YMN9Qj5jPNp7j14VPcML1B6xGgcPWVZUGLFU3Mnyfaf
+SPL nonce account address: 8qbHbw2BbbTHBW1sbeqakYXVKRQM8Ne7pLK7m6CVfeR
+Expected nonce value (inner message's recent blockhash): YMN9Qj5jPNp7j14VPcML1B6xGgcPWVZUGLFU3Mnyfaf
 
 === Outer message ===
 One Execute call through the Legacy Message Executor (ExecxgyHYsAXB4c5dZodV1zJZ9hqfsDCYkRDRATrpkFR).

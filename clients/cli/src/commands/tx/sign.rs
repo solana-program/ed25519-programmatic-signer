@@ -198,8 +198,8 @@ fn render_signing_summary(
           {signer_pda}
 
         === Replay protection ===
-        SPL nonce account: {nonce_account}
-        Expected nonce (inner message's recent blockhash): {expected_nonce}
+        SPL nonce account address: {nonce_account}
+        Expected nonce value (inner message's recent blockhash): {expected_nonce}
 
         === Outer message ===
         One Execute call through the Legacy Message Executor ({executor_program}).
