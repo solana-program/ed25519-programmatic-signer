@@ -88,3 +88,11 @@ pub fn run_psigner_with_input(args: &[&str], input: &str) -> Output {
         .unwrap();
     child.wait_with_output().unwrap()
 }
+
+/// Assert that a CLI failure emits and outputs the expected error.
+pub fn assert_failure(output: &Output, expected: &str) {
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(!output.status.success());
+    assert!(output.stdout.is_empty());
+    assert!(stderr.contains(expected));
+}

@@ -283,7 +283,10 @@ fn rejects_supplied_signatures_from_non_authorities() {
     ));
     env.write_input(&data);
 
-    env.assert_rejected("invalid existing approval signature");
+    env.assert_rejected(&format!(
+        "invalid approval signature for {}",
+        outsider.pubkey()
+    ));
 }
 
 #[test]
@@ -307,7 +310,10 @@ fn rejects_supplied_signatures_for_a_different_message_before_loading_wallet() {
 
     assert!(!output.status.success());
     assert!(
-        stderr.contains("invalid existing approval signature"),
+        stderr.contains(&format!(
+            "invalid approval signature for {}",
+            env.authority.pubkey()
+        )),
         "{stderr}"
     );
     assert!(!stderr.contains("Sign this approval?"));
@@ -334,7 +340,10 @@ fn rejects_invalid_duplicate_signatures(invalid_first: bool) {
     }
     env.write_input(&data);
 
-    env.assert_rejected("invalid existing approval signature");
+    env.assert_rejected(&format!(
+        "invalid approval signature for {}",
+        env.authority.pubkey()
+    ));
 }
 
 #[test]

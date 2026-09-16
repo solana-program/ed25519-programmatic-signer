@@ -14,7 +14,7 @@ use {
     solana_signer::Signer,
     solana_transaction_status::{Encodable, EncodableWithMeta, UiTransactionEncoding},
     spl_ed25519_signer_client::ProgrammaticSigner,
-    std::{collections::BTreeSet, fmt, io, path::PathBuf},
+    std::{collections::BTreeMap, fmt, io, path::PathBuf},
 };
 
 #[derive(Debug, Args)]
@@ -70,7 +70,7 @@ impl fmt::Display for SignOutput {
 
 fn render_signing_summary(
     approval: &ApprovalDetails<'_>,
-    signed_authorities: &BTreeSet<Address>,
+    signed_authorities: &BTreeMap<Address, Signature>,
     signing_authority: &Address,
 ) -> Result<String> {
     let inner_ui_message = approval
@@ -89,7 +89,7 @@ fn render_signing_summary(
     let signature_status = authorities
         .iter()
         .map(|authority| {
-            let status = if signed_authorities.contains(authority) {
+            let status = if signed_authorities.contains_key(authority) {
                 "present (verified)"
             } else {
                 "not included"
