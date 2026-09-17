@@ -37,6 +37,7 @@ keypair/S
 decrypt/SGD
 lamport/S
 validator/S
+relayer/S
 pubkey/S
 sysvar/S
 timestamp/S
