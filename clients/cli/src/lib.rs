@@ -2,6 +2,7 @@ mod cli;
 mod client;
 mod commands;
 mod output;
+mod tx_config;
 
 pub use commands::nonce::{create::NonceCreateOutput, show::NonceShowOutput};
 use {

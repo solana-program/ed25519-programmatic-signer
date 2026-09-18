@@ -6,7 +6,7 @@ use {
     solana_address::Address,
     solana_clap_v3_utils::{
         input_parsers::{parse_url_or_moniker, signer::SignerSource},
-        keypair::signer_from_source,
+        keypair::{pubkey_from_path, pubkey_from_source, signer_from_source},
     },
     solana_cli_config::{CONFIG_FILE, Config as SolanaCliConfig},
     solana_commitment_config::CommitmentConfig,
@@ -74,6 +74,23 @@ impl Client {
         }
     }
 
+    pub(crate) fn fee_payer_address(&self) -> Result<Address> {
+        let mut wallet_manager = self.wallet_manager.borrow_mut();
+        match (self.fee_payer.as_deref(), &self.override_keypair) {
+            (None, Some(source)) => {
+                pubkey_from_source(&self.matches, source, "fee payer", &mut wallet_manager)
+            }
+            (source, _) => pubkey_from_path(
+                &self.matches,
+                source.unwrap_or(&self.default_keypair),
+                "fee payer",
+                &mut wallet_manager,
+            ),
+        }
+        .map_err(|error| anyhow!(error.to_string()))
+        .context("failed to read fee payer address")
+    }
+
     pub(crate) fn default_signer(&self, name: &str) -> Result<Box<dyn Signer>> {
         match &self.override_keypair {
             Some(source) => self.load_signer(source, name),
@@ -93,6 +110,10 @@ impl Client {
         signer_from_source(&self.matches, source, name, &mut wallet_manager)
             .map_err(|error| anyhow!(error.to_string()))
             .with_context(|| format!("failed to load {name}"))
+    }
+
+    pub(crate) fn rpc(&self) -> &RpcClient {
+        &self.rpc
     }
 
     pub(crate) async fn minimum_balance_for_rent_exemption(&self, data_len: usize) -> Result<u64> {

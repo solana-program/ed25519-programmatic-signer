@@ -1,6 +1,8 @@
 use {
     crate::{
-        commands::{address::AddressCommand, nonce::NonceCommand, tx::TxCommand},
+        commands::{
+            address::AddressCommand, migrate::MigrateCommand, nonce::NonceCommand, tx::TxCommand,
+        },
         output::OutputFormat,
     },
     clap::{Args, Parser, Subcommand, ValueHint, builder::ValueParser},
@@ -78,6 +80,7 @@ pub(crate) struct ClientArgs {
     pub(crate) commitment: Option<CommitmentConfig>,
 
     /// Fee payer signer source: a keypair file, usb:// URL, prompt:// URL, or the ASK keyword.
+    /// Preparation also accepts a public address.
     /// Defaults to --keypair or the configured keypair.
     #[clap(long, global = true)]
     pub(crate) fee_payer: Option<String>,
@@ -93,6 +96,8 @@ pub(crate) enum Command {
     Address(AddressCommand),
     /// Manage SPL Nonce accounts used by programmatic signer transactions.
     Nonce(NonceCommand),
+    /// Prepare authority migrations to programmatic signers.
+    Migrate(MigrateCommand),
     /// Sign programmatic approval transactions offline, without constructing a Submit relay.
     Tx(TxCommand),
 }

@@ -1,4 +1,5 @@
 pub(crate) mod address;
+pub(crate) mod migrate;
 pub(crate) mod nonce;
 pub(crate) mod tx;
 
@@ -17,6 +18,10 @@ pub(crate) async fn run(cli: Cli, matches: ArgMatches) -> Result<String> {
         Command::Nonce(command) => {
             let client = Client::new(cli.client, matches)?;
             nonce::run(command, &client, cli.output).await
+        }
+        Command::Migrate(command) => {
+            let client = Client::new(cli.client, matches)?;
+            migrate::run(command, &client, cli.output).await
         }
         Command::Tx(command) => {
             let client = Client::new(cli.client, matches)?;
