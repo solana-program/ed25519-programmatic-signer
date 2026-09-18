@@ -7,11 +7,16 @@ use {
 };
 
 /// Creates an `Execute` instruction for a legacy message.
-pub fn execute(nonce_account: &Address, message: &legacy::Message) -> Instruction {
+pub fn execute(
+    nonce_account: &Address,
+    nonce_authority: &Address,
+    message: &legacy::Message,
+) -> Instruction {
     // Fixed accounts for consuming the nonce, followed by the wrapped message's accounts
-    let mut accounts = Vec::with_capacity(message.account_keys.len().saturating_add(2));
+    let mut accounts = Vec::with_capacity(message.account_keys.len().saturating_add(3));
     accounts.push(AccountMeta::new(*nonce_account, false));
     accounts.push(AccountMeta::new_readonly(spl_nonce_interface::id(), false));
+    accounts.push(AccountMeta::new_readonly(*nonce_authority, true));
 
     for (index, address) in message.account_keys.iter().enumerate() {
         accounts.push(AccountMeta {

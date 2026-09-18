@@ -18,6 +18,7 @@ import {
     SolanaError,
     transformEncoder,
     type AccountMeta,
+    type AccountSignerMeta,
     type Address,
     type Codec,
     type Decoder,
@@ -26,7 +27,9 @@ import {
     type InstructionWithAccounts,
     type InstructionWithData,
     type ReadonlyAccount,
+    type ReadonlySignerAccount,
     type ReadonlyUint8Array,
+    type TransactionSigner,
     type WritableAccount,
 } from '@solana/kit';
 import { getAccountMetaFactory, type ResolvedInstructionAccount } from '@solana/kit/program-client-core';
@@ -43,6 +46,7 @@ export type ExecuteInstruction<
     TProgram extends string = typeof MESSAGE_EXECUTOR_PROGRAM_ADDRESS,
     TAccountNonceAccount extends string | AccountMeta<string> = string,
     TAccountNonceProgram extends string | AccountMeta<string> = 'Noncediea1fH12usShuQAz28UhgAeuE5Maf32LsMUQB',
+    TAccountNonceAuthority extends string | AccountMeta<string> = string,
     TRemainingAccounts extends readonly AccountMeta<string>[] = [],
 > = Instruction<TProgram> &
     InstructionWithData<ReadonlyUint8Array> &
@@ -50,6 +54,9 @@ export type ExecuteInstruction<
         [
             TAccountNonceAccount extends string ? WritableAccount<TAccountNonceAccount> : TAccountNonceAccount,
             TAccountNonceProgram extends string ? ReadonlyAccount<TAccountNonceProgram> : TAccountNonceProgram,
+            TAccountNonceAuthority extends string
+                ? ReadonlySignerAccount<TAccountNonceAuthority> & AccountSignerMeta<TAccountNonceAuthority>
+                : TAccountNonceAuthority,
             ...TRemainingAccounts,
         ]
     >;
@@ -79,22 +86,29 @@ export function getExecuteInstructionDataCodec(): Codec<ExecuteInstructionDataAr
     return combineCodec(getExecuteInstructionDataEncoder(), getExecuteInstructionDataDecoder());
 }
 
-export type ExecuteInput<TAccountNonceAccount extends string = string, TAccountNonceProgram extends string = string> = {
+export type ExecuteInput<
+    TAccountNonceAccount extends string = string,
+    TAccountNonceProgram extends string = string,
+    TAccountNonceAuthority extends string = string,
+> = {
     /** Nonce account consumed for replay protection */
     nonceAccount: Address<TAccountNonceAccount>;
     /** SPL Nonce program */
     nonceProgram?: Address<TAccountNonceProgram>;
+    /** Authority signer for the nonce account */
+    nonceAuthority: TransactionSigner<TAccountNonceAuthority>;
     message: ExecuteInstructionDataArgs['message'];
 };
 
 export function getExecuteInstruction<
     TAccountNonceAccount extends string,
     TAccountNonceProgram extends string,
+    TAccountNonceAuthority extends string,
     TProgramAddress extends Address = typeof MESSAGE_EXECUTOR_PROGRAM_ADDRESS,
 >(
-    input: ExecuteInput<TAccountNonceAccount, TAccountNonceProgram>,
+    input: ExecuteInput<TAccountNonceAccount, TAccountNonceProgram, TAccountNonceAuthority>,
     config?: { programAddress?: TProgramAddress },
-): ExecuteInstruction<TProgramAddress, TAccountNonceAccount, TAccountNonceProgram> {
+): ExecuteInstruction<TProgramAddress, TAccountNonceAccount, TAccountNonceProgram, TAccountNonceAuthority> {
     // Program address.
     const programAddress = config?.programAddress ?? MESSAGE_EXECUTOR_PROGRAM_ADDRESS;
 
@@ -102,6 +116,7 @@ export function getExecuteInstruction<
     const originalAccounts = {
         nonceAccount: { value: input.nonceAccount ?? null, isWritable: true },
         nonceProgram: { value: input.nonceProgram ?? null, isWritable: false },
+        nonceAuthority: { value: input.nonceAuthority ?? null, isWritable: false },
     };
     const accounts = originalAccounts as Record<keyof typeof originalAccounts, ResolvedInstructionAccount>;
 
@@ -125,11 +140,12 @@ export function getExecuteInstruction<
         accounts: [
             getAccountMeta('nonceAccount', accounts.nonceAccount),
             getAccountMeta('nonceProgram', accounts.nonceProgram),
+            getAccountMeta('nonceAuthority', accounts.nonceAuthority),
             ...remainingAccounts,
         ],
         data: getExecuteInstructionDataEncoder().encode(args as ExecuteInstructionDataArgs),
         programAddress,
-    } as ExecuteInstruction<TProgramAddress, TAccountNonceAccount, TAccountNonceProgram>);
+    } as ExecuteInstruction<TProgramAddress, TAccountNonceAccount, TAccountNonceProgram, TAccountNonceAuthority>);
 }
 
 export type ParsedExecuteInstruction<
@@ -142,6 +158,8 @@ export type ParsedExecuteInstruction<
         nonceAccount: TAccountMetas[0];
         /** SPL Nonce program */
         nonceProgram: TAccountMetas[1];
+        /** Authority signer for the nonce account */
+        nonceAuthority: TAccountMetas[2];
     };
     data: ExecuteInstructionData;
 };
@@ -151,10 +169,10 @@ export function parseExecuteInstruction<TProgram extends string, TAccountMetas e
         InstructionWithAccounts<TAccountMetas> &
         InstructionWithData<ReadonlyUint8Array>,
 ): ParsedExecuteInstruction<TProgram, TAccountMetas> {
-    if (instruction.accounts.length < 2) {
+    if (instruction.accounts.length < 3) {
         throw new SolanaError(SOLANA_ERROR__PROGRAM_CLIENTS__INSUFFICIENT_ACCOUNT_METAS, {
             actualAccountMetas: instruction.accounts.length,
-            expectedAccountMetas: 2,
+            expectedAccountMetas: 3,
         });
     }
     let accountIndex = 0;
@@ -165,7 +183,7 @@ export function parseExecuteInstruction<TProgram extends string, TAccountMetas e
     };
     return {
         programAddress: instruction.programAddress,
-        accounts: { nonceAccount: getNextAccount(), nonceProgram: getNextAccount() },
+        accounts: { nonceAccount: getNextAccount(), nonceProgram: getNextAccount(), nonceAuthority: getNextAccount() },
         data: getExecuteInstructionDataDecoder().decode(instruction.data),
     };
 }
