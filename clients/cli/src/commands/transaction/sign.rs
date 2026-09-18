@@ -33,6 +33,10 @@ pub(super) struct SignCommand {
     #[clap(long, value_parser = keypair_source_parser())]
     signer: Option<SignerSource>,
 
+    /// Hide the signing summary. Confirmation prompts and errors are still shown.
+    #[clap(long)]
+    quiet: bool,
+
     /// Skip the confirmation prompt for non-interactive signers (e.g. file keypairs).
     /// Hardware wallets still require approval on the device.
     #[clap(long)]
@@ -51,8 +55,10 @@ pub(super) fn run(command: SignCommand, client: &Client, output: OutputFormat) -
         "{signing_authority} is not an approval authority for this message"
     );
 
-    let summary = render_signing_summary(&approval, &signed_authorities, &signing_authority)?;
-    eprintln!("{summary}");
+    if !command.quiet {
+        let summary = render_signing_summary(&approval, &signed_authorities, &signing_authority)?;
+        eprintln!("{summary}");
+    }
 
     let signature = sign_outer_message(approval.outer_message, &signer, command.yes)?;
     ensure!(
