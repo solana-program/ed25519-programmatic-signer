@@ -1,6 +1,6 @@
 use {
     crate::{
-        commands::{address::AddressCommand, nonce::NonceCommand, tx::TxCommand},
+        commands::{address::AddressCommand, nonce::NonceCommand, transaction::TransactionCommand},
         output::OutputFormat,
     },
     clap::{Args, Parser, Subcommand, ValueHint, builder::ValueParser},
@@ -17,6 +17,7 @@ use {
 
 #[derive(Debug, Parser)]
 #[clap(
+    name = "spl-programmatic-signer",
     about = "Manage programmatic signer setup and transaction workflows",
     version,
     subcommand_required = true,
@@ -94,7 +95,7 @@ pub(crate) enum Command {
     /// Manage SPL Nonce accounts used by programmatic signer transactions.
     Nonce(NonceCommand),
     /// Sign programmatic approval transactions offline, without constructing a Submit relay.
-    Tx(TxCommand),
+    Transaction(TransactionCommand),
 }
 
 fn keypair_source_parser() -> ValueParser {

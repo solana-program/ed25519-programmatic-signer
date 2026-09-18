@@ -1,6 +1,6 @@
 use {
     super::sign_only_data::required_authorities,
-    crate::{client::Client, commands::tx::sign_only_data, output::OutputFormat},
+    crate::{client::Client, commands::transaction::sign_only_data, output::OutputFormat},
     anyhow::{Context, Result, bail, ensure},
     clap::{Args, ValueHint},
     indoc::formatdoc,
