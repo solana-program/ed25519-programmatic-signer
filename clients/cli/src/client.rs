@@ -28,9 +28,8 @@ pub(crate) struct NonceAccount {
 
 pub(crate) struct Client {
     rpc: RpcClient,
-    fee_payer: Option<String>,
-    default_keypair: String,
-    override_keypair: Option<SignerSource>,
+    fee_payer: Option<SignerSource>,
+    config_keypair_path: String,
     skip_preflight: bool,
     matches: ArgMatches,
     wallet_manager: RefCell<Option<Rc<RemoteWalletManager>>>,
@@ -59,8 +58,7 @@ impl Client {
         Ok(Self {
             rpc: RpcClient::new_with_commitment(url, commitment),
             fee_payer: args.fee_payer,
-            default_keypair: config.keypair_path,
-            override_keypair: args.keypair,
+            config_keypair_path: config.keypair_path,
             skip_preflight: args.skip_preflight,
             matches,
             wallet_manager: RefCell::new(None),
@@ -68,27 +66,26 @@ impl Client {
     }
 
     pub(crate) fn fee_payer(&self) -> Result<Box<dyn Signer>> {
-        match self.fee_payer.as_deref() {
-            Some(source) => self.signer(source, "fee payer"),
-            None => self.default_signer("fee payer"),
-        }
+        self.load_signer_or_config_default(self.fee_payer.as_ref(), "fee payer")
     }
 
-    pub(crate) fn default_signer(&self, name: &str) -> Result<Box<dyn Signer>> {
-        match &self.override_keypair {
+    pub(crate) fn load_signer_or_config_default(
+        &self,
+        source: Option<&SignerSource>,
+        name: &str,
+    ) -> Result<Box<dyn Signer>> {
+        match source {
             Some(source) => self.load_signer(source, name),
-            None => self.signer(&self.default_keypair, name),
+            None => {
+                let config_keypair_source = SignerSource::parse(&self.config_keypair_path)
+                    .map_err(|error| anyhow!(error.to_string()))
+                    .with_context(|| format!("invalid {name} signer source"))?;
+                self.load_signer(&config_keypair_source, name)
+            }
         }
     }
 
-    pub(crate) fn signer(&self, source: &str, name: &str) -> Result<Box<dyn Signer>> {
-        let source = SignerSource::parse(source)
-            .map_err(|error| anyhow!(error.to_string()))
-            .with_context(|| format!("invalid {name} signer source"))?;
-        self.load_signer(&source, name)
-    }
-
-    fn load_signer(&self, source: &SignerSource, name: &str) -> Result<Box<dyn Signer>> {
+    pub(crate) fn load_signer(&self, source: &SignerSource, name: &str) -> Result<Box<dyn Signer>> {
         let mut wallet_manager = self.wallet_manager.borrow_mut();
         signer_from_source(&self.matches, source, name, &mut wallet_manager)
             .map_err(|error| anyhow!(error.to_string()))
