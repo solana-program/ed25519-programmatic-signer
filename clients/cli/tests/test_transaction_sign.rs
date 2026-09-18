@@ -513,7 +513,7 @@ fn rejects_signer_outside_approval_authorities() {
 fn refuses_to_emit_a_placeholder_signature_for_a_public_only_signer() {
     let env = SignTestEnv::new();
     let output = run_psigner_with_input(
-        &env.args(&["--yes", "--keypair", &env.authority.pubkey().to_string()]),
+        &env.args(&["--yes", "--signer", &env.authority.pubkey().to_string()]),
         "",
     );
 
@@ -527,7 +527,7 @@ fn refuses_to_emit_a_placeholder_signature_for_a_public_only_signer() {
 }
 
 #[test]
-fn keypair_override_selects_approval_authority_independently_of_fee_payer() {
+fn explicit_signer_selects_authority_independently_of_fee_payer() {
     let env = SignTestEnv::new();
     let authority = Keypair::new_from_array([4; 32]);
     let keypair_file = env.directory.path().join("override.json");
@@ -538,10 +538,18 @@ fn keypair_override_selects_approval_authority_independently_of_fee_payer() {
     ]));
     env.write_input(&sign_only(&message));
 
-    let fee_payer_file = env.directory.path().join("unused-fee-payer.json");
+    // An explicit signer must work with a missing config default
+    // and an invalid fee-payer keypair.
+    let default_keypair_file = env.directory.path().join("missing-default.json");
+    let mut config = SolanaConfig::load(&env.config_file_path).unwrap();
+    config.keypair_path = default_keypair_file.to_str().unwrap().to_string();
+    config.save(&env.config_file_path).unwrap();
+    let fee_payer_file = env.directory.path().join("invalid-fee-payer.json");
+    fs::write(&fee_payer_file, "not a keypair").unwrap();
+
     let output = run_psigner(&env.args(&[
         "--yes",
-        "--keypair",
+        "--signer",
         keypair_file.to_str().unwrap(),
         "--fee-payer",
         fee_payer_file.to_str().unwrap(),

@@ -1,9 +1,10 @@
 use {
-    crate::{client::Client, output::OutputFormat},
+    crate::{cli::keypair_source_parser, client::Client, output::OutputFormat},
     anyhow::{Context, Result, bail},
     clap::Args,
     serde::{Deserialize, Serialize},
     solana_address::Address,
+    solana_clap_v3_utils::input_parsers::signer::SignerSource,
     solana_keypair::Keypair,
     solana_native_token::Sol,
     solana_signer::Signer,
@@ -31,8 +32,8 @@ pub(crate) struct CreateCommand {
     /// Keypair for the new nonce account. Its public key determines the account address.
     /// Accepts a keypair file, usb:// URL, prompt:// URL, or ASK.
     /// If omitted, generates a temporary keypair used only for account creation.
-    #[clap(long)]
-    pub(crate) nonce_keypair: Option<String>,
+    #[clap(long, value_parser = keypair_source_parser())]
+    pub(crate) nonce_keypair: Option<SignerSource>,
 }
 
 pub(super) async fn run(
@@ -41,7 +42,7 @@ pub(super) async fn run(
     output: OutputFormat,
 ) -> Result<String> {
     let nonce_keypair = match &command.nonce_keypair {
-        Some(source) => client.signer(source, "nonce account")?,
+        Some(source) => client.load_signer(source, "nonce account")?,
         None => Box::new(Keypair::new()),
     };
     let fee_payer = client.fee_payer()?;
