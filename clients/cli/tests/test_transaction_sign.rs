@@ -204,6 +204,55 @@ fn approval_screen_matches_golden() {
     );
 }
 
+#[test_case("display"; "display")]
+#[test_case("json"; "json")]
+#[test_case("json-compact"; "json compact")]
+fn quiet_mode_preserves_signature_output(format: &str) {
+    let env = SignTestEnv::new();
+    let normal = run_psigner(&env.args(&["--yes", "--output", format]));
+    let quiet = run_psigner(&env.args(&["--quiet", "--yes", "--output", format]));
+
+    assert!(!normal.stderr.is_empty());
+    assert!(quiet.stderr.is_empty());
+    assert_eq!(quiet.stdout, normal.stdout);
+}
+
+#[test]
+fn quiet_mode_preserves_validation_errors() {
+    let env = SignTestEnv::new();
+    let mut message = approval_message(&[env.authority.pubkey()]);
+    message.recent_blockhash = Hash::new_from_array([9; 32]);
+    env.write_input(&sign_only(&VersionedMessage::Legacy(message)));
+
+    let output = run_psigner_with_input(&env.args(&["--quiet", "--yes"]), "");
+    let stderr = String::from_utf8(output.stderr).unwrap();
+    assert!(!output.status.success());
+    assert!(output.stdout.is_empty());
+    assert!(
+        stderr.contains("outer message must use the default blockhash"),
+        "{stderr}"
+    );
+    assert!(!stderr.contains("Sign this approval?"));
+}
+
+#[test_case("y\n", true; "accept")]
+#[test_case("n\n", false; "decline")]
+#[test_case("", false; "end of input")]
+fn quiet_mode_preserves_confirmation(answer: &str, approved: bool) {
+    let env = SignTestEnv::new();
+    let output = run_psigner_with_input(&env.args(&["--quiet"]), answer);
+    let stderr = String::from_utf8(output.stderr).unwrap();
+
+    assert!(stderr.starts_with("Sign this approval? [y/N] "), "{stderr}");
+    assert_eq!(output.status.success(), approved, "{stderr}");
+    assert_eq!(output.stdout.is_empty(), !approved);
+    if approved {
+        assert_eq!(stderr, "Sign this approval? [y/N] ");
+    } else {
+        assert!(stderr.contains("signing cancelled"), "{stderr}");
+    }
+}
+
 #[test]
 fn reports_input_path_when_read_fails() {
     let env = SignTestEnv::new();
