@@ -26,7 +26,7 @@ pub mod helpers;
 #[test]
 fn execute_rejects_missing_fixed_accounts() {
     ExecuteBuilder::default()
-        .mutate_execute_ix(|ix| ix.accounts.truncate(1))
+        .mutate_execute_ix(|ix| ix.accounts.truncate(2))
         .check_err(ProgramError::NotEnoughAccountKeys)
         .execute();
 }
@@ -35,7 +35,7 @@ fn execute_rejects_missing_fixed_accounts() {
 fn execute_rejects_wrong_nonce_program_account() {
     let wrong_nonce_program = Address::new_unique();
     ExecuteBuilder::default()
-        .mutate_execute_ix(move |ix| ix.accounts[1].pubkey = wrong_nonce_program)
+        .mutate_execute_ix(move |ix| ix.accounts[2].pubkey = wrong_nonce_program)
         .check_err(ProgramError::IncorrectProgramId)
         .execute();
 }
@@ -203,7 +203,7 @@ fn execute_rejects_account_count_mismatch() {
 fn execute_rejects_account_order_mismatch() {
     ExecuteBuilder::default()
         .inner_instruction(transfer(&DEFAULT_AUTHORITY, &Address::new_unique(), 1))
-        .mutate_execute_ix(|ix| ix.accounts.swap(2, 3))
+        .mutate_execute_ix(|ix| ix.accounts.swap(3, 4))
         .check_err(MessageExecutorError::MessageAccountsMismatch)
         .execute();
 }
@@ -212,7 +212,7 @@ fn execute_rejects_account_order_mismatch() {
 fn execute_rejects_readonly_message_writable_account() {
     ExecuteBuilder::default()
         .inner_instruction(transfer(&DEFAULT_AUTHORITY, &Address::new_unique(), 1))
-        .mutate_execute_ix(|ix| ix.accounts[3].is_writable = false)
+        .mutate_execute_ix(|ix| ix.accounts[4].is_writable = false)
         .check(Check::instruction_err(
             InstructionError::PrivilegeEscalation,
         ))
@@ -221,8 +221,13 @@ fn execute_rejects_readonly_message_writable_account() {
 
 #[test]
 fn execute_rejects_missing_required_signer_privilege() {
+    let payer = Address::new_unique();
+
     ExecuteBuilder::default()
-        .mutate_execute_ix(|ix| ix.accounts[2].is_signer = false)
+        // Make it the 4th account (1st on the inner instructions) and a signer on an instruction
+        .payer(payer)
+        .inner_instruction(transfer(&payer, &Address::new_unique(), 0))
+        .mutate_execute_ix(|ix| ix.accounts[3].is_signer = false)
         .check(Check::instruction_err(
             InstructionError::PrivilegeEscalation,
         ))
@@ -230,21 +235,31 @@ fn execute_rejects_missing_required_signer_privilege() {
 }
 
 #[test]
-fn execute_rejects_authority_not_among_signers() {
+fn execute_rejects_missing_nonce_authority_signer_privilege() {
+    ExecuteBuilder::default()
+        // Keep the message payer distinct so it cannot grant the authority signer privilege.
+        .payer(Address::new_unique())
+        .mutate_execute_ix(|ix| ix.accounts[0].is_signer = false)
+        .check(Check::instruction_err(
+            InstructionError::PrivilegeEscalation,
+        ))
+        .execute();
+}
+
+#[test]
+fn execute_rejects_wrong_nonce_authority() {
     let wrong_signer = Address::new_unique();
 
     ExecuteBuilder::default()
-        .mutate_message(move |message| {
-            message.account_keys[0] = wrong_signer;
-        })
-        .check_err(MessageExecutorError::MissingNonceAuthoritySigner)
+        .mutate_execute_ix(move |ix| ix.accounts[0].pubkey = wrong_signer)
+        .check_err(NonceError::AuthorityMismatch)
         .execute();
 }
 
 #[test]
 fn execute_rejects_readonly_nonce_account() {
     ExecuteBuilder::default()
-        .mutate_execute_ix(|ix| ix.accounts[0].is_writable = false)
+        .mutate_execute_ix(|ix| ix.accounts[1].is_writable = false)
         .check(Check::instruction_err(
             InstructionError::PrivilegeEscalation,
         ))
@@ -275,7 +290,7 @@ fn execute_downgrades_extra_writable_privilege_for_inner_cpi() {
             message.header.num_readonly_unsigned_accounts = 2;
         })
         // gives recipient extra writable privilege on the outer ix
-        .mutate_execute_ix(|ix| ix.accounts[3].is_writable = true)
+        .mutate_execute_ix(|ix| ix.accounts[4].is_writable = true)
         .check(Check::instruction_err(
             InstructionError::ReadonlyLamportChange,
         ))
@@ -296,7 +311,7 @@ fn execute_downgrades_extra_signer_privilege_for_inner_cpi() {
             message.header.num_required_signatures = 1;
         })
         // gives source extra signer privilege on the outer ix
-        .mutate_execute_ix(|ix| ix.accounts[3].is_signer = true)
+        .mutate_execute_ix(|ix| ix.accounts[4].is_signer = true)
         .account(
             source,
             Account::new(1, 0, &solana_system_interface::program::id()),
@@ -433,4 +448,62 @@ fn execute_accepts_duplicate_instruction_account_indices() {
         .execute();
 
     assert_eq!(result.message.instructions[0].accounts, [0, 0]);
+}
+
+#[test]
+fn execute_accepts_nonce_authority_absent_from_wrapped_message() {
+    let source = Address::new_unique();
+    let recipient = Address::new_unique();
+    let result = ExecuteBuilder::default()
+        .payer(source)
+        .inner_instruction(transfer(&source, &recipient, 1))
+        .account(
+            source,
+            Account::new(10, 0, &solana_system_interface::program::id()),
+        )
+        .execute();
+    assert!(!result.message.account_keys.contains(&DEFAULT_AUTHORITY));
+    assert_eq!(result.account(&recipient).unwrap().lamports, 1);
+    assert_ne!(
+        decode_state(&result.nonce_account).nonce,
+        result.message.recent_blockhash
+    );
+}
+
+#[test]
+fn execute_accepts_nonce_authority_as_message_nonsigner() {
+    let source = Address::new_unique();
+    let result = ExecuteBuilder::default()
+        .payer(source)
+        .inner_instruction(transfer(&source, &DEFAULT_AUTHORITY, 1))
+        .account(
+            source,
+            Account::new(10, 0, &solana_system_interface::program::id()),
+        )
+        .execute();
+    let authority_index = result
+        .message
+        .account_keys
+        .iter()
+        .position(|address| address == &DEFAULT_AUTHORITY)
+        .unwrap();
+    assert!(!result.message.is_signer(authority_index));
+    assert_eq!(
+        result.account(&DEFAULT_AUTHORITY).unwrap().lamports,
+        100_000_001
+    );
+}
+
+#[test]
+fn execute_downgrades_nonce_authority_signer_privilege_for_inner_cpi() {
+    let recipient = Address::new_unique();
+    let mut instruction = transfer(&DEFAULT_AUTHORITY, &recipient, 1);
+    // The authority signs the outer execute instruction, but not the wrapped transfer.
+    instruction.accounts[0].is_signer = false;
+
+    ExecuteBuilder::default()
+        .payer(Address::new_unique())
+        .inner_instruction(instruction)
+        .check_err(ProgramError::MissingRequiredSignature)
+        .execute();
 }

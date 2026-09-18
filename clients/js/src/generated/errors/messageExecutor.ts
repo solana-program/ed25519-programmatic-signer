@@ -17,14 +17,12 @@ import { MESSAGE_EXECUTOR_PROGRAM_ADDRESS } from '../programs';
 export const MESSAGE_EXECUTOR_ERROR__INVALID_NONCE_ACCOUNT = 0x0; // 0
 export const MESSAGE_EXECUTOR_ERROR__INVALID_MESSAGE = 0x1; // 1
 export const MESSAGE_EXECUTOR_ERROR__MESSAGE_ACCOUNTS_MISMATCH = 0x2; // 2
-export const MESSAGE_EXECUTOR_ERROR__MISSING_NONCE_AUTHORITY_SIGNER = 0x3; // 3
 export const MESSAGE_EXECUTOR_ERROR__NONCE_MISMATCH = 0x4; // 4
 
 export type MessageExecutorError =
     | typeof MESSAGE_EXECUTOR_ERROR__INVALID_MESSAGE
     | typeof MESSAGE_EXECUTOR_ERROR__INVALID_NONCE_ACCOUNT
     | typeof MESSAGE_EXECUTOR_ERROR__MESSAGE_ACCOUNTS_MISMATCH
-    | typeof MESSAGE_EXECUTOR_ERROR__MISSING_NONCE_AUTHORITY_SIGNER
     | typeof MESSAGE_EXECUTOR_ERROR__NONCE_MISMATCH;
 
 let messageExecutorErrorMessages: Record<MessageExecutorError, string> | undefined;
@@ -33,7 +31,6 @@ if (process.env['NODE_ENV'] !== 'production') {
         [MESSAGE_EXECUTOR_ERROR__INVALID_MESSAGE]: `The legacy message fails sanitization or contains duplicate keys`,
         [MESSAGE_EXECUTOR_ERROR__INVALID_NONCE_ACCOUNT]: `The nonce account data could not be decoded as nonce state`,
         [MESSAGE_EXECUTOR_ERROR__MESSAGE_ACCOUNTS_MISMATCH]: `The passed accounts do not match the wrapped message's account keys`,
-        [MESSAGE_EXECUTOR_ERROR__MISSING_NONCE_AUTHORITY_SIGNER]: `The nonce account's stored authority is not a required message signer`,
         [MESSAGE_EXECUTOR_ERROR__NONCE_MISMATCH]: `The message's recent blockhash does not match the stored nonce`,
     };
 }

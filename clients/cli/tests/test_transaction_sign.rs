@@ -33,7 +33,11 @@ fn approval_message(authorities: &[Address]) -> Message {
         })
         .collect::<Vec<_>>();
     let inner = Message::new_with_blockhash(&transfers, None, &Hash::new_from_array([8; 32]));
-    let instruction = execute(&Address::new_from_array([2; 32]), &inner);
+    let instruction = execute(
+        &Address::new_from_array([2; 32]),
+        &inner.account_keys[0],
+        &inner,
+    );
     let VersionedMessage::Legacy(outer) = wrapped_message(&instruction, authorities) else {
         panic!("wrapped_message must produce a legacy message");
     };
@@ -487,23 +491,23 @@ fn verifies_and_counts_duplicate_signatures_once_without_updating_input() {
             ExecutorInstruction::try_from_bytes(&msg.instructions[0].data).unwrap();
         inner.account_keys[1] = inner.account_keys[0];
         msg.instructions[0].data = wincode::serialize(&ExecutorInstruction::Execute(inner)).unwrap();
-        msg.instructions[0].accounts[3] = msg.instructions[0].accounts[2];
+        msg.instructions[0].accounts[4] = msg.instructions[0].accounts[3];
     },
     "inner message must not contain duplicate account keys";
     "duplicate inner account keys"
 )]
 #[test_case(
-    |msg| msg.instructions[0].accounts.truncate(1),
-    "expected the nonce account and SPL Nonce program";
+    |msg| msg.instructions[0].accounts.truncate(2),
+    "expected the nonce authority, nonce account, and SPL Nonce program";
     "missing nonce program"
 )]
 #[test_case(
-    |msg| msg.instructions[0].accounts[1] = 0,
-    "expected the SPL Nonce program as the second Execute account";
+    |msg| msg.instructions[0].accounts[2] = 0,
+    "expected the SPL Nonce program as the third Execute account";
     "wrong nonce program"
 )]
 #[test_case(
-    |msg| msg.instructions[0].accounts[2..].reverse(),
+    |msg| msg.instructions[0].accounts[3..].reverse(),
     "Execute accounts must mirror the inner message accounts";
     "reordered inner accounts"
 )]
