@@ -36,12 +36,16 @@ import { getNonceCodec, type Nonce, type NonceArgs } from '../accounts';
 import {
     getAdvanceInstruction,
     getInitializeInstruction,
+    getWithdrawInstruction,
     parseAdvanceInstruction,
     parseInitializeInstruction,
+    parseWithdrawInstruction,
     type AdvanceInput,
     type InitializeInput,
     type ParsedAdvanceInstruction,
     type ParsedInitializeInstruction,
+    type ParsedWithdrawInstruction,
+    type WithdrawInput,
 } from '../instructions';
 
 export const NONCE_PROGRAM_ADDRESS =
@@ -65,6 +69,7 @@ export function identifyNonceAccount(account: { data: ReadonlyUint8Array } | Rea
 export enum NonceInstruction {
     Initialize,
     Advance,
+    Withdraw,
 }
 
 export function identifyNonceInstruction(
@@ -77,6 +82,9 @@ export function identifyNonceInstruction(
     if (containsBytes(data, getU8Encoder().encode(1), 0)) {
         return NonceInstruction.Advance;
     }
+    if (containsBytes(data, getU8Encoder().encode(2), 0)) {
+        return NonceInstruction.Withdraw;
+    }
     throw new SolanaError(SOLANA_ERROR__PROGRAM_CLIENTS__FAILED_TO_IDENTIFY_INSTRUCTION, {
         instructionData: data,
         programName: 'nonce',
@@ -85,7 +93,8 @@ export function identifyNonceInstruction(
 
 export type ParsedNonceInstruction<TProgram extends string = 'Noncediea1fH12usShuQAz28UhgAeuE5Maf32LsMUQB'> =
     | ({ instructionType: NonceInstruction.Initialize } & ParsedInitializeInstruction<TProgram>)
-    | ({ instructionType: NonceInstruction.Advance } & ParsedAdvanceInstruction<TProgram>);
+    | ({ instructionType: NonceInstruction.Advance } & ParsedAdvanceInstruction<TProgram>)
+    | ({ instructionType: NonceInstruction.Withdraw } & ParsedWithdrawInstruction<TProgram>);
 
 export function parseNonceInstruction<TProgram extends string>(
     instruction: Instruction<TProgram> & InstructionWithData<ReadonlyUint8Array>,
@@ -99,6 +108,10 @@ export function parseNonceInstruction<TProgram extends string>(
         case NonceInstruction.Advance: {
             assertIsInstructionWithAccounts(instruction);
             return { instructionType: NonceInstruction.Advance, ...parseAdvanceInstruction(instruction) };
+        }
+        case NonceInstruction.Withdraw: {
+            assertIsInstructionWithAccounts(instruction);
+            return { instructionType: NonceInstruction.Withdraw, ...parseWithdrawInstruction(instruction) };
         }
         default:
             throw new SolanaError(SOLANA_ERROR__PROGRAM_CLIENTS__UNRECOGNIZED_INSTRUCTION_TYPE, {
@@ -121,6 +134,7 @@ export type NoncePluginAccounts = { nonce: ReturnType<typeof getNonceCodec> & Se
 export type NoncePluginInstructions = {
     initialize: (input: InitializeInput) => ReturnType<typeof getInitializeInstruction> & SelfPlanAndSendFunctions;
     advance: (input: AdvanceInput) => ReturnType<typeof getAdvanceInstruction> & SelfPlanAndSendFunctions;
+    withdraw: (input: WithdrawInput) => ReturnType<typeof getWithdrawInstruction> & SelfPlanAndSendFunctions;
 };
 
 export type NoncePluginRequirements = ClientWithRpc<GetAccountInfoApi & GetMultipleAccountsApi> &
@@ -135,6 +149,7 @@ export function nonceProgram() {
                 instructions: {
                     initialize: input => addSelfPlanAndSendFunctions(client, getInitializeInstruction(input)),
                     advance: input => addSelfPlanAndSendFunctions(client, getAdvanceInstruction(input)),
+                    withdraw: input => addSelfPlanAndSendFunctions(client, getWithdrawInstruction(input)),
                 },
                 identifyAccount: identifyNonceAccount,
                 identifyInstruction: identifyNonceInstruction,

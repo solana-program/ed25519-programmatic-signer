@@ -17,9 +17,11 @@ import { NONCE_PROGRAM_ADDRESS } from '../programs';
 export const NONCE_ERROR__INVALID_NONCE_ACCOUNT = 0x0; // 0
 export const NONCE_ERROR__AUTHORITY_MISMATCH = 0x1; // 1
 export const NONCE_ERROR__NONCE_MISMATCH = 0x2; // 2
+export const NONCE_ERROR__CLOSE_SAME_SLOT = 0x3; // 3
 
 export type NonceError =
     | typeof NONCE_ERROR__AUTHORITY_MISMATCH
+    | typeof NONCE_ERROR__CLOSE_SAME_SLOT
     | typeof NONCE_ERROR__INVALID_NONCE_ACCOUNT
     | typeof NONCE_ERROR__NONCE_MISMATCH;
 
@@ -27,6 +29,7 @@ let nonceErrorMessages: Record<NonceError, string> | undefined;
 if (process.env['NODE_ENV'] !== 'production') {
     nonceErrorMessages = {
         [NONCE_ERROR__AUTHORITY_MISMATCH]: `The stored authority does not match the passed authority account`,
+        [NONCE_ERROR__CLOSE_SAME_SLOT]: `A nonce account cannot be closed during the same slot it was initialized in`,
         [NONCE_ERROR__INVALID_NONCE_ACCOUNT]: `The nonce account is malformed or not writable`,
         [NONCE_ERROR__NONCE_MISMATCH]: `The stored nonce does not match the nonce supplied by the caller`,
     };

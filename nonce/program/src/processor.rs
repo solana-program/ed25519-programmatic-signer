@@ -1,5 +1,5 @@
 use {
-    crate::{advance::process_advance, initialize::process_initialize},
+    crate::{advance::process_advance, initialize::process_initialize, withdraw::process_withdraw},
     pinocchio::{AccountView, Address, ProgramResult},
     spl_nonce_interface::instruction::Instruction,
 };
@@ -16,6 +16,6 @@ pub fn process_instruction(
             current_nonce,
             transition_commitment,
         } => process_advance(program_id, accounts, current_nonce, transition_commitment),
-        Instruction::Close => unimplemented!(),
+        Instruction::Withdraw { lamports } => process_withdraw(program_id, accounts, lamports),
     }
 }
