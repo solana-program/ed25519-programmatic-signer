@@ -9,7 +9,7 @@ license = { workspace = true }
 edition = { workspace = true }
 
 [[bin]]
-name = "spl-programmatic-signer-cli"
+name = "spl-programmatic-signer"
 path = "src/main.rs"
 
 [lints]

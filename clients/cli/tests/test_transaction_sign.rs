@@ -97,7 +97,7 @@ impl SignTestEnv {
         let mut args = vec![
             "-C",
             &self.config_file_path,
-            "tx",
+            "transaction",
             "sign",
             self.input.to_str().unwrap(),
         ];
@@ -192,7 +192,7 @@ fn approval_screen_matches_golden() {
     let output = run_psigner(&env.args(&["--yes"]));
     let stderr = String::from_utf8(output.stderr).unwrap();
 
-    assert_eq!(stderr, include_str!("goldens/tx-approval.txt"));
+    assert_eq!(stderr, include_str!("goldens/transaction-approval.txt"));
     assert_eq!(
         String::from_utf8(output.stdout).unwrap(),
         format!(
@@ -212,7 +212,7 @@ fn reports_input_path_when_read_fails() {
         &[
             "-C",
             &env.config_file_path,
-            "tx",
+            "transaction",
             "sign",
             missing.to_str().unwrap(),
             "--yes",

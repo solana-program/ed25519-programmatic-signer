@@ -8,19 +8,23 @@ use {
 };
 
 #[derive(Debug, Args)]
-pub(crate) struct TxCommand {
+pub(crate) struct TransactionCommand {
     #[clap(subcommand)]
-    command: TxSubcommand,
+    command: TransactionSubcommand,
 }
 
 #[derive(Debug, Subcommand)]
-enum TxSubcommand {
+enum TransactionSubcommand {
     /// Review and sign an execution message offline, returning an address/signature pair.
     Sign(sign::SignCommand),
 }
 
-pub(crate) fn run(command: TxCommand, client: &Client, output: OutputFormat) -> Result<String> {
+pub(crate) fn run(
+    command: TransactionCommand,
+    client: &Client,
+    output: OutputFormat,
+) -> Result<String> {
     match command.command {
-        TxSubcommand::Sign(command) => sign::run(command, client, output),
+        TransactionSubcommand::Sign(command) => sign::run(command, client, output),
     }
 }

@@ -62,7 +62,7 @@ pub fn run_psigner(args: &[&str]) -> Output {
     let output = run_psigner_with_input(args, "");
     assert!(
         output.status.success(),
-        "spl-programmatic-signer-cli failed:\nstdout:\n{}\nstderr:\n{}",
+        "spl-programmatic-signer failed:\nstdout:\n{}\nstderr:\n{}",
         String::from_utf8_lossy(&output.stdout),
         String::from_utf8_lossy(&output.stderr),
     );
@@ -73,7 +73,7 @@ pub fn run_psigner(args: &[&str]) -> Output {
 /// Input is written as soon as the process starts and buffered until the CLI reads
 /// it. After writing, stdin is closed and this helper waits for the process to exit.
 pub fn run_psigner_with_input(args: &[&str], input: &str) -> Output {
-    let mut child = Command::new(env!("CARGO_BIN_EXE_spl-programmatic-signer-cli"))
+    let mut child = Command::new(env!("CARGO_BIN_EXE_spl-programmatic-signer"))
         .args(args)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
