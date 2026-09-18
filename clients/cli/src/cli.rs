@@ -60,10 +60,6 @@ pub(crate) struct ClientArgs {
     )]
     pub(crate) config: Option<PathBuf>,
 
-    /// Default signer source. Overrides the keypair in the Solana CLI configuration.
-    #[clap(short = 'k', long, global = true, value_parser = keypair_source_parser())]
-    pub(crate) keypair: Option<SignerSource>,
-
     /// Solana RPC URL or cluster moniker. Full monikers and their first letters are supported.
     #[clap(
         short = 'u',
@@ -79,9 +75,9 @@ pub(crate) struct ClientArgs {
     pub(crate) commitment: Option<CommitmentConfig>,
 
     /// Fee payer signer source: a keypair file, usb:// URL, prompt:// URL, or the ASK keyword.
-    /// Defaults to --keypair or the configured keypair.
-    #[clap(long, global = true)]
-    pub(crate) fee_payer: Option<String>,
+    /// Defaults to the configured keypair.
+    #[clap(long, global = true, value_parser = keypair_source_parser())]
+    pub(crate) fee_payer: Option<SignerSource>,
 
     /// Skip the preflight check when sending transactions.
     #[clap(long, global = true)]
@@ -98,6 +94,6 @@ pub(crate) enum Command {
     Transaction(TransactionCommand),
 }
 
-fn keypair_source_parser() -> ValueParser {
+pub(crate) fn keypair_source_parser() -> ValueParser {
     SignerSourceParserBuilder::default().allow_all().build()
 }
