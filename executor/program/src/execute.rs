@@ -26,8 +26,9 @@ pub fn process_execute(
         return Err(ProgramError::IllegalOwner);
     }
     let nonce_data = nonce_account.try_borrow()?;
-    let Nonce { nonce, authority } =
-        Nonce::view(&nonce_data).map_err(|_| Error::InvalidNonceAccount)?;
+    let Nonce {
+        nonce, authority, ..
+    } = Nonce::view(&nonce_data).map_err(|_| Error::InvalidNonceAccount)?;
 
     validate_wrapped_message(&wrapped_message)?;
 

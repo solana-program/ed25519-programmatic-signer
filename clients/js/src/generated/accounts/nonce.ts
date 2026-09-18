@@ -17,6 +17,8 @@ import {
     getAddressEncoder,
     getStructDecoder,
     getStructEncoder,
+    getU64Decoder,
+    getU64Encoder,
     type Account,
     type Address,
     type EncodedAccount,
@@ -29,15 +31,16 @@ import {
     type MaybeEncodedAccount,
 } from '@solana/kit';
 
-export type Nonce = { nonce: Address; authority: Address };
+export type Nonce = { nonce: Address; authority: Address; initializeSlot: bigint };
 
-export type NonceArgs = Nonce;
+export type NonceArgs = { nonce: Address; authority: Address; initializeSlot: number | bigint };
 
 /** Gets the encoder for {@link NonceArgs} account data. */
 export function getNonceEncoder(): FixedSizeEncoder<NonceArgs> {
     return getStructEncoder([
         ['nonce', getAddressEncoder()],
         ['authority', getAddressEncoder()],
+        ['initializeSlot', getU64Encoder()],
     ]);
 }
 
@@ -46,6 +49,7 @@ export function getNonceDecoder(): FixedSizeDecoder<Nonce> {
     return getStructDecoder([
         ['nonce', getAddressDecoder()],
         ['authority', getAddressDecoder()],
+        ['initializeSlot', getU64Decoder()],
     ]);
 }
 

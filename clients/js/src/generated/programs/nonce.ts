@@ -53,7 +53,7 @@ export enum NonceAccount {
 
 export function identifyNonceAccount(account: { data: ReadonlyUint8Array } | ReadonlyUint8Array): NonceAccount {
     const data = 'data' in account ? account.data : account;
-    if (data.length === 64) {
+    if (data.length === 72) {
         return NonceAccount.Nonce;
     }
     throw new SolanaError(SOLANA_ERROR__PROGRAM_CLIENTS__FAILED_TO_IDENTIFY_ACCOUNT, {

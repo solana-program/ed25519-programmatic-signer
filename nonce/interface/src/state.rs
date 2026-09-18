@@ -5,6 +5,7 @@ use {
     solana_address::{ADDRESS_BYTES, Address},
     solana_hash::{HASH_BYTES, Hash},
     solana_sha256_hasher::hashv,
+    solana_zero_copy::unaligned::U64,
     wincode::{SchemaRead, SchemaWrite, ZeroCopy},
 };
 
@@ -15,13 +16,13 @@ pub const NONCE_STEP_TAG: &[u8] = b"spl-nonce::step::v1";
 ///
 /// One authority can control any number of independent nonce accounts. This is useful for
 /// when that authority wants to prepare or submit more than one transaction concurrently.
-#[derive(Clone, Debug, Default, PartialEq, Eq, SchemaRead, SchemaWrite)]
+#[derive(Clone, Debug, Default, PartialEq, SchemaRead, SchemaWrite)]
 #[wincode(assert_zero_copy)]
 #[repr(C)]
 #[cfg_attr(
     feature = "codama",
     derive(CodamaAccount),
-    codama(discriminator(size = 64))
+    codama(discriminator(size = 72))
 )]
 pub struct Nonce {
     /// Single-use value that prevents a signed message from being replayed. `Advance`
@@ -30,11 +31,18 @@ pub struct Nonce {
     #[cfg_attr(feature = "codama", codama(type = public_key))]
     pub nonce: Hash,
     /// Address allowed to consume this nonce and advance its value.
+    #[cfg_attr(feature = "codama", codama(type = public_key))]
     pub authority: Address,
+    /// Slot the Nonce was initialized at
+    #[cfg_attr(feature = "codama", codama(type = number(u64)))]
+    pub initialize_slot: U64,
 }
 
+// U64 compares its byte array, so Nonce equality is an equivalence relation.
+impl Eq for Nonce {}
+
 impl Nonce {
-    pub const LEN: usize = HASH_BYTES + ADDRESS_BYTES;
+    pub const LEN: usize = HASH_BYTES + ADDRESS_BYTES + core::mem::size_of::<U64>();
 
     /// Derives the value for a newly initialized nonce account.
     pub fn derive_initial_nonce(
@@ -68,7 +76,8 @@ impl Nonce {
 
     /// Borrows nonce state from account data.
     ///
-    /// Requires exactly [`Self::LEN`] bytes and accepts the all-zero, uninitialized state.
+    /// Requires exactly [`Self::LEN`] bytes and accepts the all-zero,
+    /// uninitialized state.
     /// Use [`Self::view`] when initialized state is required.
     #[inline]
     pub fn view_maybe_uninitialized(account_data: &[u8]) -> Result<&Self, DecodeError> {
@@ -92,7 +101,8 @@ impl Nonce {
 
     /// Borrows initialized nonce state from account data.
     ///
-    /// Requires exactly [`Self::LEN`] bytes and rejects the all-zero, uninitialized state.
+    /// Requires exactly [`Self::LEN`] bytes and rejects the all-zero,
+    /// uninitialized state.
     #[inline]
     pub fn view(account_data: &[u8]) -> Result<&Self, DecodeError> {
         let state = Self::view_maybe_uninitialized(account_data)?;
@@ -115,7 +125,7 @@ impl Nonce {
         Ok(state)
     }
 
-    /// Returns whether the nonce state is initialized, meaning either field is nonzero.
+    /// Returns whether the nonce state is initialized, meaning any field is nonzero.
     #[inline]
     pub fn is_initialized(&self) -> bool {
         self != &Self::default()
@@ -134,6 +144,9 @@ mod tests {
         test_case::test_case,
     };
 
+    #[repr(align(8))]
+    struct AlignedData([u8; Nonce::LEN + 1]);
+
     #[test]
     fn layout_matches_wincode_serialized_size() {
         assert_eq!(size_of::<Nonce>(), Nonce::LEN);
@@ -142,6 +155,7 @@ mod tests {
         let account = Nonce {
             nonce: Hash::new_from_array([1; 32]),
             authority: Address::new_from_array([2; 32]),
+            initialize_slot: 42.into(),
         };
 
         assert_eq!(
@@ -169,6 +183,7 @@ mod tests {
                 .parse::<Hash>()
                 .unwrap(),
             authority: Address::default(),
+            initialize_slot: 42.into(),
         };
         assert_eq!(
             state.derive_next_nonce(&program_id, &nonce_account, &transition_commitment),
@@ -178,47 +193,71 @@ mod tests {
         );
     }
 
-    #[test_case(1, 0; "zero authority")]
-    #[test_case(0, 2; "zero nonce")]
-    #[test_case(1, 2; "both fields nonzero")]
-    fn views_decode_initialized_state(nonce: u8, authority: u8) {
-        let mut data = [nonce; Nonce::LEN];
-        data[32..].fill(authority);
+    #[test_case(1, 0, 0; "nonzero nonce only")]
+    #[test_case(0, 2, 0; "nonzero authority only")]
+    #[test_case(0, 0, 42; "nonzero initialize slot only")]
+    #[test_case(1, 2, 42; "all fields nonzero")]
+    fn views_decode_initialized_state(nonce: u8, authority: u8, initialize_slot: u64) {
+        let mut storage = AlignedData([0; Nonce::LEN + 1]);
+        let data = &mut storage.0[..Nonce::LEN];
+        data[..32].fill(nonce);
+        data[32..64].fill(authority);
+        data[64..].copy_from_slice(&initialize_slot.to_le_bytes());
         let expected = Nonce {
             nonce: Hash::new_from_array([nonce; 32]),
             authority: Address::new_from_array([authority; 32]),
+            initialize_slot: initialize_slot.into(),
         };
 
         assert!(expected.is_initialized());
-        assert_eq!(Nonce::view_maybe_uninitialized(&data).unwrap(), &expected);
+        assert_eq!(Nonce::view_maybe_uninitialized(data).unwrap(), &expected);
         assert_eq!(
-            Nonce::view_maybe_uninitialized_mut(&mut data).unwrap(),
+            Nonce::view_maybe_uninitialized_mut(data).unwrap(),
             &expected
         );
-        assert_eq!(Nonce::view(&data).unwrap(), &expected);
-        assert_eq!(Nonce::view_mut(&mut data).unwrap(), &expected);
+        assert_eq!(Nonce::view(data).unwrap(), &expected);
+        assert_eq!(Nonce::view_mut(data).unwrap(), &expected);
     }
 
     #[test]
     fn views_handle_uninitialized_state() {
-        let mut data = [0; Nonce::LEN];
+        let mut storage = AlignedData([0; Nonce::LEN + 1]);
+        let data = &mut storage.0[..Nonce::LEN];
         let expected = Nonce::default();
 
         assert!(!expected.is_initialized());
-        assert_eq!(Nonce::view_maybe_uninitialized(&data).unwrap(), &expected);
+        assert_eq!(Nonce::view_maybe_uninitialized(data).unwrap(), &expected);
         assert_eq!(
-            Nonce::view_maybe_uninitialized_mut(&mut data).unwrap(),
+            Nonce::view_maybe_uninitialized_mut(data).unwrap(),
             &expected
         );
-        assert_eq!(Nonce::view(&data), Err(DecodeError::Uninitialized));
-        assert_eq!(Nonce::view_mut(&mut data), Err(DecodeError::Uninitialized));
+        assert_eq!(Nonce::view(data), Err(DecodeError::Uninitialized));
+        assert_eq!(Nonce::view_mut(data), Err(DecodeError::Uninitialized));
+    }
+
+    #[test]
+    fn views_accept_unaligned_data() {
+        let mut storage = AlignedData([1; Nonce::LEN + 1]);
+        let data = &mut storage.0[1..];
+        let expected = Nonce {
+            nonce: Hash::new_from_array([1; 32]),
+            authority: Address::new_from_array([1; 32]),
+            initialize_slot: u64::from_le_bytes([1; 8]).into(),
+        };
+        assert_eq!(Nonce::view_maybe_uninitialized(data).unwrap(), &expected);
+        assert_eq!(
+            Nonce::view_maybe_uninitialized_mut(data).unwrap(),
+            &expected
+        );
+        assert_eq!(Nonce::view(data).unwrap(), &expected);
+        assert_eq!(Nonce::view_mut(data).unwrap(), &expected);
     }
 
     #[test_case(0, 0; "empty")]
-    #[test_case(63, 0; "truncated zeroed")]
-    #[test_case(63, 1; "truncated nonzero")]
-    #[test_case(65, 0; "trailing zeroed")]
-    #[test_case(65, 1; "trailing nonzero")]
+    #[test_case(Nonce::LEN - 1, 0; "truncated zeroed")]
+    #[test_case(Nonce::LEN - 1, 1; "truncated nonzero")]
+    #[test_case(Nonce::LEN + 1, 0; "trailing zeroed")]
+    #[test_case(Nonce::LEN + 1, 1; "trailing nonzero")]
     fn views_reject_wrong_lengths(len: usize, value: u8) {
         let mut data = vec![value; len];
         assert_eq!(Nonce::view(&data), Err(DecodeError::InvalidData));
@@ -239,14 +278,17 @@ mod tests {
         view: fn(&mut [u8]) -> Result<&mut Nonce, DecodeError>,
         initial: u8,
     ) {
-        let mut data = [initial; Nonce::LEN];
-        let state = view(&mut data).unwrap();
+        let mut storage = AlignedData([initial; Nonce::LEN + 1]);
+        let data = &mut storage.0[1..];
+        let state = view(data).unwrap();
         *state = Nonce {
             nonce: Hash::new_from_array([2; 32]),
             authority: Address::new_from_array([3; 32]),
+            initialize_slot: 42.into(),
         };
 
         assert_eq!(&data[..32], &[2; 32]);
-        assert_eq!(&data[32..], &[3; 32]);
+        assert_eq!(&data[32..64], &[3; 32]);
+        assert_eq!(&data[64..], &42u64.to_le_bytes());
     }
 }

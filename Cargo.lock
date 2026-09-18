@@ -10001,12 +10001,13 @@ dependencies = [
 
 [[package]]
 name = "solana-zero-copy"
-version = "1.2.0"
+version = "1.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bd3183a7934dd7e6490ae86732616cd70361f5ab9401b9a375ab62f7fa17b112"
+checksum = "8ea15126ebdc7e270c50d43884369af9f51d2308156d46a18e351522a164844d"
 dependencies = [
  "bytemuck",
  "bytemuck_derive",
+ "wincode",
 ]
 
 [[package]]
@@ -10299,6 +10300,7 @@ dependencies = [
  "solana-hash 4.4.0",
  "solana-program-error",
  "solana-sha256-hasher",
+ "solana-zero-copy",
  "test-case",
  "wincode",
 ]
