@@ -1,5 +1,5 @@
 === Authorization status ===
-Approval message hash: 7pLyM2ZtFa9583Vr2GRQsfoghmf15yiWBqTRpZu6AV5K
+Approval message hash: 3rFC78xnnKmHTKZAvtGHaeUfVJQ69iRso7nC64ueSmGV
 
 Approval signatures: 0 of 1 present
   AKnL4NNf3DGWZJS6cPknBuEGnVsV4A4m5tgebLHaRSZ9: not included (your signing key)
@@ -38,6 +38,7 @@ legacy message:
       "accounts": [
         1,
         5,
+        2,
         2,
         3,
         6

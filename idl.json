@@ -223,6 +223,20 @@
                 "kind": "instructionAccountDisplayNode",
                 "skip": "always"
               }
+            },
+            {
+              "kind": "instructionAccountNode",
+              "name": "nonceAuthority",
+              "isWritable": false,
+              "isSigner": true,
+              "isOptional": false,
+              "docs": [
+                "Authority signer for the nonce account"
+              ],
+              "display": {
+                "kind": "instructionAccountDisplayNode",
+                "label": "Nonce authority"
+              }
             }
           ],
           "arguments": [
@@ -314,12 +328,6 @@
           "name": "messageAccountsMismatch",
           "code": 2,
           "message": "The passed accounts do not match the wrapped message's account keys"
-        },
-        {
-          "kind": "errorNode",
-          "name": "missingNonceAuthoritySigner",
-          "code": 3,
-          "message": "The nonce account's stored authority is not a required message signer"
         },
         {
           "kind": "errorNode",

@@ -26,13 +26,13 @@ pub enum Instruction {
     /// 1. Deserializes and sanitizes the wrapped message.
     /// 2. Verifies that the message's recent blockhash matches the nonce account's stored nonce.
     /// 3. Verifies that each supplied account matches the message account at the same index.
-    /// 4. Verifies that the nonce account's authority is a required signer of the message.
-    /// 5. Advances the nonce via CPI to the Nonce program.
-    /// 6. Executes each message instruction via CPI. All changes roll back on failure.
+    /// 4. Advances the nonce via CPI to the Nonce program, which validates the authority signer.
+    /// 5. Executes each message instruction via CPI. All changes roll back on failure.
     ///
     /// Accounts required:
     /// - `[writable]` Nonce account to advance
     /// - `[]` SPL Nonce program
+    /// - `[signer]` Nonce authority, independent of the wrapped message accounts
     /// - Message accounts referenced by the wrapped message, in order
     #[cfg_attr(
         feature = "codama",
@@ -48,6 +48,12 @@ pub enum Instruction {
             docs = "SPL Nonce program",
             default_value = public_key("Noncediea1fH12usShuQAz28UhgAeuE5Maf32LsMUQB"),
             display(skip = always)
+        )),
+        codama(account(
+            name = "nonce_authority",
+            signer,
+            docs = "Authority signer for the nonce account",
+            display(label = "Nonce authority")
         ))
     )]
     Execute(

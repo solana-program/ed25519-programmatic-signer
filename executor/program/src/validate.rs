@@ -1,7 +1,7 @@
 //! Validates the wrapped message and the runtime accounts used to execute it.
 
 use {
-    pinocchio::{AccountView, Address, error::ProgramError},
+    pinocchio::{AccountView, error::ProgramError},
     solana_message::legacy,
     solana_sanitize::Sanitize,
     spl_legacy_message_executor_interface::error::Error,
@@ -23,37 +23,25 @@ pub fn validate_wrapped_message(wrapped_message: &legacy::Message) -> Result<(),
     Ok(())
 }
 
-/// Validates the supplied accounts against the wrapped message and returns the nonce authority.
+/// Validates the supplied accounts against the wrapped message.
 ///
 /// Note: The CPI runtime rejects writable and signer privilege escalation during instruction
 /// execution.
-pub fn validate_message_accounts<'a>(
-    message_accounts: &'a [AccountView],
+pub fn validate_message_accounts(
+    message_accounts: &[AccountView],
     wrapped_message: &legacy::Message,
-    stored_nonce_authority: &Address,
-) -> Result<&'a AccountView, ProgramError> {
+) -> Result<(), ProgramError> {
     // Compiled instructions resolve accounts by index, so message accounts
     // must mirror the message's static addresses one-to-one
     if message_accounts.len() != wrapped_message.account_keys.len() {
         return Err(Error::MessageAccountsMismatch.into());
     }
 
-    let mut nonce_authority_account = None;
-
-    for (index, (account, expected_addr)) in message_accounts
-        .iter()
-        .zip(&wrapped_message.account_keys)
-        .enumerate()
-    {
+    for (account, expected_addr) in message_accounts.iter().zip(&wrapped_message.account_keys) {
         if account.address() != expected_addr {
             return Err(Error::MessageAccountsMismatch.into());
         }
-
-        // The stored authority must sign the message to authorize the nonce advance
-        if wrapped_message.is_signer(index) && account.address() == stored_nonce_authority {
-            nonce_authority_account = Some(account);
-        }
     }
 
-    nonce_authority_account.ok_or(Error::MissingNonceAuthoritySigner.into())
+    Ok(())
 }

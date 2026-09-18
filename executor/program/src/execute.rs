@@ -15,7 +15,13 @@ pub fn process_execute(
     accounts: &mut [AccountView],
     wrapped_message: legacy::Message,
 ) -> ProgramResult {
-    let [nonce_account, nonce_program, message_accounts @ ..] = accounts else {
+    let [
+        nonce_account,
+        nonce_program,
+        nonce_authority_account,
+        message_accounts @ ..,
+    ] = accounts
+    else {
         return Err(ProgramError::NotEnoughAccountKeys);
     };
 
@@ -26,8 +32,7 @@ pub fn process_execute(
         return Err(ProgramError::IllegalOwner);
     }
     let nonce_data = nonce_account.try_borrow()?;
-    let Nonce { nonce, authority } =
-        Nonce::view(&nonce_data).map_err(|_| Error::InvalidNonceAccount)?;
+    let Nonce { nonce, .. } = Nonce::view(&nonce_data).map_err(|_| Error::InvalidNonceAccount)?;
 
     validate_wrapped_message(&wrapped_message)?;
 
@@ -35,8 +40,7 @@ pub fn process_execute(
         return Err(Error::NonceMismatch.into());
     }
 
-    let nonce_authority_account =
-        validate_message_accounts(message_accounts, &wrapped_message, authority)?;
+    validate_message_accounts(message_accounts, &wrapped_message)?;
 
     // The advance ix requires an owned nonce
     let current_nonce = *nonce;

@@ -24,6 +24,7 @@ pub struct ExecuteBuilder<'a> {
     mollusk: Mollusk,
     nonce_account: Option<(Address, Account)>,
     authority: Address,
+    payer: Option<Address>,
     inner_instructions: Vec<Instruction>,
     recent_blockhash: Option<Hash>,
     message: Option<legacy::Message>,
@@ -45,6 +46,7 @@ impl<'a> ExecuteBuilder<'a> {
             mollusk,
             nonce_account: None,
             authority: DEFAULT_AUTHORITY,
+            payer: None,
             inner_instructions: vec![],
             recent_blockhash: None,
             message: None,
@@ -62,6 +64,11 @@ impl<'a> ExecuteBuilder<'a> {
 
     pub fn authority(mut self, authority: Address) -> Self {
         self.authority = authority;
+        self
+    }
+
+    pub fn payer(mut self, payer: Address) -> Self {
+        self.payer = Some(payer);
         self
     }
 
@@ -109,6 +116,7 @@ impl<'a> ExecuteBuilder<'a> {
             mollusk,
             nonce_account: nonce_account_override,
             authority,
+            payer,
             inner_instructions,
             recent_blockhash: recent_blockhash_override,
             message: message_override,
@@ -130,7 +138,7 @@ impl<'a> ExecuteBuilder<'a> {
         let mut message = message_override.unwrap_or_else(|| {
             legacy::Message::new_with_blockhash(
                 &inner_instructions,
-                Some(&authority),
+                Some(payer.as_ref().unwrap_or(&authority)),
                 &recent_blockhash,
             )
         });
@@ -139,7 +147,7 @@ impl<'a> ExecuteBuilder<'a> {
             mutation(&mut message);
         }
 
-        let mut instruction = execute(&nonce_address, &message);
+        let mut instruction = execute(&nonce_address, &authority, &message);
 
         for mutation in execute_instruction_mutations {
             mutation(&mut instruction);

@@ -118,10 +118,14 @@ fn validate_approval_message(outer_message: &VersionedMessage) -> Result<Approva
     let [
         nonce_account_index,
         nonce_program_index,
+        _nonce_authority_index,
         inner_account_indices @ ..,
     ] = execute_instruction.accounts.as_slice()
     else {
-        bail!("expected the nonce account and SPL Nonce program in Execute accounts");
+        bail!(
+            "expected the nonce account, SPL Nonce program, and nonce authority in Execute \
+             accounts"
+        );
     };
     let nonce_account = outer_account_keys[usize::from(*nonce_account_index)];
     ensure!(
