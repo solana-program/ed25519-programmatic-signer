@@ -27,7 +27,13 @@ import {
     type ReadonlyUint8Array,
     type WritableAccount,
 } from '@solana/kit';
-import { getAccountMetaFactory, type ResolvedInstructionAccount } from '@solana/kit/program-client-core';
+import {
+    getAccountMetaFactory,
+    type InstructionAccountInput,
+    type InstructionAccountInputAddress,
+    type ResolvedInstructionAccount,
+    type ResolvedInstructionAccountMeta,
+} from '@solana/kit/program-client-core';
 import { NONCE_PROGRAM_ADDRESS } from '../programs';
 
 export const INITIALIZE_DISCRIMINATOR = 0;
@@ -76,35 +82,43 @@ export function getInitializeInstructionDataCodec(): FixedSizeCodec<
 }
 
 export type InitializeInput<
-    TAccountNonceAccount extends string = string,
-    TAccountAuthority extends string = string,
-    TAccountSlotHashes extends string = string,
+    TAccountNonceAccount extends InstructionAccountInput = InstructionAccountInput,
+    TAccountAuthority extends InstructionAccountInput = InstructionAccountInput,
+    TAccountSlotHashes extends InstructionAccountInput = InstructionAccountInput,
 > = {
     /** Nonce account to initialize */
-    nonceAccount: Address<TAccountNonceAccount>;
+    nonceAccount: TAccountNonceAccount;
     /** Authority stored in the nonce account */
-    authority: Address<TAccountAuthority>;
+    authority: TAccountAuthority;
     /** Slot Hashes sysvar */
-    slotHashes?: Address<TAccountSlotHashes>;
+    slotHashes?: TAccountSlotHashes;
 };
 
 export function getInitializeInstruction<
-    TAccountNonceAccount extends string,
-    TAccountAuthority extends string,
-    TAccountSlotHashes extends string,
+    TAccountNonceAccount extends InstructionAccountInput,
+    TAccountAuthority extends InstructionAccountInput,
+    TAccountSlotHashes extends InstructionAccountInput,
     TProgramAddress extends Address = typeof NONCE_PROGRAM_ADDRESS,
 >(
     input: InitializeInput<TAccountNonceAccount, TAccountAuthority, TAccountSlotHashes>,
     config?: { programAddress?: TProgramAddress },
-): InitializeInstruction<TProgramAddress, TAccountNonceAccount, TAccountAuthority, TAccountSlotHashes> {
+): InitializeInstruction<
+    TProgramAddress,
+    ResolvedInstructionAccountMeta<TAccountNonceAccount, InstructionAccountInputAddress<TAccountNonceAccount>>,
+    ResolvedInstructionAccountMeta<TAccountAuthority, InstructionAccountInputAddress<TAccountAuthority>>,
+    ResolvedInstructionAccountMeta<TAccountSlotHashes, InstructionAccountInputAddress<TAccountSlotHashes>>
+> {
     // Program address.
     const programAddress = config?.programAddress ?? NONCE_PROGRAM_ADDRESS;
 
+    // Account meta helper.
+    const getAccountMeta = getAccountMetaFactory(programAddress, 'programId');
+
     // Original accounts.
     const originalAccounts = {
-        nonceAccount: { value: input.nonceAccount ?? null, isWritable: true },
-        authority: { value: input.authority ?? null, isWritable: false },
-        slotHashes: { value: input.slotHashes ?? null, isWritable: false },
+        nonceAccount: { value: input.nonceAccount ?? null, isSigner: false, isWritable: true },
+        authority: { value: input.authority ?? null, isSigner: false, isWritable: false },
+        slotHashes: { value: input.slotHashes ?? null, isSigner: false, isWritable: false },
     };
     const accounts = originalAccounts as Record<keyof typeof originalAccounts, ResolvedInstructionAccount>;
 
@@ -114,7 +128,6 @@ export function getInitializeInstruction<
             'SysvarS1otHashes111111111111111111111111111' as Address<'SysvarS1otHashes111111111111111111111111111'>;
     }
 
-    const getAccountMeta = getAccountMetaFactory(programAddress, 'programId');
     return Object.freeze({
         accounts: [
             getAccountMeta('nonceAccount', accounts.nonceAccount),
@@ -123,7 +136,12 @@ export function getInitializeInstruction<
         ],
         data: getInitializeInstructionDataEncoder().encode({}),
         programAddress,
-    } as InitializeInstruction<TProgramAddress, TAccountNonceAccount, TAccountAuthority, TAccountSlotHashes>);
+    } as InitializeInstruction<
+        TProgramAddress,
+        ResolvedInstructionAccountMeta<TAccountNonceAccount, InstructionAccountInputAddress<TAccountNonceAccount>>,
+        ResolvedInstructionAccountMeta<TAccountAuthority, InstructionAccountInputAddress<TAccountAuthority>>,
+        ResolvedInstructionAccountMeta<TAccountSlotHashes, InstructionAccountInputAddress<TAccountSlotHashes>>
+    >);
 }
 
 export type ParsedInitializeInstruction<
