@@ -43,11 +43,11 @@
         "prepublishOnly": "pnpm build"
     },
     "dependencies": {
-        "@solana-program/loader-v3": "^0.6.0"
+        "@solana-program/loader-v3": "^0.7.0"
     },
     "devDependencies": {
         "@solana-config/oxc": "^0.1.1",
-        "@solana/kit": "^8.0.0",
+        "@solana/kit": "^8.3.0",
         "@types/node": "^26.3.0",
         "oxfmt": "^0.65.0",
         "oxlint": "^1.80.0",
@@ -58,7 +58,7 @@
         "vitest": "^4.1.11"
     },
     "peerDependencies": {
-        "@solana/kit": "^8.0.0"
+        "@solana/kit": "^8.3.0"
     },
     "engines": {
         "node": ">=24.0.0"

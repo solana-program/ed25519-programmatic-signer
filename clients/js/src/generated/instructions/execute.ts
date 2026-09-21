@@ -29,7 +29,13 @@ import {
     type ReadonlyUint8Array,
     type WritableAccount,
 } from '@solana/kit';
-import { getAccountMetaFactory, type ResolvedInstructionAccount } from '@solana/kit/program-client-core';
+import {
+    getAccountMetaFactory,
+    type InstructionAccountInput,
+    type InstructionAccountInputAddress,
+    type ResolvedInstructionAccount,
+    type ResolvedInstructionAccountMeta,
+} from '@solana/kit/program-client-core';
 import { resolveMessageAccounts } from '../../hooked';
 import { MESSAGE_EXECUTOR_PROGRAM_ADDRESS } from '../programs';
 
@@ -79,29 +85,39 @@ export function getExecuteInstructionDataCodec(): Codec<ExecuteInstructionDataAr
     return combineCodec(getExecuteInstructionDataEncoder(), getExecuteInstructionDataDecoder());
 }
 
-export type ExecuteInput<TAccountNonceAccount extends string = string, TAccountNonceProgram extends string = string> = {
+export type ExecuteInput<
+    TAccountNonceAccount extends InstructionAccountInput = InstructionAccountInput,
+    TAccountNonceProgram extends InstructionAccountInput = InstructionAccountInput,
+> = {
     /** Nonce account consumed for replay protection */
-    nonceAccount: Address<TAccountNonceAccount>;
+    nonceAccount: TAccountNonceAccount;
     /** SPL Nonce program */
-    nonceProgram?: Address<TAccountNonceProgram>;
+    nonceProgram?: TAccountNonceProgram;
     message: ExecuteInstructionDataArgs['message'];
 };
 
 export function getExecuteInstruction<
-    TAccountNonceAccount extends string,
-    TAccountNonceProgram extends string,
+    TAccountNonceAccount extends InstructionAccountInput,
+    TAccountNonceProgram extends InstructionAccountInput,
     TProgramAddress extends Address = typeof MESSAGE_EXECUTOR_PROGRAM_ADDRESS,
 >(
     input: ExecuteInput<TAccountNonceAccount, TAccountNonceProgram>,
     config?: { programAddress?: TProgramAddress },
-): ExecuteInstruction<TProgramAddress, TAccountNonceAccount, TAccountNonceProgram> {
+): ExecuteInstruction<
+    TProgramAddress,
+    ResolvedInstructionAccountMeta<TAccountNonceAccount, InstructionAccountInputAddress<TAccountNonceAccount>>,
+    ResolvedInstructionAccountMeta<TAccountNonceProgram, InstructionAccountInputAddress<TAccountNonceProgram>>
+> {
     // Program address.
     const programAddress = config?.programAddress ?? MESSAGE_EXECUTOR_PROGRAM_ADDRESS;
 
+    // Account meta helper.
+    const getAccountMeta = getAccountMetaFactory(programAddress, 'programId');
+
     // Original accounts.
     const originalAccounts = {
-        nonceAccount: { value: input.nonceAccount ?? null, isWritable: true },
-        nonceProgram: { value: input.nonceProgram ?? null, isWritable: false },
+        nonceAccount: { value: input.nonceAccount ?? null, isSigner: false, isWritable: true },
+        nonceProgram: { value: input.nonceProgram ?? null, isSigner: false, isWritable: false },
     };
     const accounts = originalAccounts as Record<keyof typeof originalAccounts, ResolvedInstructionAccount>;
 
@@ -120,7 +136,6 @@ export function getExecuteInstruction<
     // Remaining accounts.
     const remainingAccounts: AccountMeta[] = resolveMessageAccounts(resolverScope);
 
-    const getAccountMeta = getAccountMetaFactory(programAddress, 'programId');
     return Object.freeze({
         accounts: [
             getAccountMeta('nonceAccount', accounts.nonceAccount),
@@ -129,7 +144,11 @@ export function getExecuteInstruction<
         ],
         data: getExecuteInstructionDataEncoder().encode(args as ExecuteInstructionDataArgs),
         programAddress,
-    } as ExecuteInstruction<TProgramAddress, TAccountNonceAccount, TAccountNonceProgram>);
+    } as ExecuteInstruction<
+        TProgramAddress,
+        ResolvedInstructionAccountMeta<TAccountNonceAccount, InstructionAccountInputAddress<TAccountNonceAccount>>,
+        ResolvedInstructionAccountMeta<TAccountNonceProgram, InstructionAccountInputAddress<TAccountNonceProgram>>
+    >);
 }
 
 export type ParsedExecuteInstruction<
