@@ -1,21 +1,18 @@
-=== Authorization status ===
-Approval message hash: EWPpXkCtKmfN2BoegLXDwTb6iJUYJmuAA8VUSJJnCuJ4
-
-Approval signatures: 0 of 1 present
-  AKnL4NNf3DGWZJS6cPknBuEGnVsV4A4m5tgebLHaRSZ9: not included (your signing key)
-
-PDA your signature authorizes as a signer for Execute:
-  3jCYn5zriQtvK6iEkWyDc3M6dkHvmR9XccrZyjJF96tF
+=== Authorization ===
+Message hash: EWPpXkCtKmfN2BoegLXDwTb6iJUYJmuAA8VUSJJnCuJ4
+PDA promotion authorities:
+  AKnL4NNf3DGWZJS6cPknBuEGnVsV4A4m5tgebLHaRSZ9 (derived signer: 3jCYn5zriQtvK6iEkWyDc3M6dkHvmR9XccrZyjJF96tF)
 
 === Replay protection ===
 SPL nonce account address: 8qbHbw2BbbTHBW1sbeqakYXVKRQM8Ne7pLK7m6CVfeR
+Nonce authority: 3jCYn5zriQtvK6iEkWyDc3M6dkHvmR9XccrZyjJF96tF
 Expected nonce value (inner message's recent blockhash): YMN9Qj5jPNp7j14VPcML1B6xGgcPWVZUGLFU3Mnyfaf
 
 === Outer message ===
-One Execute call through the Legacy Message Executor (ExecxgyHYsAXB4c5dZodV1zJZ9hqfsDCYkRDRATrpkFR).
-Your signature authorizes this Execute call, including its accounts, permissions, and the inner message. This message passes the inner message below to the executor.
+Your signatures authorize this Execute call, including its accounts, permissions,
+and the inner message.
 
-legacy message:
+Legacy message:
 {
   "header": {
     "numRequiredSignatures": 1,
@@ -50,8 +47,6 @@ legacy message:
 }
 
 === Inner message (what the executor program invokes via CPI) ===
-The Execute instruction's data above is base58-encoded and contains the Execute discriminator followed by the serialized inner message shown below.
-
 Legacy message:
 {
   "accountKeys": [
@@ -92,4 +87,5 @@ Legacy message:
   ]
 }
 
-Signing returns your address and signature. Nothing is submitted.
+Signing returns addresses, signatures, and the base64 Execute message. Nothing is submitted.
+Sign this message for AKnL4NNf3DGWZJS6cPknBuEGnVsV4A4m5tgebLHaRSZ9? [y/N]
