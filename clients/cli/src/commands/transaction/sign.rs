@@ -1,11 +1,15 @@
 use {
     super::sign_only_data::required_authorities,
-    crate::{client::Client, commands::transaction::sign_only_data, output::OutputFormat},
+    crate::{
+        cli::keypair_source_parser, client::Client, commands::transaction::sign_only_data,
+        output::OutputFormat,
+    },
     anyhow::{Context, Result, bail, ensure},
     clap::{Args, ValueHint},
     indoc::formatdoc,
     serde::Serialize,
     solana_address::Address,
+    solana_clap_v3_utils::input_parsers::signer::SignerSource,
     solana_hash::Hash,
     solana_message::{VersionedMessage, legacy},
     solana_sanitize::Sanitize,
@@ -24,6 +28,15 @@ pub(super) struct SignCommand {
     #[clap(value_hint = ValueHint::FilePath)]
     sign_only_file: PathBuf,
 
+    /// Signer source: a keypair file, usb:// URL, prompt:// URL, or the ASK keyword.
+    /// Defaults to the configured keypair.
+    #[clap(long, value_parser = keypair_source_parser())]
+    signer: Option<SignerSource>,
+
+    /// Hide the signing summary. Confirmation prompts and errors are still shown.
+    #[clap(long)]
+    quiet: bool,
+
     /// Skip the confirmation prompt for non-interactive signers (e.g. file keypairs).
     /// Hardware wallets still require approval on the device.
     #[clap(long)]
@@ -34,15 +47,18 @@ pub(super) fn run(command: SignCommand, client: &Client, output: OutputFormat) -
     let (outer_message, signed_authorities) = sign_only_data::read_file(&command.sign_only_file)?;
     let approval = validate_approval_message(&outer_message)?;
 
-    let signer = client.default_signer("approval authority")?;
+    let signer =
+        client.load_signer_or_config_default(command.signer.as_ref(), "approval authority")?;
     let signing_authority = signer.try_pubkey()?;
     ensure!(
         required_authorities(&outer_message)?.contains(&signing_authority),
         "{signing_authority} is not an approval authority for this message"
     );
 
-    let summary = render_signing_summary(&approval, &signed_authorities, &signing_authority)?;
-    eprintln!("{summary}");
+    if !command.quiet {
+        let summary = render_signing_summary(&approval, &signed_authorities, &signing_authority)?;
+        eprintln!("{summary}");
+    }
 
     let signature = sign_outer_message(approval.outer_message, &signer, command.yes)?;
     ensure!(

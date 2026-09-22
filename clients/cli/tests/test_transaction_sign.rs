@@ -204,6 +204,55 @@ fn approval_screen_matches_golden() {
     );
 }
 
+#[test_case("display"; "display")]
+#[test_case("json"; "json")]
+#[test_case("json-compact"; "json compact")]
+fn quiet_mode_preserves_signature_output(format: &str) {
+    let env = SignTestEnv::new();
+    let normal = run_psigner(&env.args(&["--yes", "--output", format]));
+    let quiet = run_psigner(&env.args(&["--quiet", "--yes", "--output", format]));
+
+    assert!(!normal.stderr.is_empty());
+    assert!(quiet.stderr.is_empty());
+    assert_eq!(quiet.stdout, normal.stdout);
+}
+
+#[test]
+fn quiet_mode_preserves_validation_errors() {
+    let env = SignTestEnv::new();
+    let mut message = approval_message(&[env.authority.pubkey()]);
+    message.recent_blockhash = Hash::new_from_array([9; 32]);
+    env.write_input(&sign_only(&VersionedMessage::Legacy(message)));
+
+    let output = run_psigner_with_input(&env.args(&["--quiet", "--yes"]), "");
+    let stderr = String::from_utf8(output.stderr).unwrap();
+    assert!(!output.status.success());
+    assert!(output.stdout.is_empty());
+    assert!(
+        stderr.contains("outer message must use the default blockhash"),
+        "{stderr}"
+    );
+    assert!(!stderr.contains("Sign this approval?"));
+}
+
+#[test_case("y\n", true; "accept")]
+#[test_case("n\n", false; "decline")]
+#[test_case("", false; "end of input")]
+fn quiet_mode_preserves_confirmation(answer: &str, approved: bool) {
+    let env = SignTestEnv::new();
+    let output = run_psigner_with_input(&env.args(&["--quiet"]), answer);
+    let stderr = String::from_utf8(output.stderr).unwrap();
+
+    assert!(stderr.starts_with("Sign this approval? [y/N] "), "{stderr}");
+    assert_eq!(output.status.success(), approved, "{stderr}");
+    assert_eq!(output.stdout.is_empty(), !approved);
+    if approved {
+        assert_eq!(stderr, "Sign this approval? [y/N] ");
+    } else {
+        assert!(stderr.contains("signing cancelled"), "{stderr}");
+    }
+}
+
 #[test]
 fn reports_input_path_when_read_fails() {
     let env = SignTestEnv::new();
@@ -513,7 +562,7 @@ fn rejects_signer_outside_approval_authorities() {
 fn refuses_to_emit_a_placeholder_signature_for_a_public_only_signer() {
     let env = SignTestEnv::new();
     let output = run_psigner_with_input(
-        &env.args(&["--yes", "--keypair", &env.authority.pubkey().to_string()]),
+        &env.args(&["--yes", "--signer", &env.authority.pubkey().to_string()]),
         "",
     );
 
@@ -527,7 +576,7 @@ fn refuses_to_emit_a_placeholder_signature_for_a_public_only_signer() {
 }
 
 #[test]
-fn keypair_override_selects_approval_authority_independently_of_fee_payer() {
+fn explicit_signer_selects_authority_independently_of_fee_payer() {
     let env = SignTestEnv::new();
     let authority = Keypair::new_from_array([4; 32]);
     let keypair_file = env.directory.path().join("override.json");
@@ -538,10 +587,18 @@ fn keypair_override_selects_approval_authority_independently_of_fee_payer() {
     ]));
     env.write_input(&sign_only(&message));
 
-    let fee_payer_file = env.directory.path().join("unused-fee-payer.json");
+    // An explicit signer must work with a missing config default
+    // and an invalid fee-payer keypair.
+    let default_keypair_file = env.directory.path().join("missing-default.json");
+    let mut config = SolanaConfig::load(&env.config_file_path).unwrap();
+    config.keypair_path = default_keypair_file.to_str().unwrap().to_string();
+    config.save(&env.config_file_path).unwrap();
+    let fee_payer_file = env.directory.path().join("invalid-fee-payer.json");
+    fs::write(&fee_payer_file, "not a keypair").unwrap();
+
     let output = run_psigner(&env.args(&[
         "--yes",
-        "--keypair",
+        "--signer",
         keypair_file.to_str().unwrap(),
         "--fee-payer",
         fee_payer_file.to_str().unwrap(),
