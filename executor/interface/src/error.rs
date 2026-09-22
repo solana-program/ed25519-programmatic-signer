@@ -29,14 +29,6 @@ pub enum Error {
         ))
     )]
     MessageAccountsMismatch = 2,
-    /// The nonce account's stored authority is not a required message signer.
-    #[cfg_attr(
-        feature = "codama",
-        codama(error(
-            message = "The nonce account's stored authority is not a required message signer"
-        ))
-    )]
-    MissingNonceAuthoritySigner = 3,
     /// The message's recent blockhash does not match the stored nonce.
     #[cfg_attr(
         feature = "codama",

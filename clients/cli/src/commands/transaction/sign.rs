@@ -132,17 +132,21 @@ fn validate_approval_message(outer_message: &VersionedMessage) -> Result<Approva
     );
 
     let [
+        _nonce_authority_index,
         nonce_account_index,
         nonce_program_index,
         inner_account_indices @ ..,
     ] = execute_instruction.accounts.as_slice()
     else {
-        bail!("expected the nonce account and SPL Nonce program in Execute accounts");
+        bail!(
+            "expected the nonce authority, nonce account, and SPL Nonce program in Execute \
+             accounts"
+        );
     };
     let nonce_account = outer_account_keys[usize::from(*nonce_account_index)];
     ensure!(
         outer_account_keys[usize::from(*nonce_program_index)] == spl_nonce_interface::id(),
-        "expected the SPL Nonce program as the second Execute account"
+        "expected the SPL Nonce program as the third Execute account"
     );
     ensure!(
         inner_account_indices

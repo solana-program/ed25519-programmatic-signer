@@ -1,6 +1,7 @@
 import { LOADER_V3_PROGRAM_ADDRESS } from '@solana-program/loader-v3';
 import {
     AccountRole,
+    createNoopSigner,
     getAddressDecoder,
     getBlockhashDecoder,
     getCompiledTransactionMessageEncoder,
@@ -25,6 +26,7 @@ const messageEncoder = getCompiledTransactionMessageEncoder();
 const getTestAddress = (byte: number) => addressDecoder.decode(new Uint8Array(32).fill(byte));
 
 const NONCE_ACCOUNT = getTestAddress(1);
+const NONCE_AUTHORITY = createNoopSigner(getTestAddress(2));
 const LIFETIME_TOKEN = blockhashDecoder.decode(new Uint8Array(32).fill(10));
 const TEST_ACCOUNTS = {
     feePayer: getTestAddress(11),
@@ -113,9 +115,13 @@ const getTestMessage = (
 const encodeMessage = (message: TestMessage) => messageEncoder.encode(message);
 
 const getExecuteAccounts = (message: TestMessage) =>
-    getExecuteInstruction({ message: encodeMessage(message), nonceAccount: NONCE_ACCOUNT }).accounts;
+    getExecuteInstruction({
+        message: encodeMessage(message),
+        nonceAccount: NONCE_ACCOUNT,
+        nonceAuthority: NONCE_AUTHORITY,
+    }).accounts;
 
-const getRemainingExecuteAccounts = (message: TestMessage) => getExecuteAccounts(message).slice(2);
+const getRemainingExecuteAccounts = (message: TestMessage) => getExecuteAccounts(message).slice(3);
 
 const getSubmitAccounts = (message: TestMessage) =>
     getSubmitInstruction({
@@ -142,6 +148,7 @@ const expectedSubmitAccounts = [
 describe('remaining account resolvers', () => {
     it.each(MESSAGE_VERSIONS)('resolves account order and permissions for a %s message', version => {
         expect(getExecuteAccounts(getTestMessage(version))).toEqual([
+            { address: NONCE_AUTHORITY.address, role: AccountRole.READONLY_SIGNER, signer: NONCE_AUTHORITY },
             { address: NONCE_ACCOUNT, role: AccountRole.WRITABLE },
             { address: NONCE_PROGRAM_ADDRESS, role: AccountRole.READONLY },
             ...expectedExecuteAccounts,
@@ -204,7 +211,11 @@ describe('remaining account resolvers', () => {
         const message = encodeMessage(getTestMessage('legacy'));
 
         expect(() =>
-            getExecuteInstruction({ message: new Uint8Array([...message, 255]), nonceAccount: NONCE_ACCOUNT }),
+            getExecuteInstruction({
+                message: new Uint8Array([...message, 255]),
+                nonceAccount: NONCE_ACCOUNT,
+                nonceAuthority: NONCE_AUTHORITY,
+            }),
         ).toThrow(
             new SolanaError(SOLANA_ERROR__CODECS__EXPECTED_DECODER_TO_CONSUME_ENTIRE_BYTE_ARRAY, {
                 expectedLength: message.length,
