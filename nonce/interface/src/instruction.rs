@@ -25,7 +25,7 @@ pub enum Instruction {
     /// 1. Verifies the account is uninitialized, rent-exempt, and owned by this program.
     /// 2. Derives the initial `nonce` by hashing the initialization tag, nonce account
     ///    address, program id, and latest slot hash.
-    /// 3. Writes `Nonce { nonce, authority }` into the account data.
+    /// 3. Writes `Nonce { nonce, authority, initialize_slot }` into the account data.
     ///
     /// Instruction data is the discriminator only.
     ///
@@ -110,9 +110,51 @@ pub enum Instruction {
         transition_commitment: Hash,
     },
 
-    /// Closes a nonce account. Not yet implemented.
-    #[cfg_attr(feature = "codama", codama(skip))]
-    Close,
+    /// Withdraws lamports from a nonce account to a destination.
+    ///
+    /// The stored authority must sign. A partial withdrawal must leave at least
+    /// the rent-exempt minimum. Withdrawing the entire balance closes the account
+    /// (removing its data and assigning it to the system program) and requires
+    /// the current slot to be strictly greater than `initialize_slot` to prevent
+    /// restoring the initial nonce by closing and recreating in the same slot.
+    /// The destination must differ from the nonce account.
+    ///
+    /// Instruction data is the discriminator followed by a little-endian `u64` amount.
+    ///
+    /// Required accounts.
+    /// - `[signer]` Authority stored in the nonce account
+    /// - `[writable]` Nonce account
+    /// - `[writable]` Destination receiving the lamports
+    #[cfg_attr(
+        feature = "codama",
+        codama(display(
+            intent = "Withdraw from nonce account",
+            interpolated_intent = "Withdraw ${data.lamports} lamports from nonce account \
+                                   ${accounts.nonceAccount} to ${accounts.destination}"
+        )),
+        codama(account(
+            name = "authority",
+            signer,
+            docs = "Authority stored in the nonce account",
+            display(label = "Nonce authority")
+        )),
+        codama(account(
+            name = "nonce_account",
+            writable,
+            docs = "Nonce account to withdraw from",
+            display(label = "Nonce account to withdraw from")
+        )),
+        codama(account(
+            name = "destination",
+            writable,
+            docs = "Account receiving the lamports",
+            display(label = "Withdrawal destination")
+        ))
+    )]
+    Withdraw {
+        /// Number of lamports to withdraw. Withdrawing the full balance closes the account.
+        lamports: u64,
+    },
 }
 
 impl Instruction {
@@ -138,14 +180,14 @@ mod tests {
 
     #[test_case(Instruction::Initialize, 0)]
     #[test_case(ADVANCE_IX, 1)]
-    #[test_case(Instruction::Close, 2)]
+    #[test_case(Instruction::Withdraw { lamports: 42 }, 2)]
     fn instruction_tag_matches_wire_format(instruction: Instruction, expected: u8) {
         assert_eq!(wincode::serialize(&instruction).unwrap()[0], expected);
     }
 
     #[test_case(Instruction::Initialize)]
     #[test_case(ADVANCE_IX)]
-    #[test_case(Instruction::Close)]
+    #[test_case(Instruction::Withdraw { lamports: 42 })]
     fn instruction_round_trips(instruction: Instruction) {
         let bytes = wincode::serialize(&instruction).unwrap();
         assert_eq!(Instruction::try_from_bytes(&bytes).unwrap(), instruction);
@@ -153,7 +195,7 @@ mod tests {
 
     #[test_case(Instruction::Initialize)]
     #[test_case(ADVANCE_IX)]
-    #[test_case(Instruction::Close)]
+    #[test_case(Instruction::Withdraw { lamports: 42 })]
     fn instruction_rejects_trailing_data(instruction: Instruction) {
         let mut bytes = wincode::serialize(&instruction).unwrap();
         bytes.extend_from_slice(&[1, 2, 3]);

@@ -362,13 +362,22 @@
                 "type": {
                   "kind": "publicKeyTypeNode"
                 }
+              },
+              {
+                "kind": "structFieldTypeNode",
+                "name": "initializeSlot",
+                "type": {
+                  "kind": "numberTypeNode",
+                  "format": "u64",
+                  "endian": "le"
+                }
               }
             ]
           },
           "discriminators": [
             {
               "kind": "sizeDiscriminatorNode",
-              "size": 64
+              "size": 72
             }
           ]
         }
@@ -531,6 +540,96 @@
             "intent": "Advance nonce",
             "interpolatedIntent": "Advance nonce account ${accounts.nonceAccount} by consuming current nonce ${data.currentNonce} and committing to transition ${data.transitionCommitment}."
           }
+        },
+        {
+          "kind": "instructionNode",
+          "name": "withdraw",
+          "optionalAccountStrategy": "programId",
+          "accounts": [
+            {
+              "kind": "instructionAccountNode",
+              "name": "authority",
+              "isWritable": false,
+              "isSigner": true,
+              "isOptional": false,
+              "docs": [
+                "Authority stored in the nonce account"
+              ],
+              "display": {
+                "kind": "instructionAccountDisplayNode",
+                "label": "Nonce authority"
+              }
+            },
+            {
+              "kind": "instructionAccountNode",
+              "name": "nonceAccount",
+              "isWritable": true,
+              "isSigner": false,
+              "isOptional": false,
+              "docs": [
+                "Nonce account to withdraw from"
+              ],
+              "display": {
+                "kind": "instructionAccountDisplayNode",
+                "label": "Nonce account to withdraw from"
+              }
+            },
+            {
+              "kind": "instructionAccountNode",
+              "name": "destination",
+              "isWritable": true,
+              "isSigner": false,
+              "isOptional": false,
+              "docs": [
+                "Account receiving the lamports"
+              ],
+              "display": {
+                "kind": "instructionAccountDisplayNode",
+                "label": "Withdrawal destination"
+              }
+            }
+          ],
+          "arguments": [
+            {
+              "kind": "instructionArgumentNode",
+              "name": "discriminator",
+              "defaultValueStrategy": "omitted",
+              "type": {
+                "kind": "numberTypeNode",
+                "format": "u8",
+                "endian": "le"
+              },
+              "defaultValue": {
+                "kind": "numberValueNode",
+                "number": 2
+              },
+              "display": {
+                "kind": "structFieldDisplayNode",
+                "skip": "always"
+              }
+            },
+            {
+              "kind": "instructionArgumentNode",
+              "name": "lamports",
+              "type": {
+                "kind": "numberTypeNode",
+                "format": "u64",
+                "endian": "le"
+              }
+            }
+          ],
+          "discriminators": [
+            {
+              "kind": "fieldDiscriminatorNode",
+              "name": "discriminator",
+              "offset": 0
+            }
+          ],
+          "display": {
+            "kind": "instructionDisplayNode",
+            "intent": "Withdraw from nonce account",
+            "interpolatedIntent": "Withdraw ${data.lamports} lamports from nonce account ${accounts.nonceAccount} to ${accounts.destination}"
+          }
         }
       ],
       "errors": [
@@ -551,6 +650,12 @@
           "name": "nonceMismatch",
           "code": 2,
           "message": "The stored nonce does not match the nonce supplied by the caller"
+        },
+        {
+          "kind": "errorNode",
+          "name": "closeSameSlot",
+          "code": 3,
+          "message": "A nonce account cannot be closed during the same slot it was initialized in"
         }
       ]
     }

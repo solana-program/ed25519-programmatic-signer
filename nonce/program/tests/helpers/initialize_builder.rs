@@ -30,6 +30,11 @@ impl Default for InitializeBuilder<'_> {
 }
 
 impl<'a> InitializeBuilder<'a> {
+    pub fn slot(mut self, slot: u64) -> Self {
+        self.mollusk.sysvars.clock.slot = slot;
+        self
+    }
+
     pub fn nonce_account(mut self, nonce_account: (Address, Account)) -> Self {
         self.nonce_account = Some(nonce_account);
         self

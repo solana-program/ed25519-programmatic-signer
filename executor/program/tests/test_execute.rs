@@ -130,6 +130,7 @@ fn execute_supports_precomputed_nonce_chain() {
     let second_nonce = Nonce {
         nonce: first_nonce,
         authority: initial_state.authority,
+        initialize_slot: initial_state.initialize_slot,
     }
     .derive_next_nonce(
         &spl_nonce_interface::id(),

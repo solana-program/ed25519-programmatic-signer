@@ -35,3 +35,25 @@ pub fn advance(
 
     invoke_with_bounds::<2, &AccountView>(&view, &[authority, nonce_account])
 }
+
+/// Invokes `Withdraw` using the authority's existing signer privilege.
+pub fn withdraw(
+    authority: &AccountView,
+    nonce_account: &AccountView,
+    destination: &AccountView,
+    lamports: u64,
+) -> ProgramResult {
+    let data = wincode::serialize(&Instruction::Withdraw { lamports })
+        .map_err(|_| ProgramError::InvalidInstructionData)?;
+    let instruction_accounts = [
+        InstructionAccount::new(authority.address(), false, true),
+        InstructionAccount::new(nonce_account.address(), true, false),
+        InstructionAccount::new(destination.address(), true, false),
+    ];
+    let view = InstructionView {
+        program_id: &spl_nonce_interface::ID,
+        accounts: &instruction_accounts,
+        data: &data,
+    };
+    invoke_with_bounds::<3, &AccountView>(&view, &[authority, nonce_account, destination])
+}
