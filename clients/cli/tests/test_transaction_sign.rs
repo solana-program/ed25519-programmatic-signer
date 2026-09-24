@@ -155,6 +155,7 @@ fn signs_wrapped_message_offline(format: &str) {
         serde_json::json!([{
             "address": env.authority.pubkey().to_string(),
             "signature": env.authority.sign_message(&expected.serialize()).to_string(),
+            "forwarded_signers": [],
             "execute_message": BASE64_STANDARD.encode(expected.serialize()),
         }])
     );
@@ -533,11 +534,25 @@ fn nonce_only_approval_includes_ordinary_inner_signers() {
     assert!(summary.contains(&format!(
         "Forwarded signers (sign at submission):\n  {inner_signer}"
     )));
+    let expected = env.expected(&[env.authority.pubkey(), inner_signer]);
+    assert_eq!(
+        values[0]["forwarded_signers"],
+        serde_json::json!([inner_signer.to_string()])
+    );
     assert_eq!(
         values[0]["execute_message"],
-        BASE64_STANDARD.encode(
-            env.expected(&[env.authority.pubkey(), inner_signer])
-                .serialize()
+        BASE64_STANDARD.encode(expected.serialize())
+    );
+
+    let display = run_psigner(&env.args(&["--yes", "--quiet"]));
+    assert_eq!(
+        String::from_utf8(display.stdout).unwrap(),
+        format!(
+            "Address: {}\nSignature: {}\n\nForwarded signers (sign at submission):\n  \
+             {inner_signer}\n\nExecute message (base64):\n{}\n",
+            env.authority.pubkey(),
+            env.authority.sign_message(&expected.serialize()),
+            BASE64_STANDARD.encode(expected.serialize())
         )
     );
 }
@@ -590,6 +605,10 @@ fn includes_ordinary_nonce_authority_once(also_inner_signer: bool) {
     assert_eq!(values.len(), 1);
     let expected = env.expected(&[env.authority.pubkey(), nonce_authority]);
     assert_eq!(expected.header().num_required_signatures, 2);
+    assert_eq!(
+        values[0]["forwarded_signers"],
+        serde_json::json!([nonce_authority.to_string()])
+    );
     assert_eq!(
         values[0]["execute_message"],
         BASE64_STANDARD.encode(expected.serialize())

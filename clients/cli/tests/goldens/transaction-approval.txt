@@ -87,5 +87,5 @@ Legacy message:
   ]
 }
 
-Signing returns addresses, signatures, and the base64 Execute message. Nothing is submitted.
+Signing returns addresses, signatures, forwarded signers, and the base64 Execute message. Nothing is submitted.
 Sign this message for AKnL4NNf3DGWZJS6cPknBuEGnVsV4A4m5tgebLHaRSZ9? [y/N]

@@ -114,6 +114,12 @@ pub(super) fn run(command: SignCommand, client: &Client, output: OutputFormat) -
              signer on the inner message"
         );
     }
+    // Wrapped-message signers that are not PDA promotion authorities must sign at submission.
+    let forwarded_signers = wrapped_signers
+        .iter()
+        .filter(|address| !authorities.contains(address))
+        .copied()
+        .collect::<Vec<_>>();
     let outer = wrapped_message(&instruction, &wrapped_signers);
     outer.sanitize().context("invalid wrapped message")?;
     let execute_message = BASE64_STANDARD.encode(outer.serialize());
@@ -150,7 +156,8 @@ pub(super) fn run(command: SignCommand, client: &Client, output: OutputFormat) -
                 &outer,
                 &command.nonce_account,
                 &command.nonce_authority,
-                &authorities
+                &authorities,
+                &forwarded_signers,
             )?
         );
     }
@@ -159,6 +166,7 @@ pub(super) fn run(command: SignCommand, client: &Client, output: OutputFormat) -
         entries.push(SignOutput {
             address: authority.to_string(),
             signature: signature.to_string(),
+            forwarded_signers: forwarded_signers.iter().map(ToString::to_string).collect(),
             execute_message: execute_message.clone(),
         });
     }
@@ -186,6 +194,7 @@ fn read_message(input: &str) -> Result<Message> {
 struct SignOutput {
     address: String,
     signature: String,
+    forwarded_signers: Vec<String>,
     execute_message: String,
 }
 
@@ -201,6 +210,13 @@ impl fmt::Display for SignOutputs {
             writeln!(f)?;
         }
         if let Some(entry) = self.0.first() {
+            if !entry.forwarded_signers.is_empty() {
+                writeln!(f, "Forwarded signers (sign at submission):")?;
+                for address in &entry.forwarded_signers {
+                    writeln!(f, "  {address}")?;
+                }
+                writeln!(f)?;
+            }
             write!(f, "Execute message (base64):\n{}", entry.execute_message)?;
         }
         Ok(())
@@ -213,6 +229,7 @@ fn render_signing_summary(
     nonce_account: &Address,
     nonce_authority: &Address,
     authorities: &[Address],
+    forwarded_signers: &[Address],
 ) -> Result<String> {
     let inner_json =
         serde_json::to_string_pretty(&inner.encode(UiTransactionEncoding::JsonParsed))?;
@@ -233,10 +250,8 @@ fn render_signing_summary(
         })
         .collect::<Vec<_>>()
         .join("\n");
-    let forwarded_signers = outer.static_account_keys()
-        [..usize::from(outer.header().num_required_signatures)]
+    let forwarded_signers = forwarded_signers
         .iter()
-        .filter(|address| !authorities.contains(address))
         .map(|address| format!("  {address}"))
         .collect::<Vec<_>>();
     let forwarded_section = if forwarded_signers.is_empty() {
@@ -271,7 +286,7 @@ fn render_signing_summary(
         Legacy message:
         {inner_json}
 
-        Signing returns addresses, signatures, and the base64 Execute message. Nothing is submitted."
+        Signing returns addresses, signatures, forwarded signers, and the base64 Execute message. Nothing is submitted."
     })
 }
 
