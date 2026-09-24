@@ -34,7 +34,7 @@ pub enum Error {
         feature = "codama",
         codama(error(message = "The message's recent blockhash does not match the stored nonce"))
     )]
-    NonceMismatch = 4,
+    NonceMismatch = 3,
 }
 
 impl From<Error> for ProgramError {

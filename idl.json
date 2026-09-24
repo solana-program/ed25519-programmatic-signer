@@ -332,7 +332,7 @@
         {
           "kind": "errorNode",
           "name": "nonceMismatch",
-          "code": 4,
+          "code": 3,
           "message": "The message's recent blockhash does not match the stored nonce"
         }
       ]
