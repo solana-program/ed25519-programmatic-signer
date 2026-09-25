@@ -1,5 +1,4 @@
 mod sign;
-mod sign_only_data;
 
 use {
     crate::{client::Client, output::OutputFormat},
@@ -15,7 +14,7 @@ pub(crate) struct TransactionCommand {
 
 #[derive(Debug, Subcommand)]
 enum TransactionSubcommand {
-    /// Review and sign an execution message offline, returning an address/signature pair.
+    /// Wrap and sign an inner message offline, returning signatures and the Execute message.
     Sign(sign::SignCommand),
 }
 
