@@ -1,37 +1,51 @@
 use {
-    super::sign_only_data::required_authorities,
-    crate::{
-        cli::keypair_source_parser, client::Client, commands::transaction::sign_only_data,
-        output::OutputFormat,
+    super::{
+        decode::read_inner_message,
+        summary::{confirm_signing, render_signing_summary, sign_outer_message},
     },
-    anyhow::{Context, Result, bail, ensure},
-    clap::{Args, ValueHint},
-    indoc::formatdoc,
+    crate::{cli::keypair_source_parser, client::Client, output::OutputFormat},
+    anyhow::{Context, Result, ensure},
+    base64::{Engine, prelude::BASE64_STANDARD},
+    clap::Args,
     serde::Serialize,
     solana_address::Address,
     solana_clap_v3_utils::input_parsers::signer::SignerSource,
     solana_hash::Hash,
-    solana_message::{VersionedMessage, legacy},
-    solana_sanitize::Sanitize,
-    solana_signature::Signature,
     solana_signer::Signer,
-    solana_transaction_status::{Encodable, EncodableWithMeta, UiTransactionEncoding},
-    spl_ed25519_signer_client::ProgrammaticSigner,
-    spl_legacy_message_executor_interface::instruction::Instruction as ExecutorInstruction,
-    std::{collections::BTreeSet, fmt, io, path::PathBuf},
+    spl_ed25519_signer_client::{ProgrammaticSigner, message::wrapped_message},
+    spl_legacy_message_executor_client::instruction::execute,
+    std::{collections::BTreeSet, fmt},
 };
 
 #[derive(Debug, Args)]
 pub(super) struct SignCommand {
-    /// Solana CLI sign-only JSON (`CliSignOnlyData`) with a `base64` message containing
-    /// exactly one `Execute` instruction and the default outer blockhash.
-    #[clap(value_hint = ValueHint::FilePath)]
-    sign_only_file: PathBuf,
+    /// Base64-encoded legacy inner transaction message.
+    #[clap(long)]
+    inner_message: String,
+
+    /// SPL nonce account protecting this execution.
+    #[clap(long)]
+    nonce_account: Address,
+
+    /// Nonce account authority.
+    #[clap(long)]
+    nonce_authority: Address,
+
+    /// Expected nonce value, which replaces the inner message's recent blockhash.
+    #[clap(long)]
+    nonce_hash: Hash,
+
+    /// Full set of authorities promoting their derived PDA signers. Repeat for each authority.
+    /// Each derived signer must be the nonce authority or a signer on the inner message.
+    /// Addresses are sorted and de-duplicated before constructing the wrapped message.
+    #[clap(long, required = true)]
+    authority: Vec<Address>,
 
     /// Signer source: a keypair file, usb:// URL, prompt:// URL, or the ASK keyword.
+    /// Repeat to sign with multiple local keys. Each must be in --authority.
     /// Defaults to the configured keypair.
     #[clap(long, value_parser = keypair_source_parser())]
-    signer: Option<SignerSource>,
+    signer: Vec<SignerSource>,
 
     /// Hide the signing summary. Confirmation prompts and errors are still shown.
     #[clap(long)]
@@ -44,221 +58,150 @@ pub(super) struct SignCommand {
 }
 
 pub(super) fn run(command: SignCommand, client: &Client, output: OutputFormat) -> Result<String> {
-    let (outer_message, signed_authorities) = sign_only_data::read_file(&command.sign_only_file)?;
-    let approval = validate_approval_message(&outer_message)?;
-
-    let signer =
-        client.load_signer_or_config_default(command.signer.as_ref(), "approval authority")?;
-    let signing_authority = signer.try_pubkey()?;
+    let mut inner = read_inner_message(&command.inner_message)?;
+    inner.recent_blockhash = command.nonce_hash;
+    // Sort/dedupe so participants construct identical messages.
+    let mut authorities = command.authority;
+    authorities.sort_unstable();
+    authorities.dedup();
+    let instruction = execute(&command.nonce_account, &command.nonce_authority, &inner);
+    // wrapped_message compiles u8 indices and casts header counts. Reject oversized inputs
+    // before invoking it, so malformed input cannot panic or truncate the counts.
+    let account_count = instruction
+        .accounts
+        .iter()
+        .map(|meta| meta.pubkey)
+        .chain(authorities.iter().copied())
+        .chain(std::iter::once(instruction.program_id))
+        .collect::<BTreeSet<_>>()
+        .len();
     ensure!(
-        required_authorities(&outer_message)?.contains(&signing_authority),
-        "{signing_authority} is not an approval authority for this message"
+        account_count <= 256,
+        "too many accounts for the wrapped message"
     );
+    let inner_signers = &inner.account_keys[..usize::from(inner.header.num_required_signatures)];
+    let derived_signers = authorities
+        .iter()
+        .map(|authority| {
+            ProgrammaticSigner::derive_address(&spl_ed25519_signer_client::id(), authority)
+        })
+        .collect::<BTreeSet<_>>();
+    // Signers the executor uses directly must sign at submission, including authorities that
+    // are also used directly. Derived PDAs are promoted by Submit instead.
+    let forwarded_signers = inner_signers
+        .iter()
+        .chain(std::iter::once(&command.nonce_authority))
+        .filter(|address| !derived_signers.contains(*address))
+        .copied()
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect::<Vec<_>>();
+    // Forwarded signers need a slot in the wrapped message header to forward their
+    // submission signature. Their wrapped-message approvals must also be collected.
+    let wrapped_signers = authorities
+        .iter()
+        .chain(&forwarded_signers)
+        .copied()
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect::<Vec<_>>();
+    ensure!(
+        wrapped_signers.len() < 128,
+        "too many required signers for a legacy message"
+    );
+    for authority in &authorities {
+        let pda = ProgrammaticSigner::derive_address(&spl_ed25519_signer_client::id(), authority);
+        ensure!(
+            pda == command.nonce_authority || inner_signers.contains(&pda),
+            "Authority {authority}'s derived signer {pda} is neither the nonce authority nor a \
+             signer on the inner message"
+        );
+    }
+    let outer = wrapped_message(&instruction, &wrapped_signers);
+    outer.sanitize().context("invalid wrapped message")?;
+    let execute_message = BASE64_STANDARD.encode(outer.serialize());
 
-    if !command.quiet {
-        let summary = render_signing_summary(&approval, &signed_authorities, &signing_authority)?;
-        eprintln!("{summary}");
+    let signers = if command.signer.is_empty() {
+        vec![client.load_signer_or_config_default(None, "message authority")?]
+    } else {
+        command
+            .signer
+            .iter()
+            .map(|source| client.load_signer(source, "message authority"))
+            .collect::<Result<Vec<_>>>()?
+    };
+    let mut unique_signers = Vec::new();
+    for signer in signers {
+        let address = signer.try_pubkey()?;
+        ensure!(
+            authorities.contains(&address),
+            "Signer {address} is not in the supplied --authority list"
+        );
+        if !unique_signers
+            .iter()
+            .any(|(existing, _)| existing == &address)
+        {
+            unique_signers.push((address, signer));
+        }
     }
 
-    let signature = sign_outer_message(approval.outer_message, &signer, command.yes)?;
-    ensure!(
-        signature.verify(signing_authority.as_ref(), &outer_message.serialize()),
-        "invalid approval signature"
-    );
-
-    output.render(&SignOutput {
-        address: signing_authority.to_string(),
-        signature: signature.to_string(),
-    })
+    if !command.quiet {
+        eprintln!(
+            "{}",
+            render_signing_summary(
+                &inner,
+                &outer,
+                &command.nonce_account,
+                &command.nonce_authority,
+                &authorities,
+                &forwarded_signers,
+                "Signing returns addresses, signatures, forwarded signers, and the base64 Execute \
+                 message. Nothing is submitted.",
+            )?
+        );
+    }
+    confirm_signing(&unique_signers, command.yes)?;
+    let mut entries = Vec::new();
+    for (authority, signature) in sign_outer_message(&outer, &unique_signers)? {
+        entries.push(SignOutput {
+            address: authority.to_string(),
+            signature: signature.to_string(),
+            forwarded_signers: forwarded_signers.iter().map(ToString::to_string).collect(),
+            execute_message: execute_message.clone(),
+        });
+    }
+    output.render(&SignOutputs(entries))
 }
 
 #[derive(Serialize)]
 struct SignOutput {
     address: String,
     signature: String,
+    forwarded_signers: Vec<String>,
+    execute_message: String,
 }
 
-impl fmt::Display for SignOutput {
+#[derive(Serialize)]
+#[serde(transparent)]
+struct SignOutputs(Vec<SignOutput>);
+
+impl fmt::Display for SignOutputs {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}={}", self.address, self.signature)
-    }
-}
-
-/// An approval's outer message, inner message, and nonce account for review.
-struct ApprovalDetails<'a> {
-    outer_message: &'a VersionedMessage,
-    inner_message: legacy::Message,
-    nonce_account: Address,
-}
-
-/// Sanitize both messages, check the outer approval, and verify the Execute account layout.
-/// These offline checks do not establish execution validity.
-fn validate_approval_message(outer_message: &VersionedMessage) -> Result<ApprovalDetails<'_>> {
-    outer_message.sanitize().context("invalid outer message")?;
-
-    let outer_account_keys = outer_message.static_account_keys();
-    let [execute_instruction] = outer_message.instructions() else {
-        bail!("expected exactly one Execute instruction");
-    };
-    ensure!(
-        outer_account_keys.get(usize::from(execute_instruction.program_id_index))
-            == Some(&spl_legacy_message_executor_interface::id()),
-        "expected the Legacy Message Executor"
-    );
-
-    // Keep approval signatures unusable for direct transactions that can charge fees to the authority
-    ensure!(
-        outer_message.recent_blockhash() == &Hash::default(),
-        "outer message must use the default blockhash to prevent native transaction fees"
-    );
-
-    ensure!(
-        execute_instruction
-            .accounts
-            .iter()
-            .all(|index| usize::from(*index) < outer_account_keys.len()),
-        "Execute accounts must use static account keys because ALTs are not resolved"
-    );
-
-    let ExecutorInstruction::Execute(inner_message) =
-        ExecutorInstruction::try_from_bytes(&execute_instruction.data)
-            .context("invalid Execute instruction")?;
-    inner_message.sanitize().context("invalid inner message")?;
-
-    // Legacy sanitization permits duplicates, but the executor rejects them.
-    ensure!(
-        !inner_message.has_duplicates(),
-        "inner message must not contain duplicate account keys"
-    );
-
-    let [
-        _nonce_authority_index,
-        nonce_account_index,
-        nonce_program_index,
-        inner_account_indices @ ..,
-    ] = execute_instruction.accounts.as_slice()
-    else {
-        bail!(
-            "expected the nonce authority, nonce account, and SPL Nonce program in Execute \
-             accounts"
-        );
-    };
-    let nonce_account = outer_account_keys[usize::from(*nonce_account_index)];
-    ensure!(
-        outer_account_keys[usize::from(*nonce_program_index)] == spl_nonce_interface::id(),
-        "expected the SPL Nonce program as the third Execute account"
-    );
-    ensure!(
-        inner_account_indices
-            .iter()
-            .map(|index| &outer_account_keys[usize::from(*index)])
-            .eq(&inner_message.account_keys),
-        "Execute accounts must mirror the inner message accounts"
-    );
-
-    Ok(ApprovalDetails {
-        outer_message,
-        inner_message,
-        nonce_account,
-    })
-}
-
-fn render_signing_summary(
-    approval: &ApprovalDetails<'_>,
-    signed_authorities: &BTreeSet<Address>,
-    signing_authority: &Address,
-) -> Result<String> {
-    let inner_ui_message = approval
-        .inner_message
-        .encode(UiTransactionEncoding::JsonParsed);
-    let inner_json = serde_json::to_string_pretty(&inner_ui_message)?;
-    let (outer_version, outer_ui_message) = match approval.outer_message {
-        VersionedMessage::Legacy(message) => {
-            ("legacy", message.encode(UiTransactionEncoding::Json))
+        for entry in &self.0 {
+            writeln!(f, "Address: {}", entry.address)?;
+            writeln!(f, "Signature: {}", entry.signature)?;
+            writeln!(f)?;
         }
-        VersionedMessage::V0(message) => ("v0", message.json_encode()),
-        VersionedMessage::V1(message) => ("v1", message.encode(UiTransactionEncoding::Json)),
-    };
-    let outer_json = serde_json::to_string_pretty(&outer_ui_message)?;
-    let authorities = required_authorities(approval.outer_message)?;
-    let signature_status = authorities
-        .iter()
-        .map(|authority| {
-            let status = if signed_authorities.contains(authority) {
-                "present (verified)"
-            } else {
-                "not included"
-            };
-            let selected_key_marker = if authority == signing_authority {
-                " (your signing key)"
-            } else {
-                ""
-            };
-            format!("  {authority}: {status}{selected_key_marker}")
-        })
-        .collect::<Vec<_>>()
-        .join("\n");
-    let signer_pda =
-        ProgrammaticSigner::derive_address(&spl_ed25519_signer_client::id(), signing_authority);
-    let present_signatures = signed_authorities.len();
-    let required_signatures = authorities.len();
-    let executor_program = spl_legacy_message_executor_interface::id();
-    let nonce_account = approval.nonce_account;
-    let expected_nonce = approval.inner_message.recent_blockhash;
-    let message_hash = approval.outer_message.hash();
-
-    Ok(formatdoc! {"
-        === Authorization status ===
-        Approval message hash: {message_hash}
-
-        Approval signatures: {present_signatures} of {required_signatures} present
-        {signature_status}
-
-        PDA your signature authorizes as a signer for Execute:
-          {signer_pda}
-
-        === Replay protection ===
-        SPL nonce account address: {nonce_account}
-        Expected nonce value (inner message's recent blockhash): {expected_nonce}
-
-        === Outer message ===
-        One Execute call through the Legacy Message Executor ({executor_program}).
-        Your signature authorizes this Execute call, including its accounts, permissions, and \
-        the inner message. This message passes the inner message below to the executor.
-
-        {outer_version} message:
-        {outer_json}
-
-        === Inner message (what the executor program invokes via CPI) ===
-        The Execute instruction's data above is base58-encoded and contains the Execute \
-        discriminator followed by the serialized inner message shown below.
-
-        Legacy message:
-        {inner_json}
-
-        Signing returns your address and signature. Nothing is submitted."
-    })
-}
-
-/// Confirm when the signer has no approval step of its own, then sign the outer message.
-fn sign_outer_message(
-    outer_message: &VersionedMessage,
-    signer: &dyn Signer,
-    skip_confirmation: bool,
-) -> Result<Signature> {
-    if !skip_confirmation && !signer.is_interactive() {
-        eprint!("Sign this approval? [y/N] ");
-        let mut answer = String::new();
-        io::stdin()
-            .read_line(&mut answer)
-            .context("failed to read signing confirmation")?;
-        let answer = answer.trim();
-        ensure!(
-            answer.eq_ignore_ascii_case("y") || answer.eq_ignore_ascii_case("yes"),
-            "signing cancelled"
-        );
+        if let Some(entry) = self.0.first() {
+            if !entry.forwarded_signers.is_empty() {
+                writeln!(f, "Forwarded signers (sign at submission):")?;
+                for address in &entry.forwarded_signers {
+                    writeln!(f, "  {address}")?;
+                }
+                writeln!(f)?;
+            }
+            write!(f, "Execute message (base64):\n{}", entry.execute_message)?;
+        }
+        Ok(())
     }
-    signer
-        .try_sign_message(&outer_message.serialize())
-        .context("failed to sign outer message")
 }
