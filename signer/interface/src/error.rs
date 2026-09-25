@@ -39,14 +39,6 @@ pub enum Error {
         ))
     )]
     InvalidSignature = 3,
-    /// The executor references an index outside the static account-key list.
-    #[cfg_attr(
-        feature = "codama",
-        codama(error(
-            message = "The executor references an index outside the static account-key list"
-        ))
-    )]
-    InvalidExecutorAccountIndex = 4,
     /// The executor program and instruction pair is not permitted by this signer program.
     #[cfg_attr(
         feature = "codama",
@@ -64,6 +56,19 @@ pub enum Error {
         ))
     )]
     InvalidSignatureCount = 6,
+    /// The wrapped message is not a v1 message.
+    #[cfg_attr(
+        feature = "codama",
+        codama(error(message = "The wrapped message is not a v1 message"))
+    )]
+    UnsupportedMessageVersion = 7,
+    /// The wrapped message sets transaction config fields. The wrapped message is never
+    /// executed as a transaction, so they would have no effect.
+    #[cfg_attr(
+        feature = "codama",
+        codama(error(message = "The wrapped message sets transaction config fields"))
+    )]
+    UnsupportedTransactionConfig = 8,
 }
 
 impl From<Error> for ProgramError {
