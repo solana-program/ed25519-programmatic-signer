@@ -20,7 +20,7 @@ pub(crate) async fn run(cli: Cli, matches: ArgMatches) -> Result<String> {
         }
         Command::Transaction(command) => {
             let client = Client::new(cli.client, matches)?;
-            transaction::run(command, &client, cli.output)
+            transaction::run(command, &client, cli.output).await
         }
     }
 }

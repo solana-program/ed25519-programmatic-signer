@@ -1,21 +1,20 @@
 use {
+    super::{
+        decode::read_inner_message,
+        summary::{confirm_signing, render_signing_summary, sign_outer_message},
+    },
     crate::{cli::keypair_source_parser, client::Client, output::OutputFormat},
-    anyhow::{Context, Result, bail, ensure},
+    anyhow::{Context, Result, ensure},
     base64::{Engine, prelude::BASE64_STANDARD},
     clap::Args,
-    indoc::formatdoc,
     serde::Serialize,
     solana_address::Address,
     solana_clap_v3_utils::input_parsers::signer::SignerSource,
     solana_hash::Hash,
-    solana_message::{VersionedMessage, legacy::Message},
-    solana_sanitize::Sanitize,
-    solana_signature::Signature,
     solana_signer::Signer,
-    solana_transaction_status::{Encodable, EncodableWithMeta, UiTransactionEncoding},
     spl_ed25519_signer_client::{ProgrammaticSigner, message::wrapped_message},
     spl_legacy_message_executor_client::instruction::execute,
-    std::{collections::BTreeSet, fmt, io},
+    std::{collections::BTreeSet, fmt},
 };
 
 #[derive(Debug, Args)]
@@ -59,7 +58,7 @@ pub(super) struct SignCommand {
 }
 
 pub(super) fn run(command: SignCommand, client: &Client, output: OutputFormat) -> Result<String> {
-    let mut inner = read_message(&command.inner_message)?;
+    let mut inner = read_inner_message(&command.inner_message)?;
     inner.recent_blockhash = command.nonce_hash;
     // Sort/dedupe so participants construct identical messages.
     let mut authorities = command.authority;
@@ -156,11 +155,14 @@ pub(super) fn run(command: SignCommand, client: &Client, output: OutputFormat) -
                 &command.nonce_authority,
                 &authorities,
                 &forwarded_signers,
+                "Signing returns addresses, signatures, forwarded signers, and the base64 Execute \
+                 message. Nothing is submitted.",
             )?
         );
     }
+    confirm_signing(&unique_signers, command.yes)?;
     let mut entries = Vec::new();
-    for (authority, signature) in sign_outer_message(&outer, &unique_signers, command.yes)? {
+    for (authority, signature) in sign_outer_message(&outer, &unique_signers)? {
         entries.push(SignOutput {
             address: authority.to_string(),
             signature: signature.to_string(),
@@ -169,23 +171,6 @@ pub(super) fn run(command: SignCommand, client: &Client, output: OutputFormat) -
         });
     }
     output.render(&SignOutputs(entries))
-}
-
-fn read_message(input: &str) -> Result<Message> {
-    let bytes = BASE64_STANDARD
-        .decode(input.trim())
-        .context("invalid base64 message")?;
-    let message: VersionedMessage =
-        wincode::deserialize_exact(&bytes).context("invalid serialized message")?;
-    let VersionedMessage::Legacy(message) = message else {
-        bail!("transaction sign supports only legacy inner messages");
-    };
-    message.sanitize().context("invalid inner message")?;
-    ensure!(
-        !message.has_duplicates(),
-        "inner message must not contain duplicate account keys"
-    );
-    Ok(message)
 }
 
 #[derive(Serialize)]
@@ -219,106 +204,4 @@ impl fmt::Display for SignOutputs {
         }
         Ok(())
     }
-}
-
-fn render_signing_summary(
-    inner: &Message,
-    outer: &VersionedMessage,
-    nonce_account: &Address,
-    nonce_authority: &Address,
-    authorities: &[Address],
-    forwarded_signers: &[Address],
-) -> Result<String> {
-    let inner_json =
-        serde_json::to_string_pretty(&inner.encode(UiTransactionEncoding::JsonParsed))?;
-    let (outer_version, outer_ui_message) = match outer {
-        VersionedMessage::Legacy(message) => {
-            ("Legacy", message.encode(UiTransactionEncoding::Json))
-        }
-        VersionedMessage::V0(message) => ("v0", message.json_encode()),
-        VersionedMessage::V1(message) => ("v1", message.encode(UiTransactionEncoding::Json)),
-    };
-    let outer_json = serde_json::to_string_pretty(&outer_ui_message)?;
-    let signing_keys = authorities
-        .iter()
-        .map(|authority| {
-            let pda =
-                ProgrammaticSigner::derive_address(&spl_ed25519_signer_client::id(), authority);
-            format!("  {authority} (derived signer: {pda})")
-        })
-        .collect::<Vec<_>>()
-        .join("\n");
-    let forwarded_signers = forwarded_signers
-        .iter()
-        .map(|address| format!("  {address}"))
-        .collect::<Vec<_>>();
-    let forwarded_section = if forwarded_signers.is_empty() {
-        String::new()
-    } else {
-        format!(
-            "\nForwarded signers (sign at submission):\n{}\n",
-            forwarded_signers.join("\n")
-        )
-    };
-    let message_hash = outer.hash();
-    let expected_nonce = inner.recent_blockhash;
-    Ok(formatdoc! {"
-        === Authorization ===
-        Message hash: {message_hash}
-        PDA promotion authorities:
-        {signing_keys}
-        {forwarded_section}
-        === Replay protection ===
-        SPL nonce account address: {nonce_account}
-        Nonce authority: {nonce_authority}
-        Expected nonce value (inner message's recent blockhash): {expected_nonce}
-
-        === Outer message ===
-        Your signatures authorize this Execute call, including its accounts, permissions,
-        and the inner message.
-
-        {outer_version} message:
-        {outer_json}
-
-        === Inner message (what the executor program invokes via CPI) ===
-        Legacy message:
-        {inner_json}
-
-        Signing returns addresses, signatures, forwarded signers, and the base64 Execute message. Nothing is submitted."
-    })
-}
-
-/// Confirm once before signing if any signer has no approval step of its own.
-fn sign_outer_message(
-    outer_message: &VersionedMessage,
-    signers: &[(Address, Box<dyn Signer>)],
-    skip_confirmation: bool,
-) -> Result<Vec<(Address, Signature)>> {
-    if !skip_confirmation && signers.iter().any(|(_, signer)| !signer.is_interactive()) {
-        let addresses = signers
-            .iter()
-            .map(|(address, _)| address.to_string())
-            .collect::<Vec<_>>()
-            .join(", ");
-        eprint!("Sign this message for {addresses}? [y/N] ");
-        let mut answer = String::new();
-        io::stdin()
-            .read_line(&mut answer)
-            .context("failed to read signing confirmation")?;
-        let answer = answer.trim();
-        ensure!(
-            answer.eq_ignore_ascii_case("y") || answer.eq_ignore_ascii_case("yes"),
-            "signing cancelled"
-        );
-    }
-    let message_bytes = outer_message.serialize();
-    signers
-        .iter()
-        .map(|(authority, signer)| {
-            let signature = signer
-                .try_sign_message(&message_bytes)
-                .with_context(|| format!("failed to sign outer message with {authority}"))?;
-            Ok((*authority, signature))
-        })
-        .collect()
 }
