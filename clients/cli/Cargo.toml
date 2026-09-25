@@ -35,7 +35,6 @@ solana-native-token = { workspace = true }
 solana-remote-wallet = { workspace = true, features = ["agave-unstable-api"] }
 solana-rpc-client = { workspace = true, features = ["agave-unstable-api"] }
 solana-rpc-client-types = { workspace = true, features = ["agave-unstable-api"] }
-solana-sanitize = { workspace = true }
 solana-signature = { workspace = true, features = ["verify"] }
 solana-signer = { workspace = true }
 solana-transaction = { workspace = true, features = ["wincode"] }

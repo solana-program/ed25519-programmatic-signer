@@ -10339,7 +10339,6 @@ dependencies = [
  "solana-remote-wallet",
  "solana-rpc-client",
  "solana-rpc-client-types",
- "solana-sanitize",
  "solana-signature",
  "solana-signer",
  "solana-system-interface 3.2.0",

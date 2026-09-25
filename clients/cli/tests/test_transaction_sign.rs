@@ -269,9 +269,9 @@ fn confirmation_is_required_even_when_quiet(answer: &str, approved: bool) {
     assert_eq!(output.stdout.is_empty(), !approved);
 }
 
-#[test_case("!", "invalid base64 message"; "invalid base64")]
-#[test_case("", "invalid serialized message"; "empty")]
-#[test_case("AA==", "invalid serialized message"; "truncated")]
+#[test_case("!", "invalid base64 inner message"; "invalid base64")]
+#[test_case("", "invalid serialized inner message"; "empty")]
+#[test_case("AA==", "invalid serialized inner message"; "truncated")]
 fn rejects_invalid_encoding(encoded: &str, error: &str) {
     let mut env = SignTestEnv::new();
     env.encoded = encoded.into();
@@ -285,7 +285,7 @@ fn rejects_trailing_bytes_before_loading_signer() {
     bytes.push(0);
     env.encoded = BASE64_STANDARD.encode(bytes);
     fs::remove_file(env.directory.path().join("authority.json")).unwrap();
-    env.reject("invalid serialized message");
+    env.reject("invalid serialized inner message");
 }
 
 #[test]

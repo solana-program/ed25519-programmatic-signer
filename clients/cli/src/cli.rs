@@ -90,7 +90,7 @@ pub(crate) enum Command {
     Address(AddressCommand),
     /// Manage SPL Nonce accounts used by programmatic signer transactions.
     Nonce(NonceCommand),
-    /// Sign programmatic approval transactions offline, without constructing a Submit relay.
+    /// Sign execute messages offline and submit approved messages in a relay transaction.
     Transaction(TransactionCommand),
 }
 
