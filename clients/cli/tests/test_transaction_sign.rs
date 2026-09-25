@@ -617,6 +617,45 @@ fn includes_ordinary_nonce_authority_once(also_inner_signer: bool) {
     assert!(signature.verify(env.authority.pubkey().as_ref(), &expected.serialize()));
 }
 
+#[test_case(false; "authority is an inner signer")]
+#[test_case(true; "authority is the nonce authority")]
+fn authority_used_directly_is_also_forwarded(is_nonce_authority: bool) {
+    let mut env = SignTestEnv::new();
+    let authority = env.authority.pubkey();
+    let pda = env.inner.account_keys[0];
+    if is_nonce_authority {
+        env.nonce_authority = authority.to_string();
+    } else {
+        env.inner = Message::new(
+            &[
+                transfer(&pda, &Address::new_unique(), 1),
+                transfer(&authority, &Address::new_unique(), 1),
+            ],
+            None,
+        );
+        env.encoded = BASE64_STANDARD.encode(env.inner.serialize());
+    }
+    let output = run_psigner(&env.args(&["--yes", "--output", "json"]));
+    let values: Vec<serde_json::Value> = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(values.len(), 1);
+    let summary = String::from_utf8(output.stderr).unwrap();
+    assert!(summary.contains(&format!("  {authority} (derived signer: {pda})")));
+    assert!(summary.contains(&format!(
+        "Forwarded signers (sign at submission):\n  {authority}"
+    )));
+    let expected = env.expected(&[authority]);
+    assert_eq!(expected.header().num_required_signatures, 1);
+    assert_eq!(values[0]["address"], authority.to_string());
+    assert_eq!(
+        values[0]["forwarded_signers"],
+        serde_json::json!([authority.to_string()])
+    );
+    assert_eq!(
+        values[0]["execute_message"],
+        BASE64_STANDARD.encode(expected.serialize())
+    );
+}
+
 #[test]
 fn rejects_too_many_combined_signers_before_loading_wallet() {
     let mut env = SignTestEnv::new();

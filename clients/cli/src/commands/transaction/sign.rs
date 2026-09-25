@@ -87,18 +87,22 @@ pub(super) fn run(command: SignCommand, client: &Client, output: OutputFormat) -
             ProgrammaticSigner::derive_address(&spl_ed25519_signer_client::id(), authority)
         })
         .collect::<BTreeSet<_>>();
-    // Ordinary signers need a slot in the wrapped message header to forward their
+    // Signers the executor uses directly must sign at submission, including authorities that
+    // are also used directly. Derived PDAs are promoted by Submit instead.
+    let forwarded_signers = inner_signers
+        .iter()
+        .chain(std::iter::once(&command.nonce_authority))
+        .filter(|address| !derived_signers.contains(*address))
+        .copied()
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect::<Vec<_>>();
+    // Forwarded signers need a slot in the wrapped message header to forward their
     // submission signature. Their wrapped-message approvals must also be collected.
     let wrapped_signers = authorities
         .iter()
+        .chain(&forwarded_signers)
         .copied()
-        .chain(
-            inner_signers
-                .iter()
-                .chain(std::iter::once(&command.nonce_authority))
-                .filter(|address| !derived_signers.contains(*address))
-                .copied(),
-        )
         .collect::<BTreeSet<_>>()
         .into_iter()
         .collect::<Vec<_>>();
@@ -114,12 +118,6 @@ pub(super) fn run(command: SignCommand, client: &Client, output: OutputFormat) -
              signer on the inner message"
         );
     }
-    // Wrapped-message signers that are not PDA promotion authorities must sign at submission.
-    let forwarded_signers = wrapped_signers
-        .iter()
-        .filter(|address| !authorities.contains(address))
-        .copied()
-        .collect::<Vec<_>>();
     let outer = wrapped_message(&instruction, &wrapped_signers);
     outer.sanitize().context("invalid wrapped message")?;
     let execute_message = BASE64_STANDARD.encode(outer.serialize());
