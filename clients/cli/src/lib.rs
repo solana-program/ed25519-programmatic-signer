@@ -3,7 +3,9 @@ mod client;
 mod commands;
 mod output;
 
-pub use commands::nonce::{create::NonceCreateOutput, show::NonceShowOutput};
+pub use commands::nonce::{
+    advance::NonceAdvanceOutput, create::NonceCreateOutput, show::NonceShowOutput,
+};
 use {
     anyhow::Result,
     clap::{CommandFactory, FromArgMatches},
