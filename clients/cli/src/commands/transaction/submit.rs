@@ -35,14 +35,13 @@ pub(super) struct SubmitCommand {
     signers: Vec<String>,
 
     /// Signer source for a signer the executor uses directly: a keypair file, usb:// URL,
-    /// prompt:// URL, or the ASK keyword. Repeat for each signer. Each is a required signer on
-    /// the authorization message, so it signs that message after a signing summary. It also signs
-    /// the relay transaction, which forwards its signer privilege to the executor. The fee payer
-    /// is always a relay transaction signer.
+    /// prompt:// URL, or the ASK keyword. Repeat for each signer. Each signs the relay
+    /// transaction after a signing summary, which forwards its signer privilege to the executor.
+    /// The fee payer is always a relay transaction signer.
     #[clap(long, value_parser = keypair_source_parser())]
     relay_signer: Vec<SignerSource>,
 
-    /// Hide the signing summary shown when a relay signer signs the authorization message.
+    /// Hide the signing summary shown when a forwarded signer signs the relay transaction.
     /// Confirmation prompts and errors are still shown.
     #[clap(long)]
     quiet: bool,
@@ -96,7 +95,7 @@ pub(super) async fn run(
     }
     // Relay signers on the authorization message have their signer privilege forwarded to the
     // executor, so they review it like `transaction sign`. A fee payer that is not on the
-    // authorization message only signs the relay transaction.
+    // authorization message only pays for the relay transaction.
     let (authorization_signers, relay_only_signers): (Vec<_>, Vec<_>) = relay_signers
         .into_iter()
         .partition(|(address, _)| required_signers.contains(address));
@@ -173,22 +172,12 @@ pub(super) async fn run(
         confirm_signing(&authorization_signers, command.yes)?;
     }
 
-    let message_bytes = authorization_message.serialize();
+    // Forwarded signers without an authority signature approve through their relay transaction
+    // signature instead, which Submit accepts in place of an authorization message signature.
     let signatures = required_signers
         .iter()
-        .map(|address| {
-            if let Some(signature) = authority_signatures.get(address) {
-                return Ok(*signature);
-            }
-            let (_, signer) = authorization_signers
-                .iter()
-                .find(|(relay, _)| relay == address)
-                .context("missing relay signer")?;
-            signer
-                .try_sign_message(&message_bytes)
-                .with_context(|| format!("failed to sign authorization message with {address}"))
-        })
-        .collect::<Result<Vec<_>>>()?;
+        .map(|address| authority_signatures.get(address).copied())
+        .collect();
 
     let mut instruction = spl_ed25519_signer_client::instruction::submit(
         signatures,

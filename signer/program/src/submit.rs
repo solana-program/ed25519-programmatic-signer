@@ -28,7 +28,7 @@ struct AuthorizedSigner {
 pub fn process_submit(
     program_id: &Address,
     accounts: &[AccountView],
-    signatures: &[Signature],
+    signatures: &[Option<Signature>],
     message: &VersionedMessage,
 ) -> ProgramResult {
     let VersionedMessage::V1(message) = message else {
@@ -52,10 +52,10 @@ pub fn process_submit(
     let executor_instruction =
         CheckedExecutorInstruction::try_new(accounts, message, executor_instruction)?;
 
-    let authorities = verify_authority_signatures(signatures, message)?;
+    let authorities = verify_authority_signatures(accounts, signatures, message)?;
 
     let authorized_signers =
-        collect_authorized_signers(program_id, &executor_instruction, authorities);
+        collect_authorized_signers(program_id, &executor_instruction, &authorities);
 
     invoke_executor_instruction(message, &executor_instruction, &authorized_signers)
 }
@@ -127,10 +127,20 @@ impl<'a> CheckedExecutorInstruction<'a> {
     }
 }
 
+/// Verifies each required signer's approval of the authorization message and returns the signers
+/// with a verified signature. Only these are authorities, whose PDAs may be promoted.
+///
+/// A required signer whose Submit account signs the relay transaction may omit its signature: the
+/// relay transaction signature already commits to the whole Submit instruction. Such a signer's
+/// PDA is never promoted. Signer privilege reaches Submit through every CPI below the
+/// transaction that was actually signed, so it only proves approval of whatever the calling
+/// program built. Forwarding that privilege grants nothing the caller could not already do, but
+/// promoting the signer's PDA would.
 fn verify_authority_signatures<'a>(
-    signatures: &[Signature],
+    relay_accounts: &[AccountView],
+    signatures: &[Option<Signature>],
     message: &'a v1::Message,
-) -> Result<&'a [Address], ProgramError> {
+) -> Result<Vec<&'a Address>, ProgramError> {
     let required_signatures = usize::from(message.header.num_required_signatures);
     if signatures.len() != required_signatures {
         return Err(Error::InvalidSignatureCount.into());
@@ -138,27 +148,33 @@ fn verify_authority_signatures<'a>(
 
     // Required signers occupy the leading account key slots. Signatures use the same indexes.
     // Infallible: message validation guarantees an account key for every required signer.
-    let authorities = message.account_keys.get(..required_signatures).unwrap();
+    let signers = message.account_keys.get(..required_signatures).unwrap();
 
     let message_bytes = message.serialize();
 
-    // Verify each authority signed the authorization message
-    for (authority, signature) in authorities.iter().zip(signatures) {
-        brine_ed25519::verify::<Sha512>(
-            authority,
-            signature.as_array(),
-            &[message_bytes.as_slice()],
-        )
-        .map_err(|_| Error::InvalidSignature)?;
+    let mut verified = Vec::with_capacity(required_signatures);
+    // Relay accounts mirror the authorization message's account keys, so they share indexes.
+    for ((signer, signature), relay_account) in signers.iter().zip(signatures).zip(relay_accounts) {
+        let Some(signature) = signature else {
+            if !relay_account.is_signer() {
+                return Err(Error::MissingSignature.into());
+            }
+            continue;
+        };
+
+        // Verify the signer signed the authorization message
+        brine_ed25519::verify::<Sha512>(signer, signature.as_array(), &[message_bytes.as_slice()])
+            .map_err(|_| Error::InvalidSignature)?;
+        verified.push(signer);
     }
 
-    Ok(authorities)
+    Ok(verified)
 }
 
 fn collect_authorized_signers(
     program_id: &Address,
     executor_instruction: &CheckedExecutorInstruction,
-    authorities: &[Address],
+    authorities: &[&Address],
 ) -> Vec<AuthorizedSigner> {
     let mut authorized = Vec::<AuthorizedSigner>::with_capacity(authorities.len());
 
@@ -171,7 +187,7 @@ fn collect_authorized_signers(
         for executor_account in &executor_instruction.accounts {
             if executor_account.account.address() == &programmatic_signer {
                 authorized.push(AuthorizedSigner {
-                    authority: *authority,
+                    authority: **authority,
                     programmatic_signer_index: executor_account.index,
                     bump_seed: [bump],
                 });

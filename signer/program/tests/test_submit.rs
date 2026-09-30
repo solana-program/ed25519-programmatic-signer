@@ -345,6 +345,88 @@ fn submit_forwards_required_relay_signer_privilege() {
 }
 
 #[test]
+fn submit_accepts_missing_signature_from_relay_signer() {
+    // The required signer signs only the relay transaction, which commits to the whole Submit
+    // instruction, so its signer privilege forwards without an authorization message signature.
+    let signer = Keypair::new();
+    let signer_key = signer.pubkey();
+    let recipient = Address::new_unique();
+    let executor_instruction = transfer(&signer_key, &recipient, DEFAULT_TRANSFER_LAMPORTS);
+
+    let result = SubmitBuilder::default_transfer_with_authority(signer)
+        .recipient(recipient)
+        .executor_instruction(executor_instruction)
+        .account(signer_key, funded_account())
+        .omit_signature(signer_key)
+        .relay_signer(signer_key)
+        .execute();
+
+    assert_eq!(
+        result.account(&recipient).unwrap().lamports,
+        DEFAULT_TRANSFER_LAMPORTS
+    );
+}
+
+#[test]
+fn submit_rejects_missing_signature_without_relay_signer() {
+    let signer = Keypair::new();
+    let signer_key = signer.pubkey();
+    SubmitBuilder::default_transfer_with_authority(signer)
+        .omit_signature(signer_key)
+        .check_err(Error::MissingSignature)
+        .execute();
+}
+
+#[test]
+fn submit_does_not_promote_relay_signer_without_signature() {
+    // Relay signer privilege can reach Submit through a CPI the signer never reviewed, so
+    // only a verified authorization message signature promotes the signer's PDA. The PDA is
+    // still a signer on the authorization message, so the unpromoted CPI escalates privilege.
+    let signer = Keypair::new();
+    let signer_key = signer.pubkey();
+    SubmitBuilder::default_transfer_with_authority(signer)
+        .omit_signature(signer_key)
+        .relay_signer(signer_key)
+        .check(Check::instruction_err(
+            InstructionError::PrivilegeEscalation,
+        ))
+        .execute();
+}
+
+#[test]
+fn submit_promotes_signed_authority_alongside_relay_signer_without_signature() {
+    // The authority's PDA funds a new account at a second required signer's own key. The PDA
+    // needs promotion from a verified signature, and the new account needs forwarded relay
+    // signer privilege without one.
+    let first_authority = Keypair::new();
+    let second_authority = Keypair::new();
+    let second_authority_key = second_authority.pubkey();
+    let first_programmatic_signer = ProgrammaticSigner::derive_address(
+        &spl_ed25519_signer_interface::id(),
+        &first_authority.pubkey(),
+    );
+    let executor_instruction = create_account(
+        &first_programmatic_signer,
+        &second_authority_key,
+        DEFAULT_TRANSFER_LAMPORTS,
+        0,
+        &solana_system_interface::program::id(),
+    );
+
+    let result = SubmitBuilder::default_transfer_with_authority(first_authority)
+        .additional_authority(second_authority)
+        .executor_instruction(executor_instruction)
+        .omit_signature(second_authority_key)
+        .relay_signer(second_authority_key)
+        .execute();
+
+    assert_eq!(
+        result.account(&second_authority_key).unwrap().lamports,
+        DEFAULT_TRANSFER_LAMPORTS
+    );
+}
+
+#[test]
 fn submit_treats_lifetime_specifier_as_signed_opaque_bytes() {
     let result = SubmitBuilder::default_transfer()
         .mutate_message(|msg| {

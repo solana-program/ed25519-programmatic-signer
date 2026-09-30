@@ -19,6 +19,6 @@ pub fn sign_and_submit<S: Signers + ?Sized>(
         signatures,
         message,
     } = VersionedTransaction::try_new(message, signers)?;
-    let instruction = submit(signatures, message);
+    let instruction = submit(signatures.into_iter().map(Some).collect(), message);
     Ok(instruction)
 }
