@@ -71,6 +71,18 @@ pub enum Error {
         codama(error(message = "The authorization message sets transaction config fields"))
     )]
     UnsupportedTransactionConfig = 7,
+    /// A signer required by the authorization message has no signature and does not sign the relay
+    /// transaction.
+    #[cfg_attr(
+        feature = "codama",
+        codama(
+            error(
+                message = "A signer required by the authorization message has no signature and \
+                           does not sign the relay transaction"
+            )
+        )
+    )]
+    MissingSignature = 8,
 }
 
 impl From<Error> for ProgramError {
