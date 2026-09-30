@@ -7,6 +7,7 @@ PDA promotion authorities:
 SPL nonce account address: 8qbHbw2BbbTHBW1sbeqakYXVKRQM8Ne7pLK7m6CVfeR
 Nonce authority: 3jCYn5zriQtvK6iEkWyDc3M6dkHvmR9XccrZyjJF96tF
 Expected nonce value (execution message's recent blockhash): YMN9Qj5jPNp7j14VPcML1B6xGgcPWVZUGLFU3Mnyfaf
+Next nonce value (after this message executes): Bmy5iEzNepNmUfnaavTMqYstJSnXZUAt8eKwGBCUXjMx
 
 === Authorization message ===
 Your signatures authorize this Execute call, including its accounts, permissions,
@@ -99,5 +100,5 @@ v1 message:
   }
 }
 
-Signing returns addresses, signatures, forwarded signers, and the base64 authorization message. Nothing is submitted.
+Signing returns addresses, signatures, forwarded signers, the next nonce value, and the base64 authorization message. Nothing is submitted.
 Sign this message for AKnL4NNf3DGWZJS6cPknBuEGnVsV4A4m5tgebLHaRSZ9? [y/N]
