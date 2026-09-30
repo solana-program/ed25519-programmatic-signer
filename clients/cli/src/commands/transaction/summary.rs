@@ -2,13 +2,31 @@ use {
     anyhow::{Context, Result, ensure},
     indoc::formatdoc,
     solana_address::Address,
+    solana_hash::Hash,
     solana_message::{VersionedMessage, v1},
     solana_signature::Signature,
     solana_signer::Signer,
     solana_transaction_status::{Encodable, UiTransactionEncoding},
     spl_ed25519_signer_client::ProgrammaticSigner,
+    spl_message_executor_interface::instruction::derive_transition_commitment,
+    spl_nonce_interface::state::Nonce,
     std::io,
 };
+
+/// The value the nonce account holds after the executor runs `execution_message`, whose lifetime
+/// specifier is the expected nonce. Each advance commits to the exact execution message, so the
+/// successor is known offline, and a message signed against it can only execute after this one.
+pub(super) fn next_nonce(nonce_account: &Address, execution_message: &v1::Message) -> Hash {
+    Nonce {
+        nonce: execution_message.lifetime_specifier,
+        ..Nonce::default()
+    }
+    .derive_next_nonce(
+        &spl_nonce_interface::id(),
+        nonce_account,
+        &derive_transition_commitment(&VersionedMessage::V1(execution_message.clone())),
+    )
+}
 
 /// Describe what signing the authorization message authorizes. `closing` says what happens after
 /// signing.
@@ -48,6 +66,7 @@ pub(super) fn render_signing_summary(
     };
     let message_hash = VersionedMessage::hash_raw_message(&authorization_message.serialize());
     let expected_nonce = execution_message.lifetime_specifier;
+    let next_nonce = next_nonce(nonce_account, execution_message);
     Ok(formatdoc! {"
         === Signing ===
         Message hash: {message_hash}
@@ -58,6 +77,7 @@ pub(super) fn render_signing_summary(
         SPL nonce account address: {nonce_account}
         Nonce authority: {nonce_authority}
         Expected nonce value (execution message's recent blockhash): {expected_nonce}
+        Next nonce value (after this message executes): {next_nonce}
 
         === Authorization message ===
         Your signatures authorize this Execute call, including its accounts, permissions,

@@ -12,7 +12,10 @@ use {
     solana_system_interface::instruction::transfer,
     spl_ed25519_signer_client::{ProgrammaticSigner, message::authorization_message},
     spl_message_executor_client::instruction::execute,
-    spl_message_executor_interface::instruction::Instruction as ExecutorInstruction,
+    spl_message_executor_interface::instruction::{
+        Instruction as ExecutorInstruction, derive_transition_commitment,
+    },
+    spl_nonce_interface::state::Nonce,
     std::{fs, str::FromStr},
     tempfile::TempDir,
     test_case::test_case,
@@ -120,6 +123,23 @@ impl SignTestEnv {
         )
     }
 
+    /// The nonce value after the executor runs the execution message, derived independently of
+    /// the CLI.
+    fn next_nonce(&self) -> String {
+        let mut execution_message = self.execution_message.clone();
+        execution_message.lifetime_specifier = self.nonce_hash.parse().unwrap();
+        Nonce {
+            nonce: execution_message.lifetime_specifier,
+            ..Nonce::default()
+        }
+        .derive_next_nonce(
+            &spl_nonce_interface::id(),
+            &self.nonce_account.parse().unwrap(),
+            &derive_transition_commitment(&VersionedMessage::V1(execution_message)),
+        )
+        .to_string()
+    }
+
     fn reject(&self, expected: &str) {
         let output = run_psigner_with_input(&self.args(&["--quiet", "--yes"]), "");
         let stderr = String::from_utf8(output.stderr).unwrap();
@@ -158,6 +178,7 @@ fn signs_authorization_message_offline(format: &str) {
             "address": env.authority.pubkey().to_string(),
             "signature": env.authority.sign_message(&expected.serialize()).to_string(),
             "forwarded_signers": [],
+            "next_nonce": env.next_nonce(),
             "authorization_message": BASE64_STANDARD.encode(expected.serialize()),
         }])
     );
@@ -394,6 +415,25 @@ fn signatures_bind_all_supplied_nonce_details(field: &str) {
         values[0]["authorization_message"],
         BASE64_STANDARD.encode(expected.serialize())
     );
+    assert_eq!(values[0]["next_nonce"], env.next_nonce());
+}
+
+#[test]
+fn next_nonce_commits_to_execution_message() {
+    let mut env = SignTestEnv::new();
+    let original = env.next_nonce();
+    let pda = env.nonce_authority.parse().unwrap();
+    env.execution_message = v1::Message::try_compile(
+        &pda,
+        &[transfer(&pda, &Address::new_from_array([3; 32]), 2)],
+        Hash::new_from_array([99; 32]),
+    )
+    .unwrap();
+    env.encoded = BASE64_STANDARD.encode(env.execution_message.serialize());
+    let output = run_psigner(&env.args(&["--yes", "--output", "json"]));
+    let values: Vec<serde_json::Value> = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(values[0]["next_nonce"], env.next_nonce());
+    assert_ne!(values[0]["next_nonce"], original);
 }
 
 #[test]
@@ -545,7 +585,11 @@ fn default_display_shows_pairs_and_one_authorization_message(multiple: bool) {
     let output = run_psigner(&env.args(&extra));
     assert_eq!(
         String::from_utf8(output.stdout.clone()).unwrap(),
-        format!("{expected_pairs}Authorization message (base64):\n{encoded}\n")
+        format!(
+            "{expected_pairs}Next nonce value (after execution): {}\n\nAuthorization message \
+             (base64):\n{encoded}\n",
+            env.next_nonce()
+        )
     );
     extra.extend(["--quiet", "--output", "display"]);
     let quiet = run_psigner(&env.args(&extra));
@@ -586,9 +630,11 @@ fn nonce_only_approval_includes_ordinary_execution_signers() {
         String::from_utf8(display.stdout).unwrap(),
         format!(
             "Address: {}\nSignature: {}\n\nForwarded signers (sign at submission):\n  \
-             {execution_signer}\n\nAuthorization message (base64):\n{}\n",
+             {execution_signer}\n\nNext nonce value (after execution): {}\n\nAuthorization \
+             message (base64):\n{}\n",
             env.authority.pubkey(),
             env.authority.sign_message(&expected.serialize()),
+            env.next_nonce(),
             BASE64_STANDARD.encode(expected.serialize())
         )
     );

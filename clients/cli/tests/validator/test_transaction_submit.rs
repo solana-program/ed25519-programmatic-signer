@@ -3,6 +3,7 @@ use {
         execute::{build_authorization_message, encode, programmatic_signer, signature_entry},
         helpers::{TestEnv, run_psigner, run_psigner_with_input},
     },
+    base64::{Engine, prelude::BASE64_STANDARD},
     solana_address::Address,
     solana_hash::Hash,
     solana_keypair::{Keypair, write_keypair_file},
@@ -10,6 +11,7 @@ use {
     solana_signer::Signer,
     solana_system_interface::instruction::transfer,
     solana_transaction::Transaction,
+    spl_nonce_interface::state::Nonce,
     spl_programmatic_signer_cli::NonceCreateOutput,
     std::process::Output,
     tempfile::NamedTempFile,
@@ -54,6 +56,11 @@ impl SubmitTest {
             .map(|sender| transfer(sender, &self.recipient, TRANSFER_AMOUNT))
             .collect::<Vec<_>>();
         v1::Message::try_compile(&senders[0], &transfers, self.nonce).unwrap()
+    }
+
+    async fn current_nonce(&self, env: &TestEnv) -> Hash {
+        let data = env.rpc.get_account_data(&self.nonce_account).await.unwrap();
+        Nonce::view(&data).unwrap().nonce
     }
 
     pub(crate) async fn assert_received(&self, env: &TestEnv, transfers: u64) {
@@ -520,5 +527,137 @@ pub async fn submits_quietly_without_confirmation(env: &TestEnv) {
         "",
     );
     assert_submitted(&output, None);
+    test.assert_received(env, 2).await;
+}
+
+/// Sign `execution_message` offline against `nonce_hash` with `transaction sign`, returning its
+/// single entry.
+fn sign(
+    env: &TestEnv,
+    test: &SubmitTest,
+    execution_message: &v1::Message,
+    nonce_authority: &Address,
+    nonce_hash: &str,
+    authority: &Keypair,
+) -> serde_json::Value {
+    let execution_message = BASE64_STANDARD.encode(execution_message.serialize());
+    let nonce_account = test.nonce_account.to_string();
+    let nonce_authority = nonce_authority.to_string();
+    let authority_address = authority.pubkey().to_string();
+    let authority_file = keypair_file(authority);
+    let output = run_psigner(&[
+        "-C",
+        &env.config_file_path,
+        "--output",
+        "json-compact",
+        "transaction",
+        "sign",
+        "--execution-message",
+        &execution_message,
+        "--nonce-account",
+        &nonce_account,
+        "--nonce-authority",
+        &nonce_authority,
+        "--nonce-hash",
+        nonce_hash,
+        "--authority",
+        &authority_address,
+        "--signer",
+        authority_file.path().to_str().unwrap(),
+        "--quiet",
+        "--yes",
+    ]);
+    let mut entries: Vec<serde_json::Value> = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(entries.len(), 1);
+    entries.remove(0)
+}
+
+/// Submit an authorization message whose only signer is the given address, with a precomputed
+/// signature.
+fn submit_signed(
+    env: &TestEnv,
+    address: &str,
+    signature: &str,
+    authorization_message: &str,
+) -> Output {
+    run_psigner_with_input(
+        &[
+            "-C",
+            &env.config_file_path,
+            "transaction",
+            "submit",
+            "--authorization-message",
+            authorization_message,
+            "--signer",
+            &format!("{address}={signature}"),
+        ],
+        "",
+    )
+}
+
+pub async fn submits_chain_signed_offline_with_next_nonce(env: &TestEnv) {
+    let authority = Keypair::new();
+    let signer = programmatic_signer(&authority.pubkey());
+    fund(env, &[signer]).await;
+    let test = SubmitTest::new(env, &signer).await;
+    let execution_message = test.execution_message(&[signer]);
+
+    // Both steps are signed before either is submitted, the second against the first's successor.
+    let first = sign(
+        env,
+        &test,
+        &execution_message,
+        &signer,
+        &test.nonce.to_string(),
+        &authority,
+    );
+    let first_next = first["next_nonce"].as_str().unwrap();
+    let second = sign(
+        env,
+        &test,
+        &execution_message,
+        &signer,
+        first_next,
+        &authority,
+    );
+    let second_next = second["next_nonce"].as_str().unwrap();
+
+    // The second step cannot execute until the first advances the nonce to its successor.
+    assert_failure(
+        &submit_signed(
+            env,
+            second["address"].as_str().unwrap(),
+            second["signature"].as_str().unwrap(),
+            second["authorization_message"].as_str().unwrap(),
+        ),
+        &format!(
+            "authorization message uses nonce value {first_next}, but nonce account {} currently \
+             has",
+            test.nonce_account
+        ),
+    );
+
+    assert_submitted(
+        &submit_signed(
+            env,
+            first["address"].as_str().unwrap(),
+            first["signature"].as_str().unwrap(),
+            first["authorization_message"].as_str().unwrap(),
+        ),
+        None,
+    );
+    assert_eq!(test.current_nonce(env).await.to_string(), first_next);
+    test.assert_received(env, 1).await;
+
+    assert_submitted(
+        &submit_signed(
+            env,
+            second["address"].as_str().unwrap(),
+            second["signature"].as_str().unwrap(),
+            second["authorization_message"].as_str().unwrap(),
+        ),
+        None,
+    );
+    assert_eq!(test.current_nonce(env).await.to_string(), second_next);
     test.assert_received(env, 2).await;
 }
