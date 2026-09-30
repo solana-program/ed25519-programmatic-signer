@@ -9,7 +9,11 @@ use {
 };
 
 /// Builds the `Submit` instruction from authority signatures and their authorization message.
-pub fn submit(signatures: Vec<Signature>, message: VersionedMessage) -> Instruction {
+///
+/// `signatures` has one entry per required signer on `message`. Pass `None` for a signer that
+/// signs the relay transaction instead, and mark its account as a signer on the returned
+/// instruction. Its `ProgrammaticSigner` PDA is not promoted.
+pub fn submit(signatures: Vec<Option<Signature>>, message: VersionedMessage) -> Instruction {
     let accounts = message
         .static_account_keys()
         .iter()

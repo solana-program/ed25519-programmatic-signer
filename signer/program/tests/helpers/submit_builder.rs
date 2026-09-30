@@ -47,6 +47,7 @@ pub struct SubmitBuilder<'a> {
     message_mutations: Vec<MessageMutation>,
     message_tampers: Vec<MessageMutation>,
     transaction_tampers: Vec<TransactionTamper>,
+    omitted_signatures: Vec<Address>,
     submit_instruction_mutations: Vec<IxMutation>,
     account_overrides: Vec<(Address, Account)>,
     checks: Vec<Check<'a>>,
@@ -67,6 +68,7 @@ impl<'a> SubmitBuilder<'a> {
             message_mutations: vec![],
             message_tampers: vec![],
             transaction_tampers: vec![],
+            omitted_signatures: vec![],
             submit_instruction_mutations: vec![],
             account_overrides: vec![],
             checks: vec![],
@@ -121,6 +123,24 @@ impl<'a> SubmitBuilder<'a> {
     ) -> Self {
         self.transaction_tampers.push(Box::new(tamper));
         self
+    }
+
+    /// Omits `signer`'s authorization message signature from `Submit`.
+    pub fn omit_signature(mut self, signer: Address) -> Self {
+        self.omitted_signatures.push(signer);
+        self
+    }
+
+    /// Marks `address` as a relay transaction signer on the `Submit` instruction.
+    pub fn relay_signer(self, address: Address) -> Self {
+        self.mutate_submit_ix(move |ix| {
+            let meta = ix
+                .accounts
+                .iter_mut()
+                .find(|meta| meta.pubkey == address)
+                .unwrap();
+            meta.is_signer = true;
+        })
     }
 
     /// Mutates the `Submit` instruction in the relay transaction.
@@ -195,6 +215,11 @@ impl<'a> SubmitBuilder<'a> {
             signatures,
             message,
         } = transaction;
+        let signatures = signatures
+            .into_iter()
+            .zip(message.static_account_keys())
+            .map(|(signature, key)| (!self.omitted_signatures.contains(key)).then_some(signature))
+            .collect();
         let mut ix = submit(signatures, message);
         for mutation in self.submit_instruction_mutations.drain(..) {
             mutation(&mut ix);

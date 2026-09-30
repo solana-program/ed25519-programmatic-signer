@@ -29,10 +29,13 @@ pub enum Instruction {
     /// 1. Verifies the message contains exactly one executor instruction.
     /// 2. Verifies the executor program and instruction discriminator are present in the allow list.
     /// 3. Verifies each `signatures[i]` is `account_keys[i]`'s Ed25519 signature over that message.
+    ///    A `None` signature is accepted only if the Submit account at index `i` signs the relay
+    ///    transaction, which commits to the whole Submit instruction. Such a signer's
+    ///    `ProgrammaticSigner` PDA is not promoted.
     /// 4. Verifies submitted account keys match the message's account keys in order.
     /// 5. CPIs to the executor instruction's program using exactly the accounts referenced by the
-    ///    executor instruction's account index list, promoting any referenced authority-derived
-    ///    `ProgrammaticSigner` PDAs to a signer.
+    ///    executor instruction's account index list, promoting any referenced `ProgrammaticSigner`
+    ///    PDAs derived from a signer with a verified signature.
     ///
     /// Trust assumptions:
     /// - This program validates authority signatures, accounts, flags, and executor identity.
@@ -50,13 +53,13 @@ pub enum Instruction {
         codama(display(intent = "Verify authorization message and invoke its executor"))
     )]
     Submit {
-        #[wincode(with = "containers::Vec<Signature, u8>")]
+        #[wincode(with = "containers::Vec<Option<Signature>, u8>")]
         #[cfg_attr(
             feature = "codama",
-            codama(type = array(fixed_size(bytes, 64), prefixed_count(number(u8)))),
+            codama(type = array(option(fixed_size(bytes, 64)), prefixed_count(number(u8)))),
             codama(display(label = "Authority signatures"))
         )]
-        signatures: Vec<Signature>,
+        signatures: Vec<Option<Signature>>,
         #[cfg_attr(
             feature = "codama",
             codama(type = bytes),
@@ -96,7 +99,7 @@ mod tests {
     #[test]
     fn submit_round_trips() {
         let instruction = Instruction::Submit {
-            signatures: vec![Signature::from([7; 64])],
+            signatures: vec![Some(Signature::from([7; 64])), None],
             message: VersionedMessage::V1(v1::Message::default()),
         };
         let bytes = wincode::serialize(&instruction).unwrap();
