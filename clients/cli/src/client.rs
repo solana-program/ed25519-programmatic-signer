@@ -17,16 +17,24 @@ use {
         versions::Versions,
     },
     solana_remote_wallet::remote_wallet::RemoteWalletManager,
-    solana_rpc_client::nonblocking::rpc_client::RpcClient,
+    solana_rpc_client::{
+        api::{
+            client_error::ErrorKind as ClientErrorKind,
+            custom_error::JSON_RPC_SERVER_ERROR_TRANSACTION_HISTORY_NOT_AVAILABLE,
+        },
+        nonblocking::rpc_client::RpcClient,
+    },
     solana_rpc_client_types::{
         config::{
             RpcSendTransactionConfig, RpcSimulateTransactionAccountsConfig,
             RpcSimulateTransactionConfig,
         },
+        request::RpcError,
         response::RpcSimulateTransactionResult,
     },
+    solana_signature::Signature,
     solana_signer::Signer,
-    solana_transaction::Transaction,
+    solana_transaction::{Transaction, TransactionResult},
     spl_nonce_interface::state::Nonce,
     std::{cell::RefCell, io::ErrorKind, path::Path, rc::Rc, str::FromStr},
 };
@@ -35,6 +43,15 @@ use {
 pub(crate) struct NonceAccount {
     pub(crate) state: Nonce,
     pub(crate) lamports: u64,
+}
+
+pub(crate) enum SignatureStatus {
+    /// The transaction landed, successfully or not.
+    Landed(TransactionResult<()>),
+    NotFound,
+    /// The transaction is not among recent transactions, and the RPC node keeps no transaction
+    /// history to search for older ones.
+    NotFoundRecently,
 }
 
 pub(crate) struct Client {
@@ -199,6 +216,36 @@ impl Client {
             .await
             .map(|response| response.value)
             .context("failed to simulate transaction")
+    }
+
+    /// Look up the transaction with this signature at the configured commitment, searching the
+    /// transaction history if the RPC node keeps it and only recent transactions otherwise.
+    pub(crate) async fn signature_status(&self, signature: &Signature) -> Result<SignatureStatus> {
+        let status = |search_transaction_history| {
+            self.rpc.get_signature_status_with_commitment_and_history(
+                signature,
+                self.rpc.commitment(),
+                search_transaction_history,
+            )
+        };
+        let context = || format!("failed to get the status of transaction {signature}");
+        match status(true).await {
+            Ok(Some(result)) => Ok(SignatureStatus::Landed(result)),
+            Ok(None) => Ok(SignatureStatus::NotFound),
+            Err(error)
+                if matches!(
+                    error.kind(),
+                    ClientErrorKind::RpcError(RpcError::RpcResponseError { code, .. })
+                        if *code == JSON_RPC_SERVER_ERROR_TRANSACTION_HISTORY_NOT_AVAILABLE
+                ) =>
+            {
+                Ok(match status(false).await.with_context(context)? {
+                    Some(result) => SignatureStatus::Landed(result),
+                    None => SignatureStatus::NotFoundRecently,
+                })
+            }
+            Err(error) => Err(error).with_context(context),
+        }
     }
 
     pub(crate) async fn send_and_confirm_transaction(

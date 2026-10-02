@@ -695,6 +695,98 @@ pub async fn submits_with_offline_relay_signatures(env: &TestEnv) {
     );
 }
 
+/// A relay transaction that ran with the same arguments lands only once. A rerun finds it and
+/// reports its signature without sending anything.
+pub async fn reports_landed_relay_transaction_on_rerun(env: &TestEnv) {
+    let authority = Keypair::new();
+    let signer = programmatic_signer(&authority.pubkey());
+    fund(env, &[signer]).await;
+    let test = SubmitTest::new(env, &signer).await;
+    // The durable nonce authority defaults to the fee payer.
+    let durable_nonce = create_durable_nonce(env, &env.payer.pubkey()).await;
+    let value = durable_nonce_value(env, &durable_nonce).await;
+    let message = build_authorization_message(
+        &test.execution_message(&[signer]),
+        &test.nonce_account,
+        &signer,
+        &[authority.pubkey()],
+    );
+    let authority_entry = signature_entry(&authority, &message);
+    let durable_nonce = durable_nonce.to_string();
+    let value = value.to_string();
+    let args = [
+        "--signer",
+        &authority_entry,
+        "--durable-nonce",
+        &durable_nonce,
+        "--durable-nonce-value",
+        &value,
+    ];
+
+    let first = submit(env, &message, &args, "");
+    assert_submitted(&first, None);
+    let rerun = submit(env, &message, &args, "");
+    let stderr = String::from_utf8_lossy(&rerun.stderr);
+    assert!(rerun.status.success(), "{stderr}");
+    assert_eq!(rerun.stdout, first.stdout);
+    let signature = String::from_utf8(first.stdout).unwrap();
+    assert_eq!(
+        stderr,
+        format!(
+            "Relay transaction {} already landed. Nothing was sent.\n",
+            signature.trim()
+        )
+    );
+    test.assert_received(env, 1).await;
+}
+
+/// A relay transaction that lands but fails still advances its durable nonce, so a rerun reports
+/// the failure and the new durable nonce value to sign with.
+pub async fn reports_failed_relay_transaction_on_rerun(env: &TestEnv) {
+    let authority = Keypair::new();
+    let signer = programmatic_signer(&authority.pubkey());
+    // The derived signer is not funded, so its transfer fails on-chain.
+    let test = SubmitTest::new(env, &signer).await;
+    let durable_nonce = create_durable_nonce(env, &env.payer.pubkey()).await;
+    let value = durable_nonce_value(env, &durable_nonce).await;
+    let message = build_authorization_message(
+        &test.execution_message(&[signer]),
+        &test.nonce_account,
+        &signer,
+        &[authority.pubkey()],
+    );
+    let authority_entry = signature_entry(&authority, &message);
+    let durable_nonce_address = durable_nonce.to_string();
+    let value = value.to_string();
+    let args = [
+        "--skip-preflight",
+        "--signer",
+        &authority_entry,
+        "--durable-nonce",
+        &durable_nonce_address,
+        "--durable-nonce-value",
+        &value,
+    ];
+
+    assert_failure(
+        &submit(env, &message, &args, ""),
+        "; rerun the same command to check whether it landed",
+    );
+    let advanced = durable_nonce_value(env, &durable_nonce).await;
+    assert_ne!(advanced.to_string(), value);
+    assert_failure(
+        &submit(env, &message, &args, ""),
+        &format!(
+            "landed but failed: Error processing Instruction 1: custom program error: 0x1. \
+             Durable nonce account {durable_nonce} has advanced to {advanced}, so sign the relay \
+             transaction again with --durable-nonce-value {advanced}"
+        ),
+    );
+    test.assert_received(env, 0).await;
+}
+
+/// A durable nonce value that another transaction used, which this relay transaction can no
+/// longer use.
 pub async fn rejects_stale_durable_nonce_value(env: &TestEnv) {
     let authority = Keypair::new();
     let signer = programmatic_signer(&authority.pubkey());
@@ -725,9 +817,11 @@ pub async fn rejects_stale_durable_nonce_value(env: &TestEnv) {
             ],
             "",
         ),
+        // The test validator keeps no transaction history, so only recent transactions are
+        // searched.
         &format!(
             "relay transaction uses durable nonce value {stale}, but durable nonce account \
-             {durable_nonce} currently has {value}"
+             {durable_nonce} currently has {value}. Relay transaction"
         ),
     );
     test.assert_received(env, 0).await;
