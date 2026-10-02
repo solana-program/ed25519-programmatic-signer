@@ -1,0 +1,328 @@
+{
+  "kind": "rootNode",
+  "standard": "codama",
+  "version": "1.9.2",
+  "program": {
+    "kind": "programNode",
+    "name": "nonce",
+    "publicKey": "Noncediea1fH12usShuQAz28UhgAeuE5Maf32LsMUQB",
+    "version": "0.1.0",
+    "accounts": [
+      {
+        "kind": "accountNode",
+        "name": "nonce",
+        "data": {
+          "kind": "structTypeNode",
+          "fields": [
+            {
+              "kind": "structFieldTypeNode",
+              "name": "nonce",
+              "type": {
+                "kind": "publicKeyTypeNode"
+              }
+            },
+            {
+              "kind": "structFieldTypeNode",
+              "name": "authority",
+              "type": {
+                "kind": "publicKeyTypeNode"
+              }
+            },
+            {
+              "kind": "structFieldTypeNode",
+              "name": "initializeSlot",
+              "type": {
+                "kind": "numberTypeNode",
+                "format": "u64",
+                "endian": "le"
+              }
+            }
+          ]
+        },
+        "discriminators": [
+          {
+            "kind": "sizeDiscriminatorNode",
+            "size": 72
+          }
+        ]
+      }
+    ],
+    "instructions": [
+      {
+        "kind": "instructionNode",
+        "name": "initialize",
+        "optionalAccountStrategy": "programId",
+        "accounts": [
+          {
+            "kind": "instructionAccountNode",
+            "name": "nonceAccount",
+            "isWritable": true,
+            "isSigner": false,
+            "isOptional": false,
+            "docs": [
+              "Nonce account to initialize"
+            ]
+          },
+          {
+            "kind": "instructionAccountNode",
+            "name": "authority",
+            "isWritable": false,
+            "isSigner": false,
+            "isOptional": false,
+            "docs": [
+              "Authority stored in the nonce account"
+            ],
+            "display": {
+              "kind": "instructionAccountDisplayNode",
+              "label": "Nonce authority"
+            }
+          },
+          {
+            "kind": "instructionAccountNode",
+            "name": "slotHashes",
+            "isWritable": false,
+            "isSigner": false,
+            "isOptional": false,
+            "docs": [
+              "Slot Hashes sysvar"
+            ],
+            "defaultValue": {
+              "kind": "publicKeyValueNode",
+              "publicKey": "SysvarS1otHashes111111111111111111111111111"
+            },
+            "display": {
+              "kind": "instructionAccountDisplayNode",
+              "skip": "always"
+            }
+          }
+        ],
+        "arguments": [
+          {
+            "kind": "instructionArgumentNode",
+            "name": "discriminator",
+            "defaultValueStrategy": "omitted",
+            "type": {
+              "kind": "numberTypeNode",
+              "format": "u8",
+              "endian": "le"
+            },
+            "defaultValue": {
+              "kind": "numberValueNode",
+              "number": 0
+            },
+            "display": {
+              "kind": "structFieldDisplayNode",
+              "skip": "always"
+            }
+          }
+        ],
+        "discriminators": [
+          {
+            "kind": "fieldDiscriminatorNode",
+            "name": "discriminator",
+            "offset": 0
+          }
+        ],
+        "display": {
+          "kind": "instructionDisplayNode",
+          "intent": "Initialize nonce account",
+          "interpolatedIntent": "Initialize nonce account ${accounts.nonceAccount} with authority ${accounts.authority}"
+        }
+      },
+      {
+        "kind": "instructionNode",
+        "name": "advance",
+        "optionalAccountStrategy": "programId",
+        "accounts": [
+          {
+            "kind": "instructionAccountNode",
+            "name": "authority",
+            "isWritable": false,
+            "isSigner": true,
+            "isOptional": false,
+            "docs": [
+              "Authority stored in the nonce account"
+            ],
+            "display": {
+              "kind": "instructionAccountDisplayNode",
+              "label": "Nonce authority"
+            }
+          },
+          {
+            "kind": "instructionAccountNode",
+            "name": "nonceAccount",
+            "isWritable": true,
+            "isSigner": false,
+            "isOptional": false,
+            "docs": [
+              "Nonce account to advance"
+            ]
+          }
+        ],
+        "arguments": [
+          {
+            "kind": "instructionArgumentNode",
+            "name": "discriminator",
+            "defaultValueStrategy": "omitted",
+            "type": {
+              "kind": "numberTypeNode",
+              "format": "u8",
+              "endian": "le"
+            },
+            "defaultValue": {
+              "kind": "numberValueNode",
+              "number": 1
+            },
+            "display": {
+              "kind": "structFieldDisplayNode",
+              "skip": "always"
+            }
+          },
+          {
+            "kind": "instructionArgumentNode",
+            "name": "currentNonce",
+            "type": {
+              "kind": "publicKeyTypeNode"
+            }
+          },
+          {
+            "kind": "instructionArgumentNode",
+            "name": "transitionCommitment",
+            "type": {
+              "kind": "publicKeyTypeNode"
+            }
+          }
+        ],
+        "discriminators": [
+          {
+            "kind": "fieldDiscriminatorNode",
+            "name": "discriminator",
+            "offset": 0
+          }
+        ],
+        "display": {
+          "kind": "instructionDisplayNode",
+          "intent": "Advance nonce",
+          "interpolatedIntent": "Advance nonce account ${accounts.nonceAccount} by consuming current nonce ${data.currentNonce} and committing to transition ${data.transitionCommitment}."
+        }
+      },
+      {
+        "kind": "instructionNode",
+        "name": "withdraw",
+        "optionalAccountStrategy": "programId",
+        "accounts": [
+          {
+            "kind": "instructionAccountNode",
+            "name": "authority",
+            "isWritable": false,
+            "isSigner": true,
+            "isOptional": false,
+            "docs": [
+              "Authority stored in the nonce account"
+            ],
+            "display": {
+              "kind": "instructionAccountDisplayNode",
+              "label": "Nonce authority"
+            }
+          },
+          {
+            "kind": "instructionAccountNode",
+            "name": "nonceAccount",
+            "isWritable": true,
+            "isSigner": false,
+            "isOptional": false,
+            "docs": [
+              "Nonce account to withdraw from"
+            ],
+            "display": {
+              "kind": "instructionAccountDisplayNode",
+              "label": "Nonce account to withdraw from"
+            }
+          },
+          {
+            "kind": "instructionAccountNode",
+            "name": "destination",
+            "isWritable": true,
+            "isSigner": false,
+            "isOptional": false,
+            "docs": [
+              "Account receiving the lamports"
+            ],
+            "display": {
+              "kind": "instructionAccountDisplayNode",
+              "label": "Withdrawal destination"
+            }
+          }
+        ],
+        "arguments": [
+          {
+            "kind": "instructionArgumentNode",
+            "name": "discriminator",
+            "defaultValueStrategy": "omitted",
+            "type": {
+              "kind": "numberTypeNode",
+              "format": "u8",
+              "endian": "le"
+            },
+            "defaultValue": {
+              "kind": "numberValueNode",
+              "number": 2
+            },
+            "display": {
+              "kind": "structFieldDisplayNode",
+              "skip": "always"
+            }
+          },
+          {
+            "kind": "instructionArgumentNode",
+            "name": "lamports",
+            "type": {
+              "kind": "numberTypeNode",
+              "format": "u64",
+              "endian": "le"
+            }
+          }
+        ],
+        "discriminators": [
+          {
+            "kind": "fieldDiscriminatorNode",
+            "name": "discriminator",
+            "offset": 0
+          }
+        ],
+        "display": {
+          "kind": "instructionDisplayNode",
+          "intent": "Withdraw from nonce account",
+          "interpolatedIntent": "Withdraw ${data.lamports} lamports from nonce account ${accounts.nonceAccount} to ${accounts.destination}"
+        }
+      }
+    ],
+    "errors": [
+      {
+        "kind": "errorNode",
+        "name": "invalidNonceAccount",
+        "code": 0,
+        "message": "The nonce account is malformed or not writable"
+      },
+      {
+        "kind": "errorNode",
+        "name": "authorityMismatch",
+        "code": 1,
+        "message": "The stored authority does not match the passed authority account"
+      },
+      {
+        "kind": "errorNode",
+        "name": "nonceMismatch",
+        "code": 2,
+        "message": "The stored nonce does not match the nonce supplied by the caller"
+      },
+      {
+        "kind": "errorNode",
+        "name": "closeSameSlot",
+        "code": 3,
+        "message": "A nonce account cannot be closed during the same slot it was initialized in"
+      }
+    ]
+  },
+  "additionalPrograms": []
+}

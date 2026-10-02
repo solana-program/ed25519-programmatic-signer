@@ -4,7 +4,9 @@ import {
     instructionAccountDisplayNode,
     instructionRemainingAccountsNode,
     resolverValueNode,
+    rootNodeVisitor,
 } from 'codama';
+import { writeFileSync } from 'node:fs';
 
 const executeRemainingAccounts = instructionRemainingAccountsNode(
     resolverValueNode('resolveExecutionMessageAccounts', {
@@ -39,6 +41,17 @@ const addRemainingAccounts = remainingAccounts => node => {
     return { ...node, remainingAccounts: [remainingAccounts] };
 };
 
+// Writes one IDL per program, e.g. for uploading to the Program Metadata program.
+export const writeProgramIdlsVisitor = paths =>
+    rootNodeVisitor(root => {
+        const programs = [root.program, ...root.additionalPrograms];
+        for (const [name, path] of Object.entries(paths)) {
+            const program = programs.find(p => p.name === name);
+            if (!program) throw new Error(`Program "${name}" not found in IDL`);
+            writeFileSync(path, JSON.stringify({ ...root, program, additionalPrograms: [] }, null, 2));
+        }
+    });
+
 export default {
     idl: 'target/codama-idl/signer-interface.json',
     additionalIdls: [
@@ -63,7 +76,19 @@ export default {
         },
     ],
     scripts: {
-        idl: { from: '@codama/renderers-core#writeIdlVisitor', args: ['idl.json'] },
+        idl: [
+            { from: '@codama/renderers-core#writeIdlVisitor', args: ['idl.json'] },
+            {
+                from: './codama.mjs#writeProgramIdlsVisitor',
+                args: [
+                    {
+                        ed25519Signer: 'signer/idl.json',
+                        messageExecutor: 'executor/idl.json',
+                        nonce: 'nonce/idl.json',
+                    },
+                ],
+            },
+        ],
         js: {
             from: '@codama/renderers-js',
             args: [
