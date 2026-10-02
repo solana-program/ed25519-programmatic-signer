@@ -16,11 +16,7 @@ use {
     solana_transaction::Transaction,
     spl_ed25519_signer_client::ProgrammaticSigner,
     spl_message_executor_interface::instruction::Instruction as ExecutorInstruction,
-    std::{
-        collections::{BTreeMap, BTreeSet},
-        fmt,
-        str::FromStr,
-    },
+    std::{collections::BTreeMap, fmt, str::FromStr},
 };
 
 #[derive(Debug, Args)]
@@ -79,7 +75,7 @@ pub(super) async fn run(
         // Relay signers only sign for accounts the executor uses directly. Authorities sign
         // through `transaction sign`.
         ensure!(
-            required_signers.contains(&address) && execute.is_forwarded(&address),
+            required_signers.contains(&address) && execute.is_executor_signer(&address),
             "{address} is not a forwarded signer on the authorization message{}",
             if execute.is_pda_authority(&address) {
                 ", PDA authorities sign with `transaction sign`"
@@ -111,7 +107,7 @@ pub(super) async fn run(
     // be both.
     for address in &required_signers {
         let is_pda_authority = execute.is_pda_authority(address);
-        let is_forwarded = execute.is_forwarded(address);
+        let is_forwarded = execute.is_executor_signer(address);
         ensure!(
             is_pda_authority || is_forwarded,
             "{address} is neither a PDA authority nor a signer the executor uses"
@@ -154,7 +150,7 @@ pub(super) async fn run(
                 .collect::<Vec<_>>();
             let forwarded_signers = required_signers
                 .iter()
-                .filter(|address| execute.is_forwarded(address))
+                .filter(|address| execute.is_executor_signer(address))
                 .copied()
                 .collect::<Vec<_>>();
             eprintln!(
@@ -197,7 +193,7 @@ pub(super) async fn run(
     // Forwarded signers need to sign the relay transaction.
     for meta in &mut instruction.accounts {
         meta.is_signer |=
-            required_signers.contains(&meta.pubkey) && execute.is_forwarded(&meta.pubkey);
+            required_signers.contains(&meta.pubkey) && execute.is_executor_signer(&meta.pubkey);
     }
     let relay_signers = authorization_signers
         .iter()
@@ -224,7 +220,6 @@ struct ExecuteAccounts {
     nonce_account: Address,
     expected_nonce: Hash,
     execution_message: v1::Message,
-    accounts: BTreeSet<Address>,
 }
 
 impl ExecuteAccounts {
@@ -261,25 +256,25 @@ impl ExecuteAccounts {
             nonce_account: *nonce_account,
             expected_nonce: execution_message.lifetime_specifier,
             execution_message,
-            accounts: accounts.into_iter().collect(),
         })
     }
 
-    /// The executor receives the signer's derived PDA, which Submit promotes.
+    /// The executor uses the signer's derived PDA as a signer, which Submit promotes. A PDA in
+    /// any other role needs no authorization, matching `transaction sign`.
     fn is_pda_authority(&self, signer: &Address) -> bool {
         let pda = ProgrammaticSigner::derive_address(&spl_ed25519_signer_client::id(), signer);
-        self.accounts.contains(&pda)
+        self.is_executor_signer(&pda)
     }
 
-    /// The executor uses the signer itself as the nonce authority or an execution message signer,
-    /// so it must be a relay transaction signer.
-    fn is_forwarded(&self, signer: &Address) -> bool {
-        signer == &self.nonce_authority
+    /// Whether the executor uses the address as the nonce authority or an execution message
+    /// signer.
+    fn is_executor_signer(&self, address: &Address) -> bool {
+        address == &self.nonce_authority
             || self
                 .execution_message
                 .account_keys
                 .iter()
-                .position(|address| address == signer)
+                .position(|key| key == address)
                 .is_some_and(|index| self.execution_message.is_signer(index))
     }
 }
