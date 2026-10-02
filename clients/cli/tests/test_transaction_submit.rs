@@ -164,7 +164,7 @@ impl SubmitTestEnv {
     fn assert_passes_offline_checks(&self, output: &Output) {
         assert_failure(
             output,
-            &format!("failed to fetch account {}", self.nonce_account),
+            "error sending request for url (http://127.0.0.1:1/)",
         );
     }
 }
@@ -785,16 +785,26 @@ fn sign_only_accepts_relay_signatures() {
 }
 
 /// A forwarded signer's relay signature stands in for --relay-signer, and an address fee payer
-/// loads with its relay signature, up to the nonce account lookup.
+/// loads with its relay signature, up to the durable nonce account lookup.
 #[test_case(false; "forwarded signer")]
 #[test_case(true; "forwarded signer and fee payer")]
 fn accepts_relay_signatures_online(fee_payer_signature: bool) {
     let env = SubmitTestEnv::new();
-    let signature = Signature::from([1; 64]);
-    let ordinary_entry = format!("{}={signature}", env.ordinary.pubkey());
-    let fee_payer_entry = format!("{}={signature}", env.fee_payer.pubkey());
     let fee_payer = env.fee_payer.pubkey().to_string();
     let fee_payer_file = env.keypair_file(&env.fee_payer);
+    // Relay signatures are verified against the relay message before any RPC call.
+    let message_bytes = BASE64_STANDARD
+        .decode(env.sign_only(&["--fee-payer", &fee_payer]).message.unwrap())
+        .unwrap();
+    let entry = |signer: &Keypair| {
+        format!(
+            "{}={}",
+            signer.pubkey(),
+            signer.sign_message(&message_bytes)
+        )
+    };
+    let ordinary_entry = entry(&env.ordinary);
+    let fee_payer_entry = entry(&env.fee_payer);
     let durable_nonce = env.durable_nonce.to_string();
     let durable_nonce_value = env.durable_nonce_value.to_string();
     let authority_entry = env.authority_entry();

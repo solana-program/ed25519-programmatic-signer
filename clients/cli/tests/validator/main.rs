@@ -13,6 +13,7 @@ use {
         test_transaction_submit::{
             cancels_when_forwarded_signer_declines, rejects_durable_nonce_authority_mismatch,
             rejects_nonce_authority_mismatch, rejects_stale_durable_nonce_value,
+            reports_failed_relay_transaction_on_rerun, reports_landed_relay_transaction_on_rerun,
             submits_authority_signatures_in_any_order,
             submits_authority_signed_transfer_and_rejects_replay,
             submits_quietly_without_confirmation,
@@ -88,6 +89,16 @@ fn main() -> ExitCode {
         async_trial!(rejects_nonce_authority_mismatch, env, runtime_handle),
         async_trial!(submits_with_durable_nonce, env, runtime_handle),
         async_trial!(submits_with_offline_relay_signatures, env, runtime_handle),
+        async_trial!(
+            reports_landed_relay_transaction_on_rerun,
+            env,
+            runtime_handle
+        ),
+        async_trial!(
+            reports_failed_relay_transaction_on_rerun,
+            env,
+            runtime_handle
+        ),
         async_trial!(rejects_stale_durable_nonce_value, env, runtime_handle),
         async_trial!(
             rejects_durable_nonce_authority_mismatch,

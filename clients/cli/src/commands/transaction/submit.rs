@@ -3,7 +3,11 @@ use {
         decode::{read_authorization_message, validate_execution_message},
         summary::{confirm_signing, render_signing_summary},
     },
-    crate::{cli::keypair_source_parser, client::Client, output::OutputFormat},
+    crate::{
+        cli::keypair_source_parser,
+        client::{Client, SignatureStatus},
+        output::OutputFormat,
+    },
     anyhow::{Context, Result, bail, ensure},
     clap::Args,
     serde::Serialize,
@@ -74,7 +78,8 @@ pub(super) struct SubmitCommand {
     durable_nonce_authority: Option<SignerSource>,
 
     /// Durable nonce value used as the relay transaction's blockhash. Read from the durable nonce
-    /// account when omitted.
+    /// account when omitted. With it, every run builds the same relay transaction, so rerunning
+    /// a submission that may have landed reports its result instead of sending it again.
     #[clap(long, value_name = "HASH", requires = "durable-nonce")]
     durable_nonce_value: Option<Hash>,
 
@@ -238,20 +243,11 @@ pub(super) async fn run(
         );
     }
 
-    // Check the live nonces before asking relay signers to sign. A --sign-only run makes no RPC
-    // calls, so the online run checks them instead.
-    let blockhash = if command.sign_only {
-        // Infallible: clap requires --durable-nonce-value with --sign-only.
-        command.durable_nonce_value.unwrap()
-    } else {
-        check_execution_nonce(client, &execute).await?;
-        match durable_nonce {
-            Some((address, authority)) => {
-                check_durable_nonce(client, &address, &authority, command.durable_nonce_value)
-                    .await?
-            }
-            None => client.latest_blockhash().await?,
-        }
+    // A --sign-only run makes no RPC calls, as clap requires --durable-nonce-value with it.
+    let blockhash = match (command.durable_nonce_value, durable_nonce) {
+        (Some(value), _) => value,
+        (None, Some((address, _))) => client.durable_nonce_account(&address).await?.blockhash(),
+        (None, None) => client.latest_blockhash().await?,
     };
 
     // Forwarded signers without an authority signature approve through their relay transaction
@@ -297,6 +293,68 @@ pub(super) async fn run(
             Ok((index, signature))
         })
         .collect::<Result<Vec<_>>>()?;
+
+    // Check the live nonces before asking relay signers to sign. A --sign-only run makes no RPC
+    // calls, so the online run checks them instead.
+    if !command.sign_only {
+        if let Some((address, authority)) = durable_nonce {
+            let durable_nonce = client.durable_nonce_account(&address).await?;
+            let value = durable_nonce.blockhash();
+            if value != blockhash {
+                // A landed durable nonce transaction advances its nonce even when it fails, so an
+                // earlier run may have landed this relay transaction. Its old nonce value can
+                // never be used again, so signing it to find its signature is safe.
+                let fee_payer_signature =
+                    match relay_signatures.iter().find(|(index, _)| *index == 0) {
+                        Some((_, signature)) => *signature,
+                        None => {
+                            let fee_payer = authorization_signers
+                                .iter()
+                                .map(|(address, signer)| (address, signer))
+                                .chain(
+                                    relay_only_signers
+                                        .iter()
+                                        .map(|(address, signer, _)| (address, signer)),
+                                )
+                                .find_map(|(address, signer)| {
+                                    (*address == fee_payer_address).then_some(signer)
+                                })
+                                .context("missing fee payer")?;
+                            // A hardware wallet asks for approval without a signing summary.
+                            if fee_payer.is_interactive() {
+                                eprintln!(
+                                    "Durable nonce account {address} has advanced. Approve the \
+                                     relay transaction for the fee payer {fee_payer_address} to \
+                                     check whether an earlier run landed it. Its durable nonce \
+                                     value is used, so it cannot be sent."
+                                );
+                            }
+                            fee_payer
+                                .try_sign_message(&message_data)
+                                .context("failed to sign relay transaction with the fee payer")?
+                        }
+                    };
+                let signature = previous_relay_transaction(
+                    client,
+                    fee_payer_signature,
+                    &address,
+                    blockhash,
+                    value,
+                )
+                .await?;
+                return output.render(&SubmitOutput { signature });
+            }
+            ensure!(
+                durable_nonce.authority == authority,
+                "relay transaction uses durable nonce authority {}, but durable nonce account {} \
+                 has authority {}",
+                authority,
+                address,
+                durable_nonce.authority
+            );
+        }
+        check_execution_nonce(client, &execute).await?;
+    }
 
     if !authorization_signers.is_empty() {
         if !command.quiet {
@@ -362,7 +420,16 @@ pub(super) async fn run(
     let signature = client
         .send_and_confirm_transaction(&transaction)
         .await
-        .with_context(|| format!("relay transaction {}", transaction.signatures[0]))?;
+        .with_context(|| {
+            // With a durable nonce value, a rerun builds the same relay transaction and finds it
+            // if it landed.
+            let retry = if command.durable_nonce_value.is_some() {
+                "; rerun the same command to check whether it landed"
+            } else {
+                ""
+            };
+            format!("relay transaction {}{retry}", transaction.signatures[0])
+        })?;
 
     output.render(&SubmitOutput { signature })
 }
@@ -425,35 +492,39 @@ async fn check_execution_nonce(client: &Client, execute: &ExecuteAccounts) -> Re
     Ok(())
 }
 
-/// Check the System Program nonce account still has the value and authority the relay
-/// transaction uses, returning its current value. Without an expected value, any value is used.
-async fn check_durable_nonce(
+/// Look up a relay transaction whose durable nonce has advanced from `expected_value` to
+/// `value`, returning its signature if it landed successfully in an earlier run.
+async fn previous_relay_transaction(
     client: &Client,
-    address: &Address,
-    authority: &Address,
-    expected_value: Option<Hash>,
-) -> Result<Hash> {
-    let durable_nonce = client.durable_nonce_account(address).await?;
-    let value = durable_nonce.blockhash();
-    if let Some(expected_value) = expected_value {
-        ensure!(
-            value == expected_value,
-            "relay transaction uses durable nonce value {}, but durable nonce account {} \
-             currently has {}",
-            expected_value,
-            address,
-            value
-        );
+    signature: Signature,
+    durable_nonce: &Address,
+    expected_value: Hash,
+    value: Hash,
+) -> Result<String> {
+    match client.signature_status(&signature).await? {
+        SignatureStatus::Landed(Ok(())) => {
+            eprintln!("Relay transaction {signature} already landed. Nothing was sent.");
+            Ok(signature.to_string())
+        }
+        SignatureStatus::Landed(Err(error)) => bail!(
+            "relay transaction {signature} landed but failed: {error}. Durable nonce account \
+             {durable_nonce} has advanced to {value}, so sign the relay transaction again with \
+             --durable-nonce-value {value}"
+        ),
+        SignatureStatus::NotFound => bail!(
+            "relay transaction uses durable nonce value {expected_value}, but durable nonce \
+             account {durable_nonce} currently has {value} and relay transaction {signature} was \
+             not found, so another transaction used the durable nonce. Sign the relay transaction \
+             again with --durable-nonce-value {value}"
+        ),
+        SignatureStatus::NotFoundRecently => bail!(
+            "relay transaction uses durable nonce value {expected_value}, but durable nonce \
+             account {durable_nonce} currently has {value}. Relay transaction {signature} is not \
+             a recent transaction, and this RPC node has no transaction history to check whether \
+             it landed earlier. Check it with an RPC node that has transaction history, or sign \
+             the relay transaction again with --durable-nonce-value {value}"
+        ),
     }
-    ensure!(
-        durable_nonce.authority == *authority,
-        "relay transaction uses durable nonce authority {}, but durable nonce account {} has \
-         authority {}",
-        authority,
-        address,
-        durable_nonce.authority
-    );
-    Ok(value)
 }
 
 /// The accounts of an authorization message's single `Execute` instruction.
