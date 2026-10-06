@@ -451,6 +451,40 @@ fn authority_as_execution_message_non_signer_is_not_forwarded(
     }
 }
 
+/// A forwarded signer whose derived signer the executor uses only as a non-signer is not a PDA
+/// authority, matching `transaction sign`, which rejects it as an authority.
+#[test]
+fn forwarded_signer_with_non_signer_derived_signer_is_not_an_authority() {
+    let env = SubmitTestEnv::new();
+    let ordinary = env.ordinary.pubkey();
+    let signer = programmatic_signer(&env.authority.pubkey());
+    let execution_message = v1::Message::try_compile(
+        &signer,
+        &[
+            transfer(&signer, &programmatic_signer(&ordinary), 1),
+            transfer(&ordinary, &Address::new_unique(), 1),
+        ],
+        Hash::new_unique(),
+    )
+    .unwrap();
+    let message = build_authorization_message(
+        &execution_message,
+        &env.nonce_account,
+        &signer,
+        &[env.authority.pubkey()],
+    );
+    let output = env.submit(
+        &encode(&message),
+        &[
+            "--signer",
+            &signature_entry(&env.authority, &message),
+            "--relay-signer",
+            &env.keypair_file(&env.ordinary),
+        ],
+    );
+    env.assert_passes_offline_checks(&output);
+}
+
 #[test]
 fn rejects_message_signer_unused_by_execute() {
     let env = SubmitTestEnv::new();
