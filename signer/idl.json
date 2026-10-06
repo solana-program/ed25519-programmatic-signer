@@ -37,10 +37,19 @@
             "type": {
               "kind": "arrayTypeNode",
               "item": {
-                "kind": "fixedSizeTypeNode",
-                "size": 64,
-                "type": {
-                  "kind": "bytesTypeNode"
+                "kind": "optionTypeNode",
+                "fixed": false,
+                "item": {
+                  "kind": "fixedSizeTypeNode",
+                  "size": 64,
+                  "type": {
+                    "kind": "bytesTypeNode"
+                  }
+                },
+                "prefix": {
+                  "kind": "numberTypeNode",
+                  "format": "u8",
+                  "endian": "le"
                 }
               },
               "count": {
@@ -183,6 +192,12 @@
         "name": "unsupportedTransactionConfig",
         "code": 7,
         "message": "The authorization message sets transaction config fields"
+      },
+      {
+        "kind": "errorNode",
+        "name": "missingSignature",
+        "code": 8,
+        "message": "A signer required by the authorization message has no signature and does not sign the relay transaction"
       }
     ]
   },
