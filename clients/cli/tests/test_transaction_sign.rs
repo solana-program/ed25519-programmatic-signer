@@ -174,18 +174,16 @@ fn signs_authorization_message_offline(format: &str) {
     let expected = env.expected(&[env.authority.pubkey()]);
     assert_eq!(
         value,
-        serde_json::json!({
-            "authorization_message": BASE64_STANDARD.encode(expected.serialize()),
-            "next_nonce": env.next_nonce(),
+        serde_json::json!([{
+            "address": env.authority.pubkey().to_string(),
+            "signature": env.authority.sign_message(&expected.serialize()).to_string(),
             "forwarded_signers": [],
-            "signatures": [{
-                "address": env.authority.pubkey().to_string(),
-                "signature": env.authority.sign_message(&expected.serialize()).to_string(),
-            }],
-        })
+            "next_nonce": env.next_nonce(),
+            "authorization_message": BASE64_STANDARD.encode(expected.serialize()),
+        }])
     );
     let bytes = BASE64_STANDARD
-        .decode(value["authorization_message"].as_str().unwrap())
+        .decode(value[0]["authorization_message"].as_str().unwrap())
         .unwrap();
     let message: VersionedMessage = wincode::deserialize_exact(&bytes).unwrap();
     assert_eq!(message.recent_blockhash(), &Hash::default());
@@ -235,18 +233,17 @@ fn multiple_signers_sign_the_same_message_and_duplicates_are_ignored() {
         "--signer",
         first_file.to_str().unwrap(),
     ]));
-    let value: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
-    let entries = value["signatures"].as_array().unwrap();
-    assert_eq!(entries.len(), 2);
+    let values: Vec<serde_json::Value> = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(values.len(), 2);
     let expected = env.expected(&[env.authority.pubkey(), second.pubkey()]);
-    assert_eq!(
-        value["authorization_message"],
-        BASE64_STANDARD.encode(expected.serialize())
-    );
-    for (entry, key) in entries.iter().zip([&env.authority, &second]) {
-        assert_eq!(entry["address"], key.pubkey().to_string());
-        let signature = Signature::from_str(entry["signature"].as_str().unwrap()).unwrap();
+    for (value, key) in values.iter().zip([&env.authority, &second]) {
+        assert_eq!(value["address"], key.pubkey().to_string());
+        let signature = Signature::from_str(value["signature"].as_str().unwrap()).unwrap();
         assert!(signature.verify(key.pubkey().as_ref(), &expected.serialize()));
+        assert_eq!(
+            value["authorization_message"],
+            BASE64_STANDARD.encode(expected.serialize())
+        );
     }
 }
 
@@ -409,17 +406,16 @@ fn signatures_bind_all_supplied_nonce_details(field: &str) {
         _ => unreachable!(),
     }
     let output = run_psigner(&env.args(&["--yes", "--output", "json"]));
-    let value: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
-    let signature =
-        Signature::from_str(value["signatures"][0]["signature"].as_str().unwrap()).unwrap();
+    let values: Vec<serde_json::Value> = serde_json::from_slice(&output.stdout).unwrap();
+    let signature = Signature::from_str(values[0]["signature"].as_str().unwrap()).unwrap();
     let expected = env.expected(&[env.authority.pubkey()]);
     assert!(signature.verify(env.authority.pubkey().as_ref(), &expected.serialize()));
     assert!(!signature.verify(env.authority.pubkey().as_ref(), &original.serialize()));
     assert_eq!(
-        value["authorization_message"],
+        values[0]["authorization_message"],
         BASE64_STANDARD.encode(expected.serialize())
     );
-    assert_eq!(value["next_nonce"], env.next_nonce());
+    assert_eq!(values[0]["next_nonce"], env.next_nonce());
 }
 
 #[test]
@@ -435,9 +431,9 @@ fn next_nonce_commits_to_execution_message() {
     .unwrap();
     env.encoded = BASE64_STANDARD.encode(env.execution_message.serialize());
     let output = run_psigner(&env.args(&["--yes", "--output", "json"]));
-    let value: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
-    assert_eq!(value["next_nonce"], env.next_nonce());
-    assert_ne!(value["next_nonce"], original);
+    let values: Vec<serde_json::Value> = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(values[0]["next_nonce"], env.next_nonce());
+    assert_ne!(values[0]["next_nonce"], original);
 }
 
 #[test]
@@ -448,7 +444,7 @@ fn independent_signers_produce_identical_messages() {
     write_keypair_file(&bob, &bob_file).unwrap();
     env.add_nonce_authority(bob.pubkey());
     let alice_output = run_psigner(&env.args(&["--yes", "--output", "json"]));
-    let alice: serde_json::Value = serde_json::from_slice(&alice_output.stdout).unwrap();
+    let alice: Vec<serde_json::Value> = serde_json::from_slice(&alice_output.stdout).unwrap();
 
     // Bob uses a different order, repeats an authority, and has only his own key available.
     env.authorities.reverse();
@@ -461,22 +457,19 @@ fn independent_signers_produce_identical_messages() {
         "--signer",
         bob_file.to_str().unwrap(),
     ]));
-    let bob_value: serde_json::Value = serde_json::from_slice(&bob_output.stdout).unwrap();
-    assert_eq!(alice["signatures"].as_array().unwrap().len(), 1);
-    assert_eq!(bob_value["signatures"].as_array().unwrap().len(), 1);
+    let bob_values: Vec<serde_json::Value> = serde_json::from_slice(&bob_output.stdout).unwrap();
+    assert_eq!(alice.len(), 1);
+    assert_eq!(bob_values.len(), 1);
     assert_eq!(
-        alice["authorization_message"],
-        bob_value["authorization_message"]
+        alice[0]["authorization_message"],
+        bob_values[0]["authorization_message"]
     );
     let bytes = BASE64_STANDARD
-        .decode(alice["authorization_message"].as_str().unwrap())
+        .decode(alice[0]["authorization_message"].as_str().unwrap())
         .unwrap();
     let message: VersionedMessage = wincode::deserialize_exact(&bytes).unwrap();
     assert_eq!(message.header().num_required_signatures, 2);
-    for (entry, key) in [
-        (&alice["signatures"][0], &env.authority),
-        (&bob_value["signatures"][0], &bob),
-    ] {
+    for (entry, key) in [(&alice[0], &env.authority), (&bob_values[0], &bob)] {
         assert_eq!(entry["address"], key.pubkey().to_string());
         let signature = Signature::from_str(entry["signature"].as_str().unwrap()).unwrap();
         assert!(signature.verify(key.pubkey().as_ref(), &bytes));
@@ -546,8 +539,7 @@ fn multiple_signers_share_one_confirmation(answer: &str, approved: bool) {
     );
     assert_eq!(output.status.success(), approved, "{stderr}");
     if approved {
-        let value: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
-        let entries = value["signatures"].as_array().unwrap();
+        let entries: Vec<serde_json::Value> = serde_json::from_slice(&output.stdout).unwrap();
         assert_eq!(entries.len(), 2);
         let expected = env.expected(&[env.authority.pubkey(), second.pubkey()]);
         for (entry, key) in entries.iter().zip([&env.authority, &second]) {
@@ -617,19 +609,19 @@ fn nonce_only_approval_includes_ordinary_execution_signers() {
     .unwrap();
     env.encoded = BASE64_STANDARD.encode(env.execution_message.serialize());
     let output = run_psigner(&env.args(&["--yes", "--output", "json"]));
-    let value: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
-    assert_eq!(value["signatures"].as_array().unwrap().len(), 1);
+    let values: Vec<serde_json::Value> = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(values.len(), 1);
     let summary = String::from_utf8(output.stderr).unwrap();
     assert!(summary.contains(&format!(
         "Forwarded signers (sign at submission):\n  {execution_signer}"
     )));
     let expected = env.expected(&[env.authority.pubkey(), execution_signer]);
     assert_eq!(
-        value["forwarded_signers"],
+        values[0]["forwarded_signers"],
         serde_json::json!([execution_signer.to_string()])
     );
     assert_eq!(
-        value["authorization_message"],
+        values[0]["authorization_message"],
         BASE64_STANDARD.encode(expected.serialize())
     );
 
@@ -699,20 +691,19 @@ fn includes_ordinary_nonce_authority_once(also_execution_signer: bool) {
         env.encoded = BASE64_STANDARD.encode(env.execution_message.serialize());
     }
     let output = run_psigner(&env.args(&["--yes", "--output", "json"]));
-    let value: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
-    assert_eq!(value["signatures"].as_array().unwrap().len(), 1);
+    let values: Vec<serde_json::Value> = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(values.len(), 1);
     let expected = env.expected(&[env.authority.pubkey(), nonce_authority]);
     assert_eq!(expected.header().num_required_signatures, 2);
     assert_eq!(
-        value["forwarded_signers"],
+        values[0]["forwarded_signers"],
         serde_json::json!([nonce_authority.to_string()])
     );
     assert_eq!(
-        value["authorization_message"],
+        values[0]["authorization_message"],
         BASE64_STANDARD.encode(expected.serialize())
     );
-    let signature =
-        Signature::from_str(value["signatures"][0]["signature"].as_str().unwrap()).unwrap();
+    let signature = Signature::from_str(values[0]["signature"].as_str().unwrap()).unwrap();
     assert!(signature.verify(env.authority.pubkey().as_ref(), &expected.serialize()));
 }
 
@@ -737,8 +728,8 @@ fn authority_used_directly_is_also_forwarded(is_nonce_authority: bool) {
         env.encoded = BASE64_STANDARD.encode(env.execution_message.serialize());
     }
     let output = run_psigner(&env.args(&["--yes", "--output", "json"]));
-    let value: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
-    assert_eq!(value["signatures"].as_array().unwrap().len(), 1);
+    let values: Vec<serde_json::Value> = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(values.len(), 1);
     let summary = String::from_utf8(output.stderr).unwrap();
     assert!(summary.contains(&format!("  {authority} (derived signer: {pda})")));
     assert!(summary.contains(&format!(
@@ -746,13 +737,13 @@ fn authority_used_directly_is_also_forwarded(is_nonce_authority: bool) {
     )));
     let expected = env.expected(&[authority]);
     assert_eq!(expected.header().num_required_signatures, 1);
-    assert_eq!(value["signatures"][0]["address"], authority.to_string());
+    assert_eq!(values[0]["address"], authority.to_string());
     assert_eq!(
-        value["forwarded_signers"],
+        values[0]["forwarded_signers"],
         serde_json::json!([authority.to_string()])
     );
     assert_eq!(
-        value["authorization_message"],
+        values[0]["authorization_message"],
         BASE64_STANDARD.encode(expected.serialize())
     );
 }
@@ -768,86 +759,4 @@ fn rejects_too_many_combined_signers_before_loading_wallet() {
     env.nonce_authority = Address::new_unique().to_string();
     fs::remove_file(env.directory.path().join("authority.json")).unwrap();
     env.reject("too many required signers");
-}
-
-#[test_case("json"; "json")]
-#[test_case("json-compact"; "compact")]
-fn message_only_returns_unsigned_authorization_message(format: &str) {
-    let env = SignTestEnv::new();
-    // No keypair is loaded, and nothing is signed, so no confirmation is needed.
-    fs::remove_file(env.directory.path().join("authority.json")).unwrap();
-    let output = run_psigner_with_input(&env.args(&["--message-only", "--output", format]), "");
-    let stderr = String::from_utf8(output.stderr).unwrap();
-    assert!(output.status.success(), "{stderr}");
-    let value: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
-    let expected = env.expected(&[env.authority.pubkey()]);
-    assert_eq!(
-        value,
-        serde_json::json!({
-            "authorization_message": BASE64_STANDARD.encode(expected.serialize()),
-            "next_nonce": env.next_nonce(),
-            "forwarded_signers": [],
-            "signatures": [],
-        })
-    );
-    assert!(stderr.contains(&format!("Nonce authority: {}", env.nonce_authority)));
-    assert!(stderr.contains("Nothing is signed."), "{stderr}");
-    assert!(!stderr.contains("Sign this message for "), "{stderr}");
-}
-
-#[test]
-fn message_only_matches_signed_message() {
-    let env = SignTestEnv::new();
-    let signed = run_psigner(&env.args(&["--yes", "--output", "json"]));
-    let signed: serde_json::Value = serde_json::from_slice(&signed.stdout).unwrap();
-    let unsigned = run_psigner(&env.args(&["--message-only", "--output", "json"]));
-    let unsigned: serde_json::Value = serde_json::from_slice(&unsigned.stdout).unwrap();
-    assert_eq!(
-        signed["authorization_message"],
-        unsigned["authorization_message"]
-    );
-    assert_eq!(signed["next_nonce"], unsigned["next_nonce"]);
-    // An external signer signs the decoded message bytes, matching the CLI's signature.
-    let bytes = BASE64_STANDARD
-        .decode(unsigned["authorization_message"].as_str().unwrap())
-        .unwrap();
-    assert_eq!(
-        signed["signatures"][0]["signature"],
-        env.authority.sign_message(&bytes).to_string()
-    );
-}
-
-#[test]
-fn message_only_display_shows_authorization_message() {
-    let mut env = SignTestEnv::new();
-    let nonce_authority = Keypair::new_from_array([7; 32]).pubkey();
-    env.nonce_authority = nonce_authority.to_string();
-    let expected = env.expected(&[env.authority.pubkey(), nonce_authority]);
-    let output = run_psigner(&env.args(&["--message-only", "--quiet"]));
-    assert_eq!(
-        String::from_utf8(output.stdout).unwrap(),
-        format!(
-            "Forwarded signers (sign at submission):\n  {nonce_authority}\n\nNext nonce value \
-             (after execution): {}\n\nAuthorization message (base64):\n{}\n",
-            env.next_nonce(),
-            BASE64_STANDARD.encode(expected.serialize())
-        )
-    );
-    assert!(output.stderr.is_empty());
-}
-
-#[test_case("--signer"; "signer")]
-#[test_case("--yes"; "yes")]
-fn message_only_conflicts_with_signing_args(arg: &str) {
-    let env = SignTestEnv::new();
-    let signer = env.directory.path().join("authority.json");
-    let mut extra = vec!["--message-only", arg];
-    if arg == "--signer" {
-        extra.push(signer.to_str().unwrap());
-    }
-    let output = run_psigner_with_input(&env.args(&extra), "");
-    let stderr = String::from_utf8(output.stderr).unwrap();
-    assert!(!output.status.success());
-    assert!(output.stdout.is_empty());
-    assert!(stderr.contains("cannot be used with"), "{stderr}");
 }

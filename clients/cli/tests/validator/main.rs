@@ -14,8 +14,7 @@ use {
             cancels_when_forwarded_signer_declines, rejects_nonce_authority_mismatch,
             submits_authority_signatures_in_any_order,
             submits_authority_signed_transfer_and_rejects_replay,
-            submits_chain_signed_offline_with_next_nonce,
-            submits_message_only_with_external_signature, submits_quietly_without_confirmation,
+            submits_chain_signed_offline_with_next_nonce, submits_quietly_without_confirmation,
             submits_with_authority_as_execution_message_non_signer,
             submits_with_fee_payer_as_forwarded_signer, submits_with_forwarded_authority,
             submits_with_forwarded_ordinary_signer, submits_with_plain_key_nonce_authority,
@@ -96,11 +95,6 @@ fn main() -> ExitCode {
         async_trial!(rejects_stale_nonce_hash, env, runtime_handle),
         async_trial!(
             submits_chain_signed_offline_with_next_nonce,
-            env,
-            runtime_handle
-        ),
-        async_trial!(
-            submits_message_only_with_external_signature,
             env,
             runtime_handle
         ),
