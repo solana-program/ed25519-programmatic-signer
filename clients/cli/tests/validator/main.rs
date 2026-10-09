@@ -1,6 +1,10 @@
 use {
     self::{
         common::helpers::setup_test_env,
+        nonce_advance::{
+            advances_nonce_with_cold_authority, advances_nonce_with_plain_key_authority,
+            rejects_unrelated_nonce_authority,
+        },
         nonce_create::{
             creates_and_shows_nonce_account, creates_nonce_account_with_cold_authority,
             creates_nonce_account_with_generated_keypair,
@@ -26,6 +30,7 @@ use {
 
 #[path = "../common/mod.rs"]
 pub mod common;
+mod nonce_advance;
 mod nonce_create;
 mod test_transaction_simulate;
 mod test_transaction_submit;
@@ -58,6 +63,9 @@ fn main() -> ExitCode {
             env,
             runtime_handle
         ),
+        async_trial!(advances_nonce_with_plain_key_authority, env, runtime_handle),
+        async_trial!(advances_nonce_with_cold_authority, env, runtime_handle),
+        async_trial!(rejects_unrelated_nonce_authority, env, runtime_handle),
         async_trial!(
             submits_authority_signed_transfer_and_rejects_replay,
             env,
