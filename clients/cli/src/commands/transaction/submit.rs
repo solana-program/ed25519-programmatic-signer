@@ -215,6 +215,14 @@ pub(super) async fn run(
              --relay-signer or --relay-signature"
         );
     }
+    // A --sign-only run reviews the execution for forwarded signers that sign separately, such as
+    // airgapped signers, even with no local signer to review it for.
+    let has_absent_forwarded_signer = command.sign_only
+        && required_signers.iter().any(|address| {
+            execute.is_executor_signer(address)
+                && !is_relay(address)
+                && !relay_signatures.contains_key(address)
+        });
 
     // A --sign-only run makes no RPC calls, as clap requires --blockhash with it.
     let blockhash = match (command.blockhash, durable_nonce) {
@@ -324,7 +332,7 @@ pub(super) async fn run(
         check_execution_nonce(client, &execute).await?;
     }
 
-    if !authorization_signers.is_empty() {
+    if !authorization_signers.is_empty() || has_absent_forwarded_signer {
         if !command.quiet {
             // An authority the executor also uses directly is in both lists.
             let pda_authorities = required_signers
@@ -346,7 +354,11 @@ pub(super) async fn run(
                     &execute.nonce_authority,
                     &pda_authorities,
                     &forwarded_signers,
-                    if command.sign_only {
+                    if command.sign_only && authorization_signers.is_empty() {
+                        "No forwarded signer signs in this run. Absent forwarded signers sign the \
+                         relay transaction message, printed by --dump-transaction-message. Nothing \
+                         is submitted."
+                    } else if command.sign_only {
                         "Signing returns relay transaction signatures. Nothing is submitted."
                     } else {
                         "Signing submits this Execute call immediately."
@@ -354,6 +366,7 @@ pub(super) async fn run(
                 )?
             );
         }
+        // With no local forwarded signer, nothing needs confirming.
         confirm_signing(&authorization_signers, command.yes)?;
     }
 
