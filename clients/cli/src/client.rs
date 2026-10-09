@@ -23,6 +23,7 @@ use {
             custom_error::JSON_RPC_SERVER_ERROR_TRANSACTION_HISTORY_NOT_AVAILABLE,
         },
         nonblocking::rpc_client::RpcClient,
+        rpc_client::SerializableTransaction,
     },
     solana_rpc_client_types::{
         config::{
@@ -34,7 +35,7 @@ use {
     },
     solana_signature::Signature,
     solana_signer::Signer,
-    solana_transaction::{Transaction, TransactionResult},
+    solana_transaction::{TransactionResult, versioned::VersionedTransaction},
     spl_nonce_interface::state::Nonce,
     std::{cell::RefCell, io::ErrorKind, path::Path, rc::Rc, str::FromStr},
 };
@@ -175,7 +176,7 @@ impl Client {
     /// those accounts.
     pub(crate) async fn simulate_transaction(
         &self,
-        transaction: &Transaction,
+        transaction: &VersionedTransaction,
         verbose_accounts: Option<&[Address]>,
     ) -> Result<RpcSimulateTransactionResult> {
         let accounts = verbose_accounts.map(|addresses| RpcSimulateTransactionAccountsConfig {
@@ -231,7 +232,7 @@ impl Client {
 
     pub(crate) async fn send_and_confirm_transaction(
         &self,
-        transaction: &Transaction,
+        transaction: &impl SerializableTransaction,
     ) -> Result<String> {
         self.rpc
             .send_and_confirm_transaction_with_config(
