@@ -10350,6 +10350,7 @@ dependencies = [
  "solana-transaction",
  "solana-transaction-status",
  "spl-ed25519-signer-client",
+ "spl-ed25519-signer-interface",
  "spl-message-executor-client",
  "spl-message-executor-interface",
  "spl-nonce-client",
