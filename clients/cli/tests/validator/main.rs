@@ -17,6 +17,11 @@ use {
             migrates_stake_authorities_one_at_a_time, migrates_stake_to_new_owner,
             migrates_stake_with_lockup_custodian, rejects_invalid_stake_migrations,
         },
+        test_migrate_token::{
+            migrates_token_2022_balance, migrates_token_balance, migrates_tokens_with_funder,
+            migrates_tokens_with_transfer_fee, rejects_invalid_token_migrations,
+            rejects_unsupported_token_2022_migrations,
+        },
         test_migrate_vote::{
             migrates_vote_withdrawer_held_by_identity, migrates_vote_withdrawer_to_new_owner,
             rejects_invalid_vote_migrations,
@@ -50,6 +55,7 @@ mod nonce_create;
 mod test_migrate_mint;
 mod test_migrate_program;
 mod test_migrate_stake;
+mod test_migrate_token;
 mod test_migrate_vote;
 mod test_transaction_simulate;
 mod test_transaction_submit;
@@ -161,6 +167,16 @@ fn main() -> ExitCode {
         ),
         async_trial!(migrates_mint_without_freeze_authority, env, runtime_handle),
         async_trial!(rejects_invalid_mint_migrations, env, runtime_handle),
+        async_trial!(migrates_token_balance, env, runtime_handle),
+        async_trial!(migrates_token_2022_balance, env, runtime_handle),
+        async_trial!(migrates_tokens_with_funder, env, runtime_handle),
+        async_trial!(migrates_tokens_with_transfer_fee, env, runtime_handle),
+        async_trial!(rejects_invalid_token_migrations, env, runtime_handle),
+        async_trial!(
+            rejects_unsupported_token_2022_migrations,
+            env,
+            runtime_handle
+        ),
         async_trial!(
             submits_chain_signed_offline_with_next_nonce,
             env,
