@@ -1,5 +1,6 @@
 pub(crate) mod mint;
 pub(crate) mod program;
+pub(crate) mod scan;
 pub(crate) mod sol;
 pub(crate) mod stake;
 pub(crate) mod token;
@@ -31,6 +32,14 @@ enum MigrateSubcommand {
     Mint(mint::MintCommand),
     /// Build an execution message moving a program's upgrade authority to a programmatic signer.
     Program(program::ProgramCommand),
+    /// List the accounts and balances an address controls that the other migrate commands can
+    /// move, with the command for each.
+    ///
+    /// Stake accounts, vote accounts, programs and mints are found with `getProgramAccounts`,
+    /// which many RPC providers restrict. Mints often can't be scanned, since providers tend to
+    /// reject these queries for the token programs. Categories that fail are listed as not
+    /// scanned, and the rest are still reported.
+    Scan(scan::ScanCommand),
     /// Build an execution message moving SOL to a programmatic signer.
     Sol(sol::SolCommand),
     /// Build an execution message moving a stake account's authorities to a programmatic signer.
@@ -51,6 +60,7 @@ pub(crate) async fn run(
     match command.command {
         MigrateSubcommand::Mint(command) => mint::run(command, client, output).await,
         MigrateSubcommand::Program(command) => program::run(command, client, output).await,
+        MigrateSubcommand::Scan(command) => scan::run(command, client, output).await,
         MigrateSubcommand::Sol(command) => sol::run(command, client, output).await,
         MigrateSubcommand::Stake(command) => stake::run(command, client, output).await,
         MigrateSubcommand::Token(command) => token::run(command, client, output).await,

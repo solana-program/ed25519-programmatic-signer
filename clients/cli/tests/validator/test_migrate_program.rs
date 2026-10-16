@@ -74,7 +74,7 @@ async fn write_buffer(env: &TestEnv, program: &[u8], authority: &Keypair) -> Add
 }
 
 /// Deploy the test program with `upgrade_authority`.
-async fn deploy_program(env: &TestEnv, upgrade_authority: &Keypair) -> Address {
+pub async fn deploy_program(env: &TestEnv, upgrade_authority: &Keypair) -> Address {
     let buffer = write_buffer(env, PROGRAM, upgrade_authority).await;
     let program = Keypair::new();
     let lamports = env

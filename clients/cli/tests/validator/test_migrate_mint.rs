@@ -23,19 +23,36 @@ use {
 
 /// Create a mint. Token-2022 mints get an extension, so decoding has to handle the extended
 /// layout most Token-2022 mints use.
-async fn create_mint(
+pub async fn create_mint(
     env: &TestEnv,
     token_program: &Address,
     mint_authority: &Address,
     freeze_authority: Option<&Address>,
 ) -> Address {
-    let mint = Keypair::new();
-    let is_token_2022 = *token_program == spl_token_2022_interface::id();
-    let extensions: &[ExtensionType] = if is_token_2022 {
+    let extensions: &[ExtensionType] = if *token_program == spl_token_2022_interface::id() {
         &[ExtensionType::NonTransferable]
     } else {
         &[]
     };
+    create_mint_with_extensions(
+        env,
+        token_program,
+        mint_authority,
+        freeze_authority,
+        extensions,
+    )
+    .await
+}
+
+/// Create a mint with the given extensions, of which only `NonTransferable` is supported.
+pub async fn create_mint_with_extensions(
+    env: &TestEnv,
+    token_program: &Address,
+    mint_authority: &Address,
+    freeze_authority: Option<&Address>,
+    extensions: &[ExtensionType],
+) -> Address {
+    let mint = Keypair::new();
     let space = ExtensionType::try_calculate_account_len::<Mint>(extensions).unwrap();
     let lamports = env
         .rpc
@@ -49,7 +66,8 @@ async fn create_mint(
         space.try_into().unwrap(),
         token_program,
     )];
-    if is_token_2022 {
+    for extension in extensions {
+        assert_eq!(*extension, ExtensionType::NonTransferable);
         instructions.push(initialize_non_transferable_mint(token_program, &mint.pubkey()).unwrap());
     }
     instructions.push(

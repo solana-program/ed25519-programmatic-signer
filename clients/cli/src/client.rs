@@ -3,7 +3,9 @@ use {
     anyhow::{Context, Result, anyhow, bail, ensure},
     clap::ArgMatches,
     solana_account::Account,
-    solana_account_decoder_client_types::UiAccountEncoding,
+    solana_account_decoder_client_types::{
+        UiAccountData, UiAccountEncoding, UiDataSliceConfig, token::UiTokenAccount,
+    },
     solana_address::Address,
     solana_clap_v3_utils::{
         input_parsers::{parse_url_or_moniker, signer::SignerSource},
@@ -19,12 +21,16 @@ use {
         versions::Versions,
     },
     solana_remote_wallet::remote_wallet::RemoteWalletManager,
-    solana_rpc_client::nonblocking::rpc_client::RpcClient,
+    solana_rpc_client::{
+        api::client_error::Error as ClientError, nonblocking::rpc_client::RpcClient,
+    },
     solana_rpc_client_types::{
         config::{
-            RpcSendTransactionConfig, RpcSimulateTransactionAccountsConfig,
-            RpcSimulateTransactionConfig,
+            RpcAccountInfoConfig, RpcProgramAccountsConfig, RpcSendTransactionConfig,
+            RpcSimulateTransactionAccountsConfig, RpcSimulateTransactionConfig,
         },
+        filter::RpcFilterType,
+        request::TokenAccountsFilter,
         response::RpcSimulateTransactionResult,
     },
     solana_signer::Signer,
@@ -132,6 +138,7 @@ impl Client {
         self.rpc
             .get_minimum_balance_for_rent_exemption(data_len)
             .await
+            .map_err(rpc_error)
             .context("failed to query rent exemption")
     }
 
@@ -139,6 +146,7 @@ impl Client {
         self.rpc
             .get_latest_blockhash()
             .await
+            .map_err(rpc_error)
             .context("failed to get latest blockhash")
     }
 
@@ -148,6 +156,7 @@ impl Client {
             .rpc
             .get_account_with_commitment(address, self.rpc.commitment())
             .await
+            .map_err(rpc_error)
             .with_context(|| format!("failed to fetch account {address}"))?
             .value)
     }
@@ -226,11 +235,75 @@ impl Client {
         Ok(account)
     }
 
+    /// Fetch the accounts owned by `program_id` that match all filters. Optionally returns just a slice.
+    pub(crate) async fn program_accounts(
+        &self,
+        program_id: &Address,
+        filters: Vec<RpcFilterType>,
+        data_slice: Option<UiDataSliceConfig>,
+    ) -> Result<Vec<(Address, Account)>> {
+        self.rpc
+            .get_program_ui_accounts_with_config(
+                program_id,
+                RpcProgramAccountsConfig {
+                    filters: Some(filters),
+                    account_config: RpcAccountInfoConfig {
+                        encoding: Some(UiAccountEncoding::Base64),
+                        data_slice,
+                        ..RpcAccountInfoConfig::default()
+                    },
+                    ..RpcProgramAccountsConfig::default()
+                },
+            )
+            .await
+            .map_err(rpc_error)
+            .with_context(|| format!("failed to fetch accounts owned by {program_id}"))?
+            .into_iter()
+            .map(|(address, account)| {
+                let account = account
+                    .to_account()
+                    .with_context(|| format!("account {address} has undecodable data"))?;
+                Ok((address, account))
+            })
+            .collect()
+    }
+
+    /// Fetch `owner`'s token accounts under `token_program`, parsed by the RPC node.
+    pub(crate) async fn token_accounts_by_owner(
+        &self,
+        owner: &Address,
+        token_program: &Address,
+    ) -> Result<Vec<(Address, UiTokenAccount)>> {
+        self.rpc
+            .get_token_accounts_by_owner_with_commitment(
+                owner,
+                TokenAccountsFilter::ProgramId(*token_program),
+                self.rpc.commitment(),
+            )
+            .await
+            .map_err(rpc_error)
+            .with_context(|| format!("failed to fetch token accounts owned by {owner}"))?
+            .value
+            .into_iter()
+            .map(|keyed_account| {
+                let address = Address::from_str(&keyed_account.pubkey)
+                    .context("invalid token account address")?;
+                let UiAccountData::Json(parsed) = keyed_account.account.data else {
+                    bail!("token account {address} was not parsed");
+                };
+                let account = serde_json::from_value(parsed.parsed["info"].clone())
+                    .with_context(|| format!("token account {address} has invalid parsed data"))?;
+                Ok((address, account))
+            })
+            .collect()
+    }
+
     pub(crate) async fn clock(&self) -> Result<Clock> {
         let data = self
             .rpc
             .get_account_data(&solana_sdk_ids::sysvar::clock::id())
             .await
+            .map_err(rpc_error)
             .context("failed to fetch the clock sysvar")?;
         wincode::deserialize(&data).context("invalid clock sysvar data")
     }
@@ -266,6 +339,7 @@ impl Client {
                 },
             )
             .await
+            .map_err(rpc_error)
             .map(|response| response.value)
             .context("failed to simulate transaction")
     }
@@ -285,9 +359,16 @@ impl Client {
                 },
             )
             .await
+            .map_err(rpc_error)
             .map(|signature| signature.to_string())
             .context("failed to send and confirm transaction")
     }
+}
+
+/// Unwrap an RPC client error to its kind. The client error displays as its kind and also
+/// reports it as its source, so error chains would repeat the message.
+fn rpc_error(error: ClientError) -> anyhow::Error {
+    anyhow::Error::new(*error.kind)
 }
 
 fn decode_nonce_account(address: &Address, account: Account) -> Result<NonceAccount> {
@@ -307,7 +388,7 @@ fn decode_nonce_account(address: &Address, account: Account) -> Result<NonceAcco
     })
 }
 
-fn decode_stake_account(address: &Address, account: &Account) -> Result<StakeStateV2> {
+pub(crate) fn decode_stake_account(address: &Address, account: &Account) -> Result<StakeStateV2> {
     ensure!(
         account.owner == solana_stake_interface::program::id(),
         "account {address} is owned by {}, not the Stake Program",
@@ -317,7 +398,10 @@ fn decode_stake_account(address: &Address, account: &Account) -> Result<StakeSta
         .with_context(|| format!("account {address} contains invalid stake data"))
 }
 
-fn decode_vote_account(address: &Address, account: &Account) -> Result<VoteStateVersions> {
+pub(crate) fn decode_vote_account(
+    address: &Address,
+    account: &Account,
+) -> Result<VoteStateVersions> {
     ensure!(
         account.owner == solana_sdk_ids::vote::id(),
         "account {address} is owned by {}, not the Vote Program",
@@ -327,7 +411,7 @@ fn decode_vote_account(address: &Address, account: &Account) -> Result<VoteState
         .with_context(|| format!("account {address} contains invalid vote data"))
 }
 
-fn decode_upgradeable_loader_account(
+pub(crate) fn decode_upgradeable_loader_account(
     address: &Address,
     account: &Account,
 ) -> Result<UpgradeableLoaderState> {
@@ -342,7 +426,7 @@ fn decode_upgradeable_loader_account(
         .with_context(|| format!("account {address} contains invalid upgradeable loader data"))
 }
 
-fn decode_mint(address: &Address, account: &Account) -> Result<(Address, Mint)> {
+pub(crate) fn decode_mint(address: &Address, account: &Account) -> Result<(Address, Mint)> {
     // This works for both Token and Token-2022 mints
     let mint = StateWithExtensions::<Mint>::unpack(&account.data)
         .with_context(|| format!("account {address} is not a mint"))?
