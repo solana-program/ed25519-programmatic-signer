@@ -18,9 +18,13 @@ use {
     spl_programmatic_signer_cli::StakeMigrationOutput,
 };
 
-const STAKE_LAMPORTS: u64 = 1_000_000_000;
+pub const STAKE_LAMPORTS: u64 = 1_000_000_000;
 
-async fn create_stake_account(env: &TestEnv, authorized: &Authorized, lockup: &Lockup) -> Address {
+pub async fn create_stake_account(
+    env: &TestEnv,
+    authorized: &Authorized,
+    lockup: &Lockup,
+) -> Address {
     let stake = Keypair::new();
     let transaction = Transaction::new_signed_with_payer(
         &create_account(

@@ -23,7 +23,11 @@ use {
 /// Lamports above the rent-exempt minimum, which the withdrawer can take out.
 const WITHDRAWABLE_LAMPORTS: u64 = 1_000_000_000;
 
-async fn create_vote_account(env: &TestEnv, identity: &Keypair, withdrawer: &Address) -> Address {
+pub async fn create_vote_account(
+    env: &TestEnv,
+    identity: &Keypair,
+    withdrawer: &Address,
+) -> Address {
     let vote = Keypair::new();
     let rent = env
         .rpc

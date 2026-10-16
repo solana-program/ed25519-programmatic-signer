@@ -23,7 +23,7 @@ use {
 
 /// Create a mint. Token-2022 mints get an extension, so decoding has to handle the extended
 /// layout most Token-2022 mints use.
-async fn create_mint(
+pub async fn create_mint(
     env: &TestEnv,
     token_program: &Address,
     mint_authority: &Address,

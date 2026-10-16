@@ -96,7 +96,7 @@ pub(super) async fn run(
     })
 }
 
-fn role_name(role: StakeAuthorize) -> &'static str {
+pub(super) fn role_name(role: StakeAuthorize) -> &'static str {
     match role {
         StakeAuthorize::Staker => "staker",
         StakeAuthorize::Withdrawer => "withdrawer",

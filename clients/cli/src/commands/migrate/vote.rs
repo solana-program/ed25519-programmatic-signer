@@ -59,7 +59,10 @@ pub(super) async fn run(
     })
 }
 
-fn authorized_withdrawer(state: &VoteStateVersions, vote_account: &Address) -> Result<Address> {
+pub(super) fn authorized_withdrawer(
+    state: &VoteStateVersions,
+    vote_account: &Address,
+) -> Result<Address> {
     if state.is_uninitialized() {
         bail!("vote account {vote_account} is not initialized");
     }

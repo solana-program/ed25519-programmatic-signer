@@ -5,8 +5,16 @@ mod output;
 
 pub use commands::{
     migrate::{
-        Authorization, RequiredSigners, mint::MintMigrationOutput, program::ProgramMigrationOutput,
-        sol::SolMigrationOutput, stake::StakeMigrationOutput, token::TokenMigrationOutput,
+        Authorization, RequiredSigners,
+        mint::MintMigrationOutput,
+        program::ProgramMigrationOutput,
+        scan::{
+            MintScanItem, ProgramScanItem, ScanError, ScanOutput, SolScanItem, StakeScanItem,
+            TokenScanItem, VoteScanItem,
+        },
+        sol::SolMigrationOutput,
+        stake::StakeMigrationOutput,
+        token::TokenMigrationOutput,
         vote::VoteMigrationOutput,
     },
     nonce::{create::NonceCreateOutput, show::NonceShowOutput},

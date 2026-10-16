@@ -31,11 +31,11 @@ use {
     },
 };
 
-const DECIMALS: u8 = 2;
+pub const DECIMALS: u8 = 2;
 
 /// Create a mint with the test payer as its mint and freeze authority, and the given Token-2022
 /// extensions.
-async fn create_mint(
+pub async fn create_mint(
     env: &TestEnv,
     token_program: &Address,
     extensions: &[ExtensionType],
@@ -100,7 +100,7 @@ async fn create_mint(
 }
 
 /// Mint `amount` to `owner`'s associated token account, creating it, and return the account.
-async fn mint_tokens(
+pub async fn mint_tokens(
     env: &TestEnv,
     token_program: &Address,
     mint: &Address,
