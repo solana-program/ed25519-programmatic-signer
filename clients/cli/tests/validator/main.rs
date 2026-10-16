@@ -9,6 +9,10 @@ use {
             migrates_stake_authorities_one_at_a_time, migrates_stake_to_new_owner,
             migrates_stake_with_lockup_custodian, rejects_invalid_stake_migrations,
         },
+        test_migrate_vote::{
+            migrates_vote_withdrawer_held_by_identity, migrates_vote_withdrawer_to_new_owner,
+            rejects_invalid_vote_migrations,
+        },
         test_transaction_simulate::{
             prints_verbose_simulation_result, rejects_stale_nonce_hash,
             reports_failed_simulation_logs, simulates_promoted_and_forwarded_signers,
@@ -33,8 +37,10 @@ use {
 
 #[path = "../common/mod.rs"]
 pub mod common;
+mod migration;
 mod nonce_create;
 mod test_migrate_stake;
+mod test_migrate_vote;
 mod test_transaction_simulate;
 mod test_transaction_submit;
 
@@ -118,6 +124,13 @@ fn main() -> ExitCode {
         ),
         async_trial!(migrates_stake_with_lockup_custodian, env, runtime_handle),
         async_trial!(rejects_invalid_stake_migrations, env, runtime_handle),
+        async_trial!(migrates_vote_withdrawer_to_new_owner, env, runtime_handle),
+        async_trial!(
+            migrates_vote_withdrawer_held_by_identity,
+            env,
+            runtime_handle
+        ),
+        async_trial!(rejects_invalid_vote_migrations, env, runtime_handle),
         async_trial!(
             submits_chain_signed_offline_with_next_nonce,
             env,
