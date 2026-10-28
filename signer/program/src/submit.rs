@@ -163,8 +163,12 @@ fn verify_authority_signatures<'a>(
         };
 
         // Verify the signer signed the authorization message
-        brine_ed25519::verify::<Sha512>(signer, signature.as_array(), &[message_bytes.as_slice()])
-            .map_err(|_| Error::InvalidSignature)?;
+        brine_ed25519::verify_with_hasher_strict::<Sha512>(
+            signer,
+            signature.as_array(),
+            &[message_bytes.as_slice()],
+        )
+        .map_err(|_| Error::InvalidSignature)?;
         verified.push(signer);
     }
 

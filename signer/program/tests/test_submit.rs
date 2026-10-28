@@ -117,6 +117,25 @@ fn submit_rejects_wrong_authority_signature() {
         .execute();
 }
 
+// With a small-order authority key, `R = G, s = 1` verifies over any message unless the key
+// is rejected, including its non-canonical encodings.
+#[test_case({ let mut key = [0; 32]; key[0] = 1; key }; "canonical identity")]
+#[test_case({ let mut key = [0xff; 32]; key[0] = 0xee; key[31] = 0x7f; key }; "non-canonical identity")]
+fn submit_rejects_small_order_authority_forgery(authority: [u8; 32]) {
+    let mut forged_signature = [0; 64];
+    forged_signature[0] = 0x58;
+    forged_signature[1..32].fill(0x66);
+    forged_signature[32] = 1;
+
+    SubmitBuilder::default_transfer()
+        .tamper_message(move |msg| msg.account_keys[0] = Address::new_from_array(authority))
+        .tamper_transaction(move |transaction| {
+            transaction.signatures[0] = forged_signature.into();
+        })
+        .check_err(Error::InvalidSignature)
+        .execute();
+}
+
 #[test]
 fn submit_verifies_every_signature() {
     // The first signature is valid but the second slot is signed by the wrong key,

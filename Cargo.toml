@@ -23,7 +23,7 @@ edition = "2021"
 [workspace.dependencies]
 anyhow = "1.0.104"
 base64 = "0.23.1"
-brine-ed25519 = "0.7.0"
+brine-ed25519 = "0.10.0"
 clap = "3.2.25"
 codama-macros = "0.13.1"
 indoc = "2.0.7"
