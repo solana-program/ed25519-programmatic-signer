@@ -14,13 +14,13 @@ use {
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, ValueEnum)]
-enum AuthorityType {
+pub(super) enum AuthorityType {
     Mint,
     Freeze,
 }
 
 impl AuthorityType {
-    fn name(self) -> &'static str {
+    pub(super) fn name(self) -> &'static str {
         match self {
             Self::Mint => "mint",
             Self::Freeze => "freeze",

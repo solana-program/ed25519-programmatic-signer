@@ -139,7 +139,7 @@ fn current_authority(authorized: &Authorized, role: StakeAuthorize) -> Address {
     }
 }
 
-fn role_name(role: StakeAuthorize) -> &'static str {
+pub(super) fn role_name(role: StakeAuthorize) -> &'static str {
     match role {
         StakeAuthorize::Staker => "staker",
         StakeAuthorize::Withdrawer => "withdrawer",
