@@ -147,9 +147,9 @@ pub async fn scans_owner_for_migrations(env: &TestEnv) {
     let held_2022_account =
         mint_tokens(env, &token_2022, &held_2022_mint, &owner.pubkey(), 5).await;
     let other_account = mint_to_new_account(env, &token, &held_mint, &owner.pubkey(), 1_000).await;
-    // An empty balance is not listed.
+    // An empty account is listed, since `migrate token` closes it.
     let empty_mint = test_migrate_token::create_mint(env, &token, &[]).await;
-    mint_tokens(env, &token, &empty_mint, &owner.pubkey(), 0).await;
+    let empty_account = mint_tokens(env, &token, &empty_mint, &owner.pubkey(), 0).await;
 
     let output = scan(
         env,
@@ -321,6 +321,16 @@ pub async fn scans_owner_for_migrations(env: &TestEnv) {
             false,
             None,
         ),
+        (
+            empty_account.to_string(),
+            empty_mint.to_string(),
+            token.to_string(),
+            "0".to_string(),
+            true,
+            Some(command(&format!(
+                "token {empty_mint} --owner {owner_arg} --new-authority-signing-pubkey {new_owner}"
+            ))),
+        ),
     ];
     expected_tokens.sort();
     assert_eq!(tokens, expected_tokens);
@@ -366,7 +376,7 @@ pub async fn scans_owner_for_migrations(env: &TestEnv) {
         "{display}"
     );
     assert!(display.contains("Mints (4):"), "{display}");
-    assert!(display.contains("Token balances (3):"), "{display}");
+    assert!(display.contains("Token accounts (4):"), "{display}");
     assert!(!display.contains("Not scanned"), "{display}");
 
     // Each item is listed under its heading, followed by its command or why it has none.

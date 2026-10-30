@@ -381,9 +381,6 @@ async fn scan_token(
         {
             let amount = u64::from_str(&account.token_amount.amount)
                 .with_context(|| format!("token account {address} has an invalid amount"))?;
-            if amount == 0 {
-                continue;
-            }
             let mint = Address::from_str(&account.mint)
                 .with_context(|| format!("token account {address} has an invalid mint"))?;
             // `migrate token` only moves from the owner's associated token account.
@@ -646,7 +643,7 @@ impl fmt::Display for ScanOutput {
         }
         if let Ok(token) = &self.token {
             writeln!(out)?;
-            write_heading(&mut out, "Token balances", token.len())?;
+            write_heading(&mut out, "Token accounts", token.len())?;
             for item in token {
                 writeln!(out, "  {} of mint {}", item.amount, item.mint)?;
                 match &item.command {

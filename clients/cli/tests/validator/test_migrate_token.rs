@@ -19,13 +19,18 @@ use {
     spl_programmatic_signer_cli::{Authorization, TokenMigrationOutput},
     spl_token_2022_interface::{
         extension::{
-            ExtensionType, StateWithExtensions, cpi_guard::instruction::enable_cpi_guard,
+            ExtensionType, StateWithExtensions,
+            cpi_guard::instruction::enable_cpi_guard,
             default_account_state::instruction::initialize_default_account_state,
-            transfer_fee::instruction::initialize_transfer_fee_config, transfer_hook,
+            transfer_fee::instruction::{
+                harvest_withheld_tokens_to_mint, initialize_transfer_fee_config,
+            },
+            transfer_hook,
         },
         instruction::{
-            freeze_account, initialize_mint2, initialize_non_transferable_mint, mint_to_checked,
-            reallocate, thaw_account,
+            AuthorityType, close_account, freeze_account, initialize_mint2,
+            initialize_non_transferable_mint, mint_to_checked, reallocate, set_authority,
+            thaw_account, transfer_checked,
         },
         state::{Account as TokenAccount, AccountState, Mint},
     },
@@ -139,6 +144,14 @@ async fn token_balance(env: &TestEnv, account: &Address) -> u64 {
         .amount
 }
 
+async fn assert_closed(env: &TestEnv, account: &Address) {
+    let account = env
+        .rpc
+        .get_account_with_commitment(account, env.rpc.commitment())
+        .await;
+    assert_eq!(account.unwrap().value, None);
+}
+
 async fn migrates_tokens(env: &TestEnv, token_program: &Address) {
     let owner = Keypair::new();
     let owner_arg = owner.pubkey().to_string();
@@ -189,6 +202,8 @@ async fn migrates_tokens(env: &TestEnv, token_program: &Address) {
     assert_eq!(migration.destination, destination.to_string());
     assert_eq!(migration.funder, Some(owner_arg.clone()));
     assert!(!migration.transfer_fee);
+    // Tokens are left behind, so the source stays open.
+    assert_eq!(migration.rent_recipient, None);
     assert_eq!(
         migration.new_authority,
         new_owner_programmatic_signer.to_string()
@@ -237,16 +252,18 @@ async fn migrates_tokens(env: &TestEnv, token_program: &Address) {
     assert_eq!(token_balance(env, &source).await, 750);
     assert_eq!(token_balance(env, &destination).await, 250);
 
-    // The new authority's token account exists now, and without an amount the rest moves.
+    // The new authority's token account exists now, and without an amount the rest moves. The
+    // emptied source stays open, as asked.
     let migration: TokenMigrationOutput = migrate(
         env,
         "token",
         &mint,
         Some(&new_owner.pubkey()),
-        &["--owner", &owner_arg],
+        &["--owner", &owner_arg, "--no-close"],
     );
     assert_eq!(migration.amount, "7.5");
     assert_eq!(migration.funder, None);
+    assert_eq!(migration.rent_recipient, None);
     let message = decode_execution_message(&migration.execution_message);
     assert_eq!(message.instructions.len(), 2);
     execute_as_new_owner(
@@ -261,6 +278,64 @@ async fn migrates_tokens(env: &TestEnv, token_program: &Address) {
     assert_eq!(token_balance(env, &source).await, 0);
     assert_eq!(token_balance(env, &destination).await, 1_000);
 
+    // Zero balance left and --no-close, error
+    let stderr = migrate_error(
+        env,
+        "token",
+        &mint,
+        Some(&new_owner.pubkey()),
+        &["--owner", &owner_arg, "--no-close"],
+    );
+    assert!(
+        stderr.contains(&format!(
+            "token account {source} has no balance, remove --no-close to close it"
+        )),
+        "{stderr}"
+    );
+
+    // Without --no-close, we close the empty token account
+    let rent_recipient = Address::new_unique();
+    let migration: TokenMigrationOutput = migrate(
+        env,
+        "token",
+        &mint,
+        Some(&new_owner.pubkey()),
+        &[
+            "--owner",
+            &owner_arg,
+            "--rent-recipient",
+            &rent_recipient.to_string(),
+        ],
+    );
+    assert_eq!(migration.amount, "0");
+    assert_eq!(migration.funder, None);
+    assert_eq!(migration.rent_recipient, Some(rent_recipient.to_string()));
+    assert_signers(
+        &migration.required_signers,
+        &[authorization(&new_owner.pubkey())],
+        &[owner.pubkey()],
+    );
+    let message = decode_execution_message(&migration.execution_message);
+    let program_ids = message
+        .instructions
+        .iter()
+        .map(|instruction| message.account_keys[usize::from(instruction.program_id_index)])
+        .collect::<Vec<_>>();
+    assert_eq!(program_ids, [*token_program, spl_memo_interface::v4::id()]);
+    let rent = env.rpc.get_balance(&source).await.unwrap();
+    execute_as_new_owner(
+        env,
+        &migration.execution_message,
+        &nonce_account,
+        &new_owner,
+        &[],
+        &[&owner],
+    )
+    .await;
+    assert_closed(env, &source).await;
+    assert_eq!(env.rpc.get_balance(&rent_recipient).await.unwrap(), rent);
+    assert_eq!(token_balance(env, &destination).await, 1_000);
+
     let stderr = migrate_error(
         env,
         "token",
@@ -269,7 +344,7 @@ async fn migrates_tokens(env: &TestEnv, token_program: &Address) {
         &["--owner", &owner_arg],
     );
     assert!(
-        stderr.contains(&format!("token account {source} has no balance")),
+        stderr.contains(&format!("associated token account {source} was not found")),
         "{stderr}"
     );
 }
@@ -306,6 +381,34 @@ pub async fn migrates_tokens_with_funder(env: &TestEnv) {
         ],
     );
     assert_eq!(migration.funder, Some(funder.pubkey().to_string()));
+    // The rent goes to the new authority's programmatic signer by default
+    let new_owner_programmatic_signer = programmatic_signer(&new_owner.pubkey());
+    assert_eq!(
+        migration.rent_recipient,
+        Some(new_owner_programmatic_signer.to_string())
+    );
+    let message = decode_execution_message(&migration.execution_message);
+    let close = message
+        .instructions
+        .iter()
+        .find(|instruction| {
+            message.account_keys[usize::from(instruction.program_id_index)] == token_program
+                && instruction.data
+                    == close_account(
+                        &token_program,
+                        &source,
+                        &new_owner_programmatic_signer,
+                        &owner.pubkey(),
+                        &[],
+                    )
+                    .unwrap()
+                    .data
+        })
+        .expect("the source is closed");
+    assert_eq!(
+        message.account_keys[usize::from(close.accounts[1])],
+        new_owner_programmatic_signer
+    );
     assert_signers(
         &migration.required_signers,
         &[authorization(&new_owner.pubkey())],
@@ -320,7 +423,7 @@ pub async fn migrates_tokens_with_funder(env: &TestEnv) {
         &[&owner, &funder],
     )
     .await;
-    assert_eq!(token_balance(env, &source).await, 0);
+    assert_closed(env, &source).await;
     let destination = get_associated_token_address_with_program_id(
         &programmatic_signer(&new_owner.pubkey()),
         &mint,
@@ -383,7 +486,7 @@ pub async fn migrates_tokens_between_programmatic_signers(env: &TestEnv) {
         &[],
     )
     .await;
-    assert_eq!(token_balance(env, &source).await, 0);
+    assert_closed(env, &source).await;
     let destination = get_associated_token_address_with_program_id(
         &new_owner_programmatic_signer,
         &mint,
@@ -398,7 +501,37 @@ pub async fn migrates_tokens_with_transfer_fee(env: &TestEnv) {
     let token_program = spl_token_2022_interface::id();
     fund(env, &owner.pubkey()).await;
     let mint = create_mint(env, &token_program, &[ExtensionType::TransferFeeConfig]).await;
-    let source = mint_tokens(env, &token_program, &mint, &owner.pubkey(), 1_000).await;
+    // The owner receives its tokens through a transfer, so its token account holds withheld fees,
+    // which must be harvested before it can close.
+    let payer = env.payer.pubkey();
+    let payer_account = mint_tokens(env, &token_program, &mint, &payer, 1_000).await;
+    let source =
+        get_associated_token_address_with_program_id(&owner.pubkey(), &mint, &token_program);
+    send(
+        env,
+        &[
+            create_associated_token_account_idempotent(
+                &payer,
+                &owner.pubkey(),
+                &mint,
+                &token_program,
+            ),
+            transfer_checked(
+                &token_program,
+                &payer_account,
+                &mint,
+                &source,
+                &payer,
+                &[],
+                1_000,
+                DECIMALS,
+            )
+            .unwrap(),
+        ],
+        &[],
+    )
+    .await;
+    assert_eq!(token_balance(env, &source).await, 990);
     let nonce_account = create_nonce(env, &new_owner.pubkey());
 
     let migration: TokenMigrationOutput = migrate(
@@ -408,8 +541,56 @@ pub async fn migrates_tokens_with_transfer_fee(env: &TestEnv) {
         Some(&new_owner.pubkey()),
         &["--owner", &owner.pubkey().to_string()],
     );
-    assert_eq!(migration.amount, "10");
+    assert_eq!(migration.amount, "9.9");
     assert!(migration.transfer_fee);
+    let new_owner_programmatic_signer = programmatic_signer(&new_owner.pubkey());
+    assert_eq!(
+        migration.rent_recipient,
+        Some(new_owner_programmatic_signer.to_string())
+    );
+    let destination = get_associated_token_address_with_program_id(
+        &new_owner_programmatic_signer,
+        &mint,
+        &token_program,
+    );
+    let message = decode_execution_message(&migration.execution_message);
+    let data = message
+        .instructions
+        .iter()
+        .filter(|instruction| {
+            message.account_keys[usize::from(instruction.program_id_index)] == token_program
+        })
+        .map(|instruction| instruction.data.clone())
+        .collect::<Vec<_>>();
+    assert_eq!(
+        data,
+        [
+            transfer_checked(
+                &token_program,
+                &source,
+                &mint,
+                &destination,
+                &owner.pubkey(),
+                &[],
+                990,
+                DECIMALS
+            )
+            .unwrap()
+            .data,
+            harvest_withheld_tokens_to_mint(&token_program, &mint, &[&source])
+                .unwrap()
+                .data,
+            close_account(
+                &token_program,
+                &source,
+                &new_owner_programmatic_signer,
+                &owner.pubkey(),
+                &[]
+            )
+            .unwrap()
+            .data,
+        ]
+    );
     execute_as_new_owner(
         env,
         &migration.execution_message,
@@ -419,14 +600,73 @@ pub async fn migrates_tokens_with_transfer_fee(env: &TestEnv) {
         &[&owner],
     )
     .await;
-    assert_eq!(token_balance(env, &source).await, 0);
+    assert_closed(env, &source).await;
     // The fee is withheld in the new authority's token account.
-    let destination = get_associated_token_address_with_program_id(
-        &programmatic_signer(&new_owner.pubkey()),
+    assert_eq!(token_balance(env, &destination).await, 980);
+}
+
+/// An account with a close authority other than its owner needs that authority to close it.
+pub async fn migrates_tokens_with_close_authority(env: &TestEnv) {
+    let owner = Keypair::new();
+    let close_authority = Keypair::new();
+    let new_owner = Keypair::new();
+    let token_program = spl_token_interface::id();
+    fund(env, &owner.pubkey()).await;
+    let mint = create_mint(env, &token_program, &[]).await;
+    let source = mint_tokens(env, &token_program, &mint, &owner.pubkey(), 1_000).await;
+    send(
+        env,
+        &[set_authority(
+            &token_program,
+            &source,
+            Some(&close_authority.pubkey()),
+            AuthorityType::CloseAccount,
+            &owner.pubkey(),
+            &[],
+        )
+        .unwrap()],
+        &[&owner],
+    )
+    .await;
+    let nonce_account = create_nonce(env, &new_owner.pubkey());
+
+    // Moving part of the balance leaves the account open, so the close authority doesn't sign.
+    let migration: TokenMigrationOutput = migrate(
+        env,
+        "token",
         &mint,
-        &token_program,
+        Some(&new_owner.pubkey()),
+        &["--owner", &owner.pubkey().to_string(), "--amount", "1"],
     );
-    assert_eq!(token_balance(env, &destination).await, 990);
+    assert_signers(
+        &migration.required_signers,
+        &[authorization(&new_owner.pubkey())],
+        &[owner.pubkey()],
+    );
+
+    // Migrating the remaining balance, and closing, requires the close authority
+    let migration: TokenMigrationOutput = migrate(
+        env,
+        "token",
+        &mint,
+        Some(&new_owner.pubkey()),
+        &["--owner", &owner.pubkey().to_string()],
+    );
+    assert_signers(
+        &migration.required_signers,
+        &[authorization(&new_owner.pubkey())],
+        &[owner.pubkey(), close_authority.pubkey()],
+    );
+    execute_as_new_owner(
+        env,
+        &migration.execution_message,
+        &nonce_account,
+        &new_owner,
+        &[],
+        &[&owner, &close_authority],
+    )
+    .await;
+    assert_closed(env, &source).await;
 }
 
 pub async fn rejects_invalid_token_migrations(env: &TestEnv) {
@@ -507,6 +747,38 @@ pub async fn rejects_invalid_token_migrations(env: &TestEnv) {
         "{stderr}"
     );
 
+    // A rent recipient is ignored when the account isn't closed.
+    let rent_recipient = Address::new_unique().to_string();
+    let migration: TokenMigrationOutput = migrate(
+        env,
+        "token",
+        &mint,
+        Some(&new_owner.pubkey()),
+        &[
+            "--owner",
+            &owner_arg,
+            "--amount",
+            "1",
+            "--rent-recipient",
+            &rent_recipient,
+        ],
+    );
+    assert_eq!(migration.rent_recipient, None);
+    let stderr = migrate_error(
+        env,
+        "token",
+        &mint,
+        Some(&new_owner.pubkey()),
+        &[
+            "--owner",
+            &owner_arg,
+            "--no-close",
+            "--rent-recipient",
+            &rent_recipient,
+        ],
+    );
+    assert!(stderr.contains("cannot be used with"), "{stderr}");
+
     send(
         env,
         &[freeze_account(&token_program, &source, &mint, &env.payer.pubkey(), &[]).unwrap()],
@@ -542,7 +814,22 @@ pub async fn rejects_unsupported_token_2022_migrations(env: &TestEnv) {
         )
     };
 
+    // An empty account only needs closing, which the mint can't block.
     let mint = create_mint(env, &token_program, &[ExtensionType::NonTransferable]).await;
+    mint_tokens(env, &token_program, &mint, &owner.pubkey(), 0).await;
+    let migration: TokenMigrationOutput = migrate(
+        env,
+        "token",
+        &mint,
+        Some(&new_owner.pubkey()),
+        &["--owner", &owner_arg],
+    );
+    assert_eq!(migration.amount, "0");
+    assert_eq!(
+        migration.rent_recipient,
+        Some(programmatic_signer(&new_owner.pubkey()).to_string())
+    );
+    mint_tokens(env, &token_program, &mint, &owner.pubkey(), 1_000).await;
     let stderr = migrate_error(&mint);
     assert!(
         stderr.contains(&format!("mint {mint} is non-transferable")),
@@ -550,6 +837,7 @@ pub async fn rejects_unsupported_token_2022_migrations(env: &TestEnv) {
     );
 
     let mint = create_mint(env, &token_program, &[ExtensionType::TransferHook]).await;
+    mint_tokens(env, &token_program, &mint, &owner.pubkey(), 1_000).await;
     let stderr = migrate_error(&mint);
     assert!(
         stderr.contains(&format!("mint {mint} has a transfer hook")),
