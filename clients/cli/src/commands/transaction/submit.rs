@@ -1,7 +1,7 @@
 use {
     super::{
         decode::{read_authorization_message, validate_execution_message},
-        summary::{confirm_signing, render_signing_summary},
+        summary::{SummarySigners, confirm_signing, render_signing_summary},
         v1_transaction::{compile_message, return_signers_data, signer_index, try_partial_sign},
     },
     crate::{cli::keypair_source_parser, client::Client, output::OutputFormat},
@@ -29,13 +29,15 @@ pub(super) struct SubmitCommand {
     authorization_message: String,
 
     /// Authority address and signature returned by `transaction sign`, or made externally over
-    /// its authorization message. Repeat for each PDA authority.
+    /// its authorization message. Repeat for each PDA authority. A required relay signer may also
+    /// approve this way instead of signing the relay transaction.
     #[clap(long = "signer", value_name = "ADDRESS=SIGNATURE")]
     signers: Vec<String>,
 
-    /// Signer source for a signer the executor uses directly: a keypair file, usb:// URL,
-    /// prompt:// URL, or the ASK keyword. Repeat for each signer. Each signs the relay
-    /// transaction after a signing summary, which forwards its signer privilege to the executor.
+    /// Signer source for a signer the executor uses directly or a required relay signer: a
+    /// keypair file, usb:// URL, prompt:// URL, or the ASK keyword. Repeat for each signer. Each
+    /// signs the relay transaction after a signing summary. This forwards the signer privilege of
+    /// a signer the executor uses, and approves the submission for a required relay signer.
     /// The fee payer is always a relay transaction signer. With --sign-only, forwarded signers
     /// that are not passed are reported as absent.
     #[clap(long, value_parser = keypair_source_parser())]
@@ -81,7 +83,8 @@ pub(super) struct SubmitCommand {
     #[clap(long, requires = "sign-only")]
     dump_transaction_message: bool,
 
-    /// Hide the signing summary shown when the authorization message has forwarded signers.
+    /// Hide the signing summary shown when the authorization message has forwarded signers, or
+    /// required relay signers that sign the relay transaction.
     /// Confirmation prompts and errors are still shown.
     #[clap(long)]
     quiet: bool,
@@ -152,11 +155,13 @@ pub(super) async fn run(
     for source in &command.relay_signer {
         let signer = client.load_signer(source, "relay signer", false)?;
         let address = signer.try_pubkey()?;
-        // Relay signers only sign for accounts the executor uses directly. Authorities sign
-        // through `transaction sign`.
+        // Relay signers only sign for accounts the executor uses directly, and for required relay
+        // signers. Authorities sign through `transaction sign`.
         ensure!(
-            required_signers.contains(&address) && execute.is_executor_signer(&address),
-            "{address} is not a forwarded signer on the authorization message{}",
+            required_signers.contains(&address)
+                && (execute.is_executor_signer(&address)
+                    || execute.is_required_relay_signer(&address)),
+            "{address} is not a forwarded or required relay signer on the authorization message{}",
             if execute.is_pda_authority(&address) {
                 ", PDA authorities sign with `transaction sign`"
             } else {
@@ -185,25 +190,28 @@ pub(super) async fn run(
 
     // Authorities sign the authorization message with `transaction sign`. Signers the executor
     // uses directly sign the relay transaction instead, which is how the executor gets their
-    // signer privilege. One address can be both. A forwarded signer may sign in a separate
-    // --sign-only run, and a --sign-only run reports the forwarded signers it does not have as
-    // absent.
+    // signer privilege. One address can be both. A required relay signer, which is neither, signs
+    // either one. A relay signer may sign in a separate --sign-only run, and a --sign-only run
+    // reports the relay signers it does not have as absent.
+    let signs_relay = |address: &Address| {
+        is_relay(address) || relay_signatures.contains_key(address) || command.sign_only
+    };
     for address in &required_signers {
         let is_pda_authority = execute.is_pda_authority(address);
         let is_forwarded = execute.is_executor_signer(address);
         ensure!(
-            is_pda_authority || is_forwarded,
-            "{address} is neither a PDA authority nor a signer the executor uses"
+            !execute.is_required_relay_signer(address)
+                || authority_signatures.contains_key(address)
+                || signs_relay(address),
+            "{address} is a required relay signer and must sign the relay transaction or the \
+             authorization message; pass it with --relay-signer, --relay-signature, or --signer"
         );
         ensure!(
             !is_pda_authority || authority_signatures.contains_key(address),
             "missing signature for authority {address}, authorities sign with `transaction sign`"
         );
         ensure!(
-            !is_forwarded
-                || is_relay(address)
-                || relay_signatures.contains_key(address)
-                || command.sign_only,
+            !is_forwarded || signs_relay(address),
             "{address} is a forwarded signer and must sign the relay transaction; pass it with \
              --relay-signer or --relay-signature"
         );
@@ -238,10 +246,22 @@ pub(super) async fn run(
         signatures,
         VersionedMessage::V1(authorization_message.clone()),
     );
-    // Forwarded signers need to sign the relay transaction.
+    // Forwarded signers need to sign the relay transaction, and so do required relay signers
+    // without an authorization message signature.
+    let required_relay_signers = required_signers
+        .iter()
+        .filter(|address| execute.is_required_relay_signer(address))
+        .copied()
+        .collect::<Vec<_>>();
+    let relay_signing_required_signers = required_relay_signers
+        .iter()
+        .filter(|address| !authority_signatures.contains_key(address))
+        .copied()
+        .collect::<Vec<_>>();
     for meta in &mut submit.accounts {
-        meta.is_signer |=
-            required_signers.contains(&meta.pubkey) && execute.is_executor_signer(&meta.pubkey);
+        meta.is_signer |= required_signers.contains(&meta.pubkey)
+            && (execute.is_executor_signer(&meta.pubkey)
+                || relay_signing_required_signers.contains(&meta.pubkey));
     }
     // A durable nonce transaction must advance its nonce in its first instruction.
     let instructions = match durable_nonce {
@@ -271,14 +291,15 @@ pub(super) async fn run(
         })
         .collect::<Result<Vec<_>>>()?;
 
-    // Forwarded signers give the executor their signer privilege, so show the signing
-    // summary for them
+    // Forwarded signers give the executor their signer privilege, and required relay signers
+    // approve the submission by signing the relay transaction, so show the signing summary for
+    // them
     let forwarded_signers = required_signers
         .iter()
         .filter(|address| execute.is_executor_signer(address))
         .copied()
         .collect::<Vec<_>>();
-    if !forwarded_signers.is_empty() {
+    if !forwarded_signers.is_empty() || !relay_signing_required_signers.is_empty() {
         if !command.quiet {
             // An authority the executor also uses directly is in both lists.
             let pda_authorities = required_signers
@@ -293,8 +314,11 @@ pub(super) async fn run(
                     &authorization_message,
                     &execute.nonce_account,
                     &execute.nonce_authority,
-                    &pda_authorities,
-                    &forwarded_signers,
+                    &SummarySigners {
+                        authorities: &pda_authorities,
+                        forwarded: &forwarded_signers,
+                        required_relay: &required_relay_signers,
+                    },
                     if command.sign_only {
                         "Signs the relay transaction with local signers and prints their \
                          signatures, and lists signers still missing. Nothing is submitted."
@@ -484,6 +508,13 @@ impl ExecuteAccounts {
         self.is_executor_signer(&pda)
     }
 
+    /// A signer on the authorization message that is neither a PDA authority nor a signer the
+    /// executor uses, added by `transaction sign --required-relay-signer`. Submit only checks it
+    /// approved, with an authorization message signature or a relay transaction signature.
+    fn is_required_relay_signer(&self, signer: &Address) -> bool {
+        !self.is_pda_authority(signer) && !self.is_executor_signer(signer)
+    }
+
     /// Whether the executor uses the address as the nonce authority or an execution message
     /// signer.
     fn is_executor_signer(&self, address: &Address) -> bool {
@@ -498,7 +529,7 @@ impl ExecuteAccounts {
 }
 
 /// Verify each `ADDRESS=SIGNATURE` pair from `transaction sign` against the message and its
-/// PDA authorities.
+/// PDA authorities and required relay signers.
 fn verify_authority_signatures(
     entries: &[String],
     message: &v1::Message,
@@ -514,9 +545,9 @@ fn verify_authority_signatures(
             "{address} is not a signer on the authorization message"
         );
         ensure!(
-            execute.is_pda_authority(&address),
-            "{address} is not a PDA authority on the authorization message; pass it with \
-             --relay-signer"
+            execute.is_pda_authority(&address) || execute.is_required_relay_signer(&address),
+            "{address} is not a PDA authority or required relay signer on the authorization \
+             message; pass it with --relay-signer"
         );
         ensure!(
             signature.verify(address.as_ref(), &message_bytes),

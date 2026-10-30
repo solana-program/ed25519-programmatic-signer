@@ -122,6 +122,10 @@ async fn durable_nonce_value(env: &TestEnv, address: &Address) -> Hash {
     data.blockhash()
 }
 
+fn read_message(encoded: &str) -> VersionedMessage {
+    wincode::deserialize_exact(&BASE64_STANDARD.decode(encoded).unwrap()).unwrap()
+}
+
 fn keypair_file(keypair: &Keypair) -> NamedTempFile {
     let file = NamedTempFile::new().unwrap();
     write_keypair_file(keypair, &file).unwrap();
@@ -290,6 +294,102 @@ pub async fn submits_with_forwarded_ordinary_signer(env: &TestEnv) {
             forwarded_signers: &[ordinary.pubkey()],
             confirmed_by: &[ordinary.pubkey()],
         }),
+    );
+    test.assert_received(env, 2).await;
+}
+
+/// A required relay signer approves each submission, first by signing the relay transaction, then
+/// by signing the authorization message.
+pub async fn submits_with_required_relay_signer(env: &TestEnv) {
+    let authority = Keypair::new();
+    let signer = programmatic_signer(&authority.pubkey());
+    let required_relay_signer = Keypair::new();
+    let required_relay_signer_address = required_relay_signer.pubkey().to_string();
+    fund(env, &[signer]).await;
+    let test = SubmitTest::new(env, &signer).await;
+    let execution_message = test.execution_message(&[signer]);
+    let authority_file = keypair_file(&authority);
+    let sign_with_required_relay_signer = |nonce_hash: &str| {
+        let value = run_sign(
+            env,
+            &test,
+            &execution_message,
+            &signer,
+            nonce_hash,
+            &authority.pubkey(),
+            &[
+                "--required-relay-signer",
+                &required_relay_signer_address,
+                "--signer",
+                authority_file.path().to_str().unwrap(),
+                "--yes",
+            ],
+        );
+        assert_eq!(
+            value["required_relay_signers"],
+            serde_json::json!([required_relay_signer_address])
+        );
+        let message = read_message(value["authorization_message"].as_str().unwrap());
+        let authority_entry = format!(
+            "{}={}",
+            value["signatures"][0]["address"].as_str().unwrap(),
+            value["signatures"][0]["signature"].as_str().unwrap()
+        );
+        (value, message, authority_entry)
+    };
+
+    let (first, message, authority_entry) =
+        sign_with_required_relay_signer(&test.nonce.to_string());
+    assert_failure(
+        &submit(env, &message, &["--signer", &authority_entry], ""),
+        &format!(
+            "{required_relay_signer_address} is a required relay signer and must sign the relay \
+             transaction or the authorization message"
+        ),
+    );
+    let required_relay_signer_file = keypair_file(&required_relay_signer);
+    let output = submit(
+        env,
+        &message,
+        &[
+            "--signer",
+            &authority_entry,
+            "--relay-signer",
+            required_relay_signer_file.path().to_str().unwrap(),
+        ],
+        "y",
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(output.status.success(), "{stderr}");
+    assert!(
+        stderr.contains(&format!(
+            "Required relay signers (sign at submission):\n  {required_relay_signer_address}\n"
+        )),
+        "{stderr}"
+    );
+    assert!(
+        stderr.ends_with(&format!(
+            "Sign this message for {required_relay_signer_address}? [y/N] "
+        )),
+        "{stderr}"
+    );
+    test.assert_received(env, 1).await;
+
+    let (_, message, authority_entry) =
+        sign_with_required_relay_signer(first["next_nonce"].as_str().unwrap());
+    assert_submitted(
+        &submit(
+            env,
+            &message,
+            &[
+                "--signer",
+                &authority_entry,
+                "--signer",
+                &signature_entry(&required_relay_signer, &message),
+            ],
+            "",
+        ),
+        None,
     );
     test.assert_received(env, 2).await;
 }

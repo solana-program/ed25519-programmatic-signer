@@ -445,6 +445,43 @@ fn submit_promotes_signed_authority_alongside_relay_signer_without_signature() {
     );
 }
 
+/// A required relay signer is on the authorization message without the executor using it, so it
+/// only approves the submission: with a relay transaction signature or an authorization message
+/// signature, but not neither.
+#[test_case(true, true; "relay signature")]
+#[test_case(false, false; "authorization message signature")]
+fn submit_requires_approval_from_signer_unused_by_executor(omit_signature: bool, relay: bool) {
+    let required_relay_signer = Keypair::new();
+    let required_relay_signer_key = required_relay_signer.pubkey();
+    let recipient = Address::new_unique();
+    let mut builder = SubmitBuilder::default_transfer_with_authority(Keypair::new())
+        .recipient(recipient)
+        .additional_authority(required_relay_signer);
+    if omit_signature {
+        builder = builder.omit_signature(required_relay_signer_key);
+    }
+    if relay {
+        builder = builder.relay_signer(required_relay_signer_key);
+    }
+    let result = builder.execute();
+
+    assert_eq!(
+        result.account(&recipient).unwrap().lamports,
+        DEFAULT_TRANSFER_LAMPORTS
+    );
+}
+
+#[test]
+fn submit_rejects_signer_unused_by_executor_without_approval() {
+    let required_relay_signer = Keypair::new();
+    let required_relay_signer_key = required_relay_signer.pubkey();
+    SubmitBuilder::default_transfer_with_authority(Keypair::new())
+        .additional_authority(required_relay_signer)
+        .omit_signature(required_relay_signer_key)
+        .check_err(Error::MissingSignature)
+        .execute();
+}
+
 #[test]
 fn submit_treats_lifetime_specifier_as_signed_opaque_bytes() {
     let result = SubmitBuilder::default_transfer()

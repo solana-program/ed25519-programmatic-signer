@@ -371,8 +371,8 @@ fn rejects_relay_signer_arg_for_non_forwarded_authority(with_signature: bool) {
     assert_failure(
         &env.submit_message(&args),
         &format!(
-            "{} is not a forwarded signer on the authorization message, PDA authorities sign with \
-             `transaction sign`",
+            "{} is not a forwarded or required relay signer on the authorization message, PDA \
+             authorities sign with `transaction sign`",
             env.authority.pubkey()
         ),
     );
@@ -391,7 +391,8 @@ fn rejects_signer_arg_for_non_authority() {
             &env.keypair_file(&env.ordinary),
         ]),
         &format!(
-            "{} is not a PDA authority on the authorization message; pass it with --relay-signer",
+            "{} is not a PDA authority or required relay signer on the authorization message; \
+             pass it with --relay-signer",
             env.ordinary.pubkey()
         ),
     );
@@ -424,7 +425,7 @@ fn rejects_relay_signer_arg_not_on_authorization_message() {
             &env.keypair_file(&stranger),
         ]),
         &format!(
-            "{} is not a forwarded signer on the authorization message",
+            "{} is not a forwarded or required relay signer on the authorization message",
             stranger.pubkey()
         ),
     );
@@ -477,7 +478,7 @@ fn forwarded_authority_needs_signer_and_relay_signer_args(
 
 /// An authority whose own address the executor uses only as a non-signer is not forwarded.
 #[test_case(false, None; "signer only")]
-#[test_case(true, Some("{} is not a forwarded signer on the authorization message, PDA authorities sign with `transaction sign`"); "with relay signer")]
+#[test_case(true, Some("{} is not a forwarded or required relay signer on the authorization message, PDA authorities sign with `transaction sign`"); "with relay signer")]
 fn authority_as_execution_message_non_signer_is_not_forwarded(
     with_relay_signer: bool,
     expected: Option<&str>,
@@ -544,30 +545,62 @@ fn forwarded_signer_with_non_signer_derived_signer_is_not_an_authority() {
     env.assert_passes_offline_checks(&output);
 }
 
-#[test]
-fn rejects_message_signer_unused_by_execute() {
+/// A signer on the authorization message that the executor does not use, added with
+/// `transaction sign --required-relay-signer`, approves by signing either the relay transaction or
+/// the authorization message.
+#[test_case(None; "relay signer")]
+#[test_case(Some("--signer"); "authorization message signature")]
+#[test_case(Some("--sign-only"); "absent in sign only run")]
+#[test_case(Some("missing"); "missing")]
+fn required_relay_signer_must_approve(approval: Option<&str>) {
     let env = SubmitTestEnv::new();
     let authority = env.authority.pubkey();
     let signer = programmatic_signer(&authority);
-    let unused = Address::new_unique();
+    let required_relay_signer = Keypair::new();
     let execution_message = v1::Message::try_compile(
         &signer,
         &[transfer(&signer, &Address::new_unique(), 1)],
         Hash::new_unique(),
     )
     .unwrap();
-    // `transaction sign` never adds a signer the Execute instruction does not use.
     let message = authorization_message(
         &execute(&env.nonce_account, &signer, &execution_message),
-        &[authority, unused],
+        &[authority, required_relay_signer.pubkey()],
     );
-    assert_failure(
-        &env.submit(
-            &encode(&message),
-            &["--signer", &signature_entry(&env.authority, &message)],
+    let authority_entry = signature_entry(&env.authority, &message);
+    let required_relay_signer_entry = signature_entry(&required_relay_signer, &message);
+    let required_relay_signer_file = env.keypair_file(&required_relay_signer);
+    let blockhash = Hash::new_unique().to_string();
+    let mut args = vec!["--signer", authority_entry.as_str()];
+    match approval {
+        None => args.extend(["--relay-signer", &required_relay_signer_file, "--yes"]),
+        Some("--signer") => args.extend(["--signer", &required_relay_signer_entry]),
+        Some("--sign-only") => {
+            args.extend(["--output", "json", "--sign-only", "--blockhash", &blockhash]);
+        }
+        _ => {}
+    }
+    let output = env.submit(&encode(&message), &args);
+    match approval {
+        None | Some("--signer") => env.assert_passes_offline_checks(&output),
+        Some("--sign-only") => {
+            assert!(
+                output.status.success(),
+                "{}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+            let data = serde_json::from_slice::<CliSignOnlyData>(&output.stdout).unwrap();
+            assert_eq!(data.absent, [required_relay_signer.pubkey().to_string()]);
+        }
+        _ => assert_failure(
+            &output,
+            &format!(
+                "{} is a required relay signer and must sign the relay transaction or the \
+                 authorization message",
+                required_relay_signer.pubkey()
+            ),
         ),
-        &format!("{unused} is neither a PDA authority nor a signer the executor uses"),
-    );
+    }
 }
 
 /// The relay signers each sign in a separate --sign-only run, naming the others by address. Every

@@ -61,6 +61,7 @@ use {
             submits_with_durable_nonce, submits_with_fee_payer_as_forwarded_signer,
             submits_with_forwarded_authority, submits_with_forwarded_ordinary_signer,
             submits_with_offline_relay_signatures, submits_with_plain_key_nonce_authority,
+            submits_with_required_relay_signer,
         },
     },
     libtest_mimic::{Arguments, Trial},
@@ -133,6 +134,7 @@ fn main() -> ExitCode {
         async_trial!(cancels_when_forwarded_signer_declines, env, runtime_handle),
         async_trial!(submits_quietly_without_confirmation, env, runtime_handle),
         async_trial!(submits_with_plain_key_nonce_authority, env, runtime_handle),
+        async_trial!(submits_with_required_relay_signer, env, runtime_handle),
         async_trial!(
             submits_with_fee_payer_as_forwarded_signer,
             env,

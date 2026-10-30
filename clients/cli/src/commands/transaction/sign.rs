@@ -2,7 +2,8 @@ use {
     super::{
         decode::read_execution_message,
         summary::{
-            confirm_signing, next_nonce, render_signing_summary, sign_authorization_message,
+            SummarySigners, confirm_signing, next_nonce, render_signing_summary,
+            sign_authorization_message,
         },
     },
     crate::{cli::keypair_source_parser, client::Client, output::OutputFormat},
@@ -47,6 +48,13 @@ pub(super) struct SignCommand {
     #[clap(long, required = true)]
     authority: Vec<Address>,
 
+    /// Address that must approve the submission, such as a co-signing service, without the
+    /// executor using it. Repeat for each signer. It gets a signer slot on the authorization
+    /// message, filled at submission by its relay transaction signature or its own signature over
+    /// the authorization message. It must not be an --authority or a signer the executor uses.
+    #[clap(long, value_name = "ADDRESS")]
+    required_relay_signer: Vec<Address>,
+
     /// Signer source: a keypair file, usb:// URL, prompt:// URL, or the ASK keyword.
     /// Repeat to sign with multiple local keys. Each must be in --authority.
     /// Omit to print the authorization message without signing it, for authorities that sign it
@@ -71,6 +79,9 @@ pub(super) fn run(command: SignCommand, client: &Client, output: OutputFormat) -
     let mut authorities = command.authority;
     authorities.sort_unstable();
     authorities.dedup();
+    let mut required_relay_signers = command.required_relay_signer;
+    required_relay_signers.sort_unstable();
+    required_relay_signers.dedup();
     let instruction = execute(
         &command.nonce_account,
         &command.nonce_authority,
@@ -99,6 +110,7 @@ pub(super) fn run(command: SignCommand, client: &Client, output: OutputFormat) -
     let authorization_signers = authorities
         .iter()
         .chain(&forwarded_signers)
+        .chain(&required_relay_signers)
         .copied()
         .collect::<BTreeSet<_>>()
         .into_iter()
@@ -118,6 +130,25 @@ pub(super) fn run(command: SignCommand, client: &Client, output: OutputFormat) -
             pda == command.nonce_authority || execution_signers.contains(&pda),
             "Authority {authority}'s derived signer {pda} is neither the nonce authority nor a \
              signer on the execution message"
+        );
+    }
+    // Only allow adding required relay signers who don't otherwise need to sign
+    for signer in &required_relay_signers {
+        ensure!(
+            !authorities.contains(signer),
+            "{signer} is both an --authority and a --required-relay-signer"
+        );
+        ensure!(
+            *signer != command.nonce_authority && !execution_signers.contains(signer),
+            "Required relay signer {signer} is the nonce authority or a signer on the execution \
+             message, so it already signs"
+        );
+        let pda = ProgrammaticSigner::derive_address(&spl_ed25519_signer_client::id(), signer);
+        ensure!(
+            pda != command.nonce_authority && !execution_signers.contains(&pda),
+            "Required relay signer {signer}'s derived signer {pda} is the nonce authority or a \
+             signer on the execution message, so its signature would promote it; pass it with \
+             --authority instead"
         );
     }
     let VersionedMessage::V1(authorization_message) =
@@ -164,8 +195,11 @@ pub(super) fn run(command: SignCommand, client: &Client, output: OutputFormat) -
                 &authorization_message,
                 &command.nonce_account,
                 &command.nonce_authority,
-                &authorities,
-                &forwarded_signers,
+                &SummarySigners {
+                    authorities: &authorities,
+                    forwarded: &forwarded_signers,
+                    required_relay: &required_relay_signers,
+                },
                 if unique_signers.is_empty() {
                     "Returns forwarded signers, the next nonce value, and the base64 authorization \
                      message for external signers. Nothing is signed or submitted."
@@ -188,6 +222,10 @@ pub(super) fn run(command: SignCommand, client: &Client, output: OutputFormat) -
         authorization_message: encoded_authorization_message,
         next_nonce,
         forwarded_signers: forwarded_signers.iter().map(ToString::to_string).collect(),
+        required_relay_signers: required_relay_signers
+            .iter()
+            .map(ToString::to_string)
+            .collect(),
         signatures,
     })
 }
@@ -197,6 +235,7 @@ struct SignOutput {
     authorization_message: String,
     next_nonce: String,
     forwarded_signers: Vec<String>,
+    required_relay_signers: Vec<String>,
     signatures: Vec<AuthoritySignature>,
 }
 
@@ -216,6 +255,13 @@ impl fmt::Display for SignOutput {
         if !self.forwarded_signers.is_empty() {
             writeln!(f, "Forwarded signers (sign at submission):")?;
             for address in &self.forwarded_signers {
+                writeln!(f, "  {address}")?;
+            }
+            writeln!(f)?;
+        }
+        if !self.required_relay_signers.is_empty() {
+            writeln!(f, "Required relay signers (sign at submission):")?;
+            for address in &self.required_relay_signers {
                 writeln!(f, "  {address}")?;
             }
             writeln!(f)?;
