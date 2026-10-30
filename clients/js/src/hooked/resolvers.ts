@@ -35,11 +35,12 @@ export const resolveExecutionMessageAccounts = (scope: MessageAccountsResolverSc
  * Account order and writable privileges match the authorization message, while signer privileges
  * are removed because authorities sign the authorization message, not the relay transaction.
  *
- * A signer the executor uses directly can sign the relay transaction instead of the authorization
- * message. To do so, the caller passes `null` as that signer's entry in `signatures`, then applies
+ * Any required signer can sign the relay transaction instead of the authorization message. To do
+ * so, the caller passes `null` as that signer's entry in `signatures`, then applies
  * `upgradeRoleToSigner` to its account in the `Submit` instruction and signs the relay transaction
- * with it. Submit forwards that signer's privilege to the executor but never promotes its
- * `ProgrammaticSigner` PDA.
+ * with it. Submit never promotes that signer's `ProgrammaticSigner` PDA. It forwards the signer's
+ * privilege to the executor only when the executor uses the signer directly. A signer the executor
+ * does not use, such as a required relay signer, only approves the submission.
  *
  * Throws for a message that is not v1, which the signer program rejects.
  *

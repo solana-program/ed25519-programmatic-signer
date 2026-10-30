@@ -189,6 +189,7 @@ fn signs_authorization_message_offline(format: &str) {
             "authorization_message": BASE64_STANDARD.encode(expected.serialize()),
             "next_nonce": env.next_nonce(),
             "forwarded_signers": [],
+            "required_relay_signers": [],
             "signatures": [{
                 "address": env.authority.pubkey().to_string(),
                 "signature": env.authority.sign_message(&expected.serialize()).to_string(),
@@ -785,6 +786,137 @@ fn authority_used_directly_is_also_forwarded(is_nonce_authority: bool) {
 }
 
 #[test]
+fn required_relay_signer_gets_a_slot_without_being_forwarded() {
+    let env = SignTestEnv::new();
+    let required_relay_signer = Keypair::new_from_array([7; 32]).pubkey();
+    let address = required_relay_signer.to_string();
+    // Repeats are ignored.
+    let args = env.args(&[
+        "--required-relay-signer",
+        &address,
+        "--required-relay-signer",
+        &address,
+        "--signer",
+        &env.keypair_file,
+        "--yes",
+    ]);
+    let expected = env.expected(&[env.authority.pubkey(), required_relay_signer]);
+    assert_eq!(expected.header().num_required_signatures, 2);
+
+    let json_args = [args.as_slice(), &["--output", "json"]].concat();
+    let output = run_psigner(&json_args);
+    let value: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(value["forwarded_signers"], serde_json::json!([]));
+    assert_eq!(
+        value["required_relay_signers"],
+        serde_json::json!([address])
+    );
+    assert_eq!(
+        value["authorization_message"],
+        BASE64_STANDARD.encode(expected.serialize())
+    );
+    let summary = String::from_utf8(output.stderr).unwrap();
+    assert!(summary.contains(&format!(
+        "Required relay signers (sign at submission):\n  {required_relay_signer}"
+    )));
+
+    let display = run_psigner(&[args.as_slice(), &["--quiet"]].concat());
+    assert_eq!(
+        String::from_utf8(display.stdout).unwrap(),
+        format!(
+            "Address: {}\nSignature: {}\n\nRequired relay signers (sign at submission):\n  \
+             {required_relay_signer}\n\nNext nonce value (after execution): {}\n\nAuthorization \
+             message (base64):\n{}\n",
+            env.authority.pubkey(),
+            env.authority.sign_message(&expected.serialize()),
+            env.next_nonce(),
+            BASE64_STANDARD.encode(expected.serialize())
+        )
+    );
+}
+
+/// A required relay signer's slot must only prove its approval.
+#[test_case("authority"; "authority")]
+#[test_case("nonce authority"; "nonce authority")]
+#[test_case("execution signer"; "execution signer")]
+#[test_case("derived nonce authority"; "derived signer is the nonce authority")]
+fn rejects_required_relay_signer_with_another_role(role: &str) {
+    let mut env = SignTestEnv::new();
+    let required_relay_signer = match role {
+        "authority" => env.authority.pubkey(),
+        "nonce authority" => {
+            let nonce_authority = Address::new_unique();
+            env.nonce_authority = nonce_authority.to_string();
+            nonce_authority
+        }
+        "execution signer" => env.execution_message.account_keys[0],
+        _ => {
+            let required_relay_signer = Address::new_unique();
+            env.nonce_authority = ProgrammaticSigner::derive_address(
+                &spl_ed25519_signer_client::id(),
+                &required_relay_signer,
+            )
+            .to_string();
+            required_relay_signer
+        }
+    };
+    let expected = match role {
+        "authority" => {
+            format!("{required_relay_signer} is both an --authority and a --required-relay-signer")
+        }
+        "derived nonce authority" => format!(
+            "Required relay signer {required_relay_signer}'s derived signer {} is the nonce \
+             authority or a signer on the execution message",
+            env.nonce_authority
+        ),
+        _ => format!(
+            "Required relay signer {required_relay_signer} is the nonce authority or a signer on \
+             the execution message"
+        ),
+    };
+    let address = required_relay_signer.to_string();
+    env.break_keypair();
+    let output = run_psigner_with_input(
+        &env.args(&[
+            "--required-relay-signer",
+            &address,
+            "--signer",
+            &env.keypair_file,
+            "--quiet",
+            "--yes",
+        ]),
+        "",
+    );
+    let stderr = String::from_utf8(output.stderr).unwrap();
+    assert!(!output.status.success(), "{stderr}");
+    assert!(stderr.contains(&expected), "{stderr}");
+}
+
+#[test]
+fn rejects_too_many_signers_with_required_relay_signer_before_loading_wallet() {
+    let mut env = SignTestEnv::new();
+    while env.authorities.len() < usize::from(v1::MAX_SIGNATURES) {
+        env.authorities.push(Address::new_unique().to_string());
+    }
+    let address = Address::new_unique().to_string();
+    env.break_keypair();
+    let output = run_psigner_with_input(
+        &env.args(&[
+            "--required-relay-signer",
+            &address,
+            "--signer",
+            &env.keypair_file,
+            "--quiet",
+            "--yes",
+        ]),
+        "",
+    );
+    let stderr = String::from_utf8(output.stderr).unwrap();
+    assert!(!output.status.success(), "{stderr}");
+    assert!(stderr.contains("too many required signers"), "{stderr}");
+}
+
+#[test]
 fn rejects_too_many_combined_signers_before_loading_wallet() {
     let mut env = SignTestEnv::new();
     // The authorities alone reach the v1 signer limit, and the forwarded nonce authority pushes
@@ -813,6 +945,7 @@ fn no_signer_returns_unsigned_authorization_message(format: &str) {
             "authorization_message": BASE64_STANDARD.encode(expected.serialize()),
             "next_nonce": env.next_nonce(),
             "forwarded_signers": [],
+            "required_relay_signers": [],
             "signatures": [],
         })
     );

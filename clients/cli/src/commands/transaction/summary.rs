@@ -28,6 +28,16 @@ pub(crate) fn next_nonce(nonce_account: &Address, execution_message: &v1::Messag
     )
 }
 
+/// The signers on an authorization message, by role.
+pub(super) struct SummarySigners<'a> {
+    /// Authorities promoting their derived PDA signers.
+    pub(super) authorities: &'a [Address],
+    /// Signers the executor uses directly.
+    pub(super) forwarded: &'a [Address],
+    /// Signers that only approve the submission.
+    pub(super) required_relay: &'a [Address],
+}
+
 /// Describe what signing the authorization message authorizes. `closing` says what happens after
 /// signing.
 pub(super) fn render_signing_summary(
@@ -35,15 +45,15 @@ pub(super) fn render_signing_summary(
     authorization_message: &v1::Message,
     nonce_account: &Address,
     nonce_authority: &Address,
-    authorities: &[Address],
-    forwarded_signers: &[Address],
+    signers: &SummarySigners,
     closing: &str,
 ) -> Result<String> {
     let execution_json =
         serde_json::to_string_pretty(&execution_message.encode(UiTransactionEncoding::JsonParsed))?;
     let authorization_json =
         serde_json::to_string_pretty(&authorization_message.encode(UiTransactionEncoding::Json))?;
-    let signing_keys = authorities
+    let signing_keys = signers
+        .authorities
         .iter()
         .map(|authority| {
             let pda =
@@ -52,18 +62,14 @@ pub(super) fn render_signing_summary(
         })
         .collect::<Vec<_>>()
         .join("\n");
-    let forwarded_signers = forwarded_signers
-        .iter()
-        .map(|address| format!("  {address}"))
-        .collect::<Vec<_>>();
-    let forwarded_section = if forwarded_signers.is_empty() {
-        String::new()
-    } else {
-        format!(
-            "\nForwarded signers (sign at submission):\n{}\n",
-            forwarded_signers.join("\n")
-        )
-    };
+    let submission_signers_section = [
+        signer_section("Forwarded signers (sign at submission)", signers.forwarded),
+        signer_section(
+            "Required relay signers (sign at submission)",
+            signers.required_relay,
+        ),
+    ]
+    .concat();
     let message_hash = VersionedMessage::hash_raw_message(&authorization_message.serialize());
     let expected_nonce = execution_message.lifetime_specifier;
     let next_nonce = next_nonce(nonce_account, execution_message);
@@ -72,7 +78,7 @@ pub(super) fn render_signing_summary(
         Message hash: {message_hash}
         PDA promotion authorities:
         {signing_keys}
-        {forwarded_section}
+        {submission_signers_section}
         === Replay protection ===
         SPL nonce account address: {nonce_account}
         Nonce authority: {nonce_authority}
@@ -92,6 +98,19 @@ pub(super) fn render_signing_summary(
 
         {closing}"
     })
+}
+
+/// A titled list of signers, or nothing when there are none.
+fn signer_section(title: &str, signers: &[Address]) -> String {
+    if signers.is_empty() {
+        return String::new();
+    }
+    let signers = signers
+        .iter()
+        .map(|address| format!("  {address}"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    format!("\n{title}:\n{signers}\n")
 }
 
 /// Confirm once before signing if any signer has no approval step of its own.
