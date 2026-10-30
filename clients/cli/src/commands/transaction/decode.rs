@@ -17,9 +17,14 @@ pub(super) fn read_message(input: &str, name: &str) -> Result<VersionedMessage> 
     Ok(message)
 }
 
-/// Read an execution message the executor can invoke.
+/// Read an execution message the executor can invoke. Transaction config fields only apply to
+/// top-level transactions, so they are stripped.
 pub(super) fn read_execution_message(input: &str) -> Result<v1::Message> {
-    validate_execution_message(read_message(input, "execution message")?)
+    let mut message = read_message(input, "execution message")?;
+    if let VersionedMessage::V1(message) = &mut message {
+        message.config = v1::TransactionConfig::default();
+    }
+    validate_execution_message(message)
 }
 
 /// Check that a sanitized execution message is one the executor can invoke. Sanitizing a v1 message
