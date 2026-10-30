@@ -367,16 +367,31 @@ fn rejects_non_v1_execution_message(convert: fn(&v1::Message) -> VersionedMessag
 #[test_case(|m| m.instructions[0].program_id_index = u8::MAX, "invalid execution message"; "bad index")]
 #[test_case(|m| m.account_keys[1] = m.account_keys[0], "invalid execution message"; "duplicate keys")]
 #[test_case(|m| { m.header.num_required_signatures = 127; }, "invalid execution message"; "bad header")]
-#[test_case(
-    |m| m.config = v1::TransactionConfig::default().with_compute_unit_limit(1),
-    "execution message must not set transaction config fields";
-    "transaction config"
-)]
 fn rejects_invalid_execution_message(mutate: fn(&mut v1::Message), error: &str) {
     let mut env = SignTestEnv::new();
     mutate(&mut env.execution_message);
     env.encoded = BASE64_STANDARD.encode(env.execution_message.serialize());
     env.reject(error);
+}
+
+#[test]
+fn strips_execution_message_transaction_config() {
+    let mut env = SignTestEnv::new();
+    let mut execution_message = env.execution_message.clone();
+    execution_message.config = v1::TransactionConfig::default()
+        .with_priority_fee(1)
+        .with_compute_unit_limit(1);
+    env.encoded = BASE64_STANDARD.encode(execution_message.serialize());
+    let output =
+        run_psigner(&env.args(&["--signer", &env.keypair_file, "--yes", "--output", "json"]));
+    let value: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    // Matches the message built from the execution message without config.
+    let expected = env.expected(&[env.authority.pubkey()]);
+    assert_eq!(
+        value["authorization_message"],
+        BASE64_STANDARD.encode(expected.serialize())
+    );
+    assert_eq!(value["next_nonce"], env.next_nonce());
 }
 
 #[test]
