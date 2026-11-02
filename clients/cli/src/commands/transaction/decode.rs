@@ -1,4 +1,5 @@
 use {
+    super::v1_transaction::ensure_transaction_size,
     anyhow::{Context, Result, bail, ensure},
     base64::{Engine, prelude::BASE64_STANDARD},
     solana_message::{VersionedMessage, v1},
@@ -17,9 +18,12 @@ pub(super) fn read_message(input: &str, name: &str) -> Result<VersionedMessage> 
     Ok(message)
 }
 
-/// Read an execution message the executor can invoke.
+/// Read an execution message the executor can invoke. It is nested in the relay transaction, so it
+/// must fit within the transaction size limit.
 pub(super) fn read_execution_message(input: &str) -> Result<v1::Message> {
-    validate_execution_message(read_message(input, "execution message")?)
+    let message = validate_execution_message(read_message(input, "execution message")?)?;
+    ensure_transaction_size("execution message", &message.serialize())?;
+    Ok(message)
 }
 
 /// Check that a sanitized execution message is one the executor can invoke. Sanitizing a v1 message

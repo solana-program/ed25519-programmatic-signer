@@ -125,6 +125,36 @@ impl SignTestEnv {
         )
     }
 
+    /// Pad the execution message's instruction data so its serialization is `size` bytes.
+    fn set_execution_message_size(&mut self, size: usize) {
+        let current = self.execution_message.serialize().len();
+        let data = &mut self.execution_message.instructions[0].data;
+        let padding = size.checked_sub(current).unwrap();
+        data.resize(data.len().checked_add(padding).unwrap(), 0);
+        assert_eq!(self.execution_message.serialize().len(), size);
+        self.encoded = BASE64_STANDARD.encode(self.execution_message.serialize());
+    }
+
+    /// Pad the execution message so the authorization message it produces is `size` bytes.
+    fn set_authorization_message_size(&mut self, size: usize) {
+        let authorities = self.authority_addresses();
+        let overhead = self
+            .expected(&authorities)
+            .serialize()
+            .len()
+            .checked_sub(self.execution_message.serialize().len())
+            .unwrap();
+        self.set_execution_message_size(size.checked_sub(overhead).unwrap());
+        assert_eq!(self.expected(&authorities).serialize().len(), size);
+    }
+
+    fn authority_addresses(&self) -> Vec<Address> {
+        self.authorities
+            .iter()
+            .map(|authority| authority.parse().unwrap())
+            .collect()
+    }
+
     /// The nonce value after the executor runs the execution message, derived independently of
     /// the CLI.
     fn next_nonce(&self) -> String {
@@ -378,6 +408,55 @@ fn rejects_invalid_execution_message(mutate: fn(&mut v1::Message), error: &str) 
     mutate(&mut env.execution_message);
     env.encoded = BASE64_STANDARD.encode(env.execution_message.serialize());
     env.reject(error);
+}
+
+#[test]
+fn rejects_execution_message_over_transaction_size_before_loading_signer() {
+    let mut env = SignTestEnv::new();
+    env.set_execution_message_size(v1::MAX_TRANSACTION_SIZE + 1);
+    env.break_keypair();
+    env.reject(&format!(
+        "execution message is {} bytes, which exceeds the v1 transaction size limit of {} bytes",
+        v1::MAX_TRANSACTION_SIZE + 1,
+        v1::MAX_TRANSACTION_SIZE
+    ));
+}
+
+#[test]
+fn rejects_authorization_message_over_transaction_size_before_loading_signer() {
+    let mut env = SignTestEnv::new();
+    env.set_authorization_message_size(v1::MAX_TRANSACTION_SIZE + 1);
+    env.break_keypair();
+    env.reject(&format!(
+        "authorization message is {} bytes, which exceeds the v1 transaction size limit of {} \
+         bytes",
+        v1::MAX_TRANSACTION_SIZE + 1,
+        v1::MAX_TRANSACTION_SIZE
+    ));
+}
+
+#[test]
+fn signs_authorization_message_at_transaction_size_limit() {
+    let mut env = SignTestEnv::new();
+    env.set_authorization_message_size(v1::MAX_TRANSACTION_SIZE);
+    let output = run_psigner(&env.args(&[
+        "--signer",
+        &env.keypair_file,
+        "--quiet",
+        "--yes",
+        "--output",
+        "json",
+    ]));
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let value: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(
+        value["authorization_message"],
+        BASE64_STANDARD.encode(env.expected(&env.authority_addresses()).serialize())
+    );
 }
 
 #[test]

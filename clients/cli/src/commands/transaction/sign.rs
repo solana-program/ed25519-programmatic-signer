@@ -5,6 +5,7 @@ use {
             SummarySigners, confirm_signing, next_nonce, render_signing_summary,
             sign_authorization_message,
         },
+        v1_transaction::ensure_transaction_size,
     },
     crate::{cli::keypair_source_parser, client::Client, output::OutputFormat},
     anyhow::{Context, Result, ensure},
@@ -164,7 +165,9 @@ pub(super) fn run(command: SignCommand, client: &Client, output: OutputFormat) -
     authorization_message
         .validate()
         .context("invalid authorization message")?;
-    let encoded_authorization_message = BASE64_STANDARD.encode(authorization_message.serialize());
+    let serialized_authorization_message = authorization_message.serialize();
+    ensure_transaction_size("authorization message", &serialized_authorization_message)?;
+    let encoded_authorization_message = BASE64_STANDARD.encode(serialized_authorization_message);
     let next_nonce = next_nonce(&command.nonce_account, &execution_message).to_string();
 
     let signers = command

@@ -1,7 +1,7 @@
 //! v1 transaction helpers for simulating `Execute` and relaying `Submit`.
 
 use {
-    anyhow::{Context, Result},
+    anyhow::{Context, Result, ensure},
     base64::{Engine, prelude::BASE64_STANDARD},
     solana_address::Address,
     solana_cli_output::CliSignOnlyData,
@@ -37,6 +37,17 @@ pub(crate) fn compile_message(
         .context("failed to compile transaction message")?;
     message.validate().context("invalid transaction message")?;
     Ok(message)
+}
+
+/// Check that the serialized `name` fits within the v1 transaction size limit.
+pub(super) fn ensure_transaction_size(name: &str, serialized: &[u8]) -> Result<()> {
+    let size = serialized.len();
+    ensure!(
+        size <= v1::MAX_TRANSACTION_SIZE,
+        "{name} is {size} bytes, which exceeds the v1 transaction size limit of {} bytes",
+        v1::MAX_TRANSACTION_SIZE
+    );
+    Ok(())
 }
 
 /// The signature slot of a transaction signer.
