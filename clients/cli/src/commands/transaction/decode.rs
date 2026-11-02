@@ -18,10 +18,14 @@ pub(super) fn read_message(input: &str, name: &str) -> Result<VersionedMessage> 
 }
 
 /// Read an execution message the executor can invoke. Transaction config fields only apply to
-/// top-level transactions, so they are stripped.
-pub(super) fn read_execution_message(input: &str) -> Result<v1::Message> {
+/// top-level transactions, so they are rejected unless `strip_transaction_config` is set, in
+/// which case they are cleared.
+pub(super) fn read_execution_message(
+    input: &str,
+    strip_transaction_config: bool,
+) -> Result<v1::Message> {
     let mut message = read_message(input, "execution message")?;
-    if let VersionedMessage::V1(message) = &mut message {
+    if let (true, VersionedMessage::V1(message)) = (strip_transaction_config, &mut message) {
         message.config = v1::TransactionConfig::default();
     }
     validate_execution_message(message)
@@ -36,7 +40,7 @@ pub(super) fn validate_execution_message(message: VersionedMessage) -> Result<v1
     ensure!(
         message.config == v1::TransactionConfig::default(),
         "execution message must not set transaction config fields, which only apply to top-level \
-         transactions"
+         transactions. Pass --strip-transaction-config to remove them"
     );
     Ok(message)
 }

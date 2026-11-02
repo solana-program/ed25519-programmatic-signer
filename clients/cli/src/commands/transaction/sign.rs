@@ -55,6 +55,12 @@ pub(super) struct SignCommand {
     #[clap(long, value_name = "ADDRESS")]
     required_relay_signer: Vec<Address>,
 
+    /// Remove transaction config fields (such as compute unit limit and priority fee) from the
+    /// execution message instead of rejecting it. These fields only apply to top-level
+    /// transactions and are ignored by the executor.
+    #[clap(long)]
+    strip_transaction_config: bool,
+
     /// Signer source: a keypair file, usb:// URL, prompt:// URL, or the ASK keyword.
     /// Repeat to sign with multiple local keys. Each must be in --authority.
     /// Omit to print the authorization message without signing it, for authorities that sign it
@@ -73,7 +79,8 @@ pub(super) struct SignCommand {
 }
 
 pub(super) fn run(command: SignCommand, client: &Client, output: OutputFormat) -> Result<String> {
-    let mut execution_message = read_execution_message(&command.execution_message)?;
+    let mut execution_message =
+        read_execution_message(&command.execution_message, command.strip_transaction_config)?;
     execution_message.lifetime_specifier = command.nonce_hash;
     // Sort/dedupe so participants construct identical messages.
     let mut authorities = command.authority;
