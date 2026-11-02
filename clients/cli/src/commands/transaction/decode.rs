@@ -40,7 +40,8 @@ pub(super) fn validate_execution_message(message: VersionedMessage) -> Result<v1
     Ok(message)
 }
 
-/// Read an authorization message the signer program accepts.
+/// Read an authorization message the signer program accepts. It is nested in the relay
+/// transaction, so it must fit within the transaction size limit.
 pub(super) fn read_authorization_message(input: &str) -> Result<v1::Message> {
     let VersionedMessage::V1(message) = read_message(input, "authorization message")? else {
         bail!("the signer program supports only v1 authorization messages");
@@ -49,5 +50,6 @@ pub(super) fn read_authorization_message(input: &str) -> Result<v1::Message> {
         message.config == v1::TransactionConfig::default(),
         "authorization message must not set transaction config fields"
     );
+    ensure_transaction_size("authorization message", &message.serialize())?;
     Ok(message)
 }

@@ -40,6 +40,13 @@ struct SubmitTestEnv {
 
 impl SubmitTestEnv {
     fn new() -> Self {
+        Self::with_padding(0)
+    }
+
+    /// Build the env with `padding` extra bytes appended to the instruction data of the execution
+    /// message's first transfer, to grow the authorization message and relay transaction to a
+    /// chosen size.
+    fn with_padding(padding: usize) -> Self {
         let directory = tempfile::tempdir().unwrap();
         let fee_payer = Keypair::new();
         let fee_payer_file = directory.path().join("fee-payer.json");
@@ -64,12 +71,13 @@ impl SubmitTestEnv {
         let nonce_account = Address::new_unique();
         let nonce_authority = programmatic_signer(&authority.pubkey());
         let recipient = Address::new_unique();
+        let mut padded_transfer = transfer(&nonce_authority, &recipient, 1);
+        padded_transfer
+            .data
+            .resize(padded_transfer.data.len().checked_add(padding).unwrap(), 0);
         let execution_message = v1::Message::try_compile(
             &nonce_authority,
-            &[
-                transfer(&nonce_authority, &recipient, 1),
-                transfer(&ordinary.pubkey(), &recipient, 1),
-            ],
+            &[padded_transfer, transfer(&ordinary.pubkey(), &recipient, 1)],
             Hash::new_unique(),
         )
         .unwrap();
@@ -90,6 +98,35 @@ impl SubmitTestEnv {
             durable_nonce: Address::new_unique(),
             durable_nonce_value: Hash::new_unique(),
         }
+    }
+
+    /// An env whose authorization message serializes to `size` bytes.
+    fn with_authorization_message_size(size: usize) -> Self {
+        let unpadded = Self::new().message.serialize().len();
+        let env = Self::with_padding(size.checked_sub(unpadded).unwrap());
+        assert_eq!(env.message.serialize().len(), size);
+        env
+    }
+
+    /// An env whose relay transaction from `relay_transaction_size` is `size` bytes.
+    fn with_relay_transaction_size(size: usize) -> Self {
+        let unpadded = Self::new().relay_transaction_size();
+        let env = Self::with_padding(size.checked_sub(unpadded).unwrap());
+        assert_eq!(env.relay_transaction_size(), size);
+        env
+    }
+
+    /// The serialized size of the `sign_only` relay transaction: its message followed by a
+    /// fixed-size slot for each signature.
+    fn relay_transaction_size(&self) -> usize {
+        let run = self.sign_only(&["--fee-payer", &self.keypair_file(&self.fee_payer)]);
+        let message_bytes = BASE64_STANDARD.decode(run.message.unwrap()).unwrap();
+        let message = wincode::deserialize_exact::<VersionedMessage>(&message_bytes).unwrap();
+        let signatures = usize::from(message.header().num_required_signatures);
+        message_bytes
+            .len()
+            .checked_add(signatures.checked_mul(64).unwrap())
+            .unwrap()
     }
 
     fn keypair_file(&self, keypair: &Keypair) -> String {
@@ -218,6 +255,69 @@ fn accepts_fee_payer_as_forwarded_signer() {
 fn rejects_invalid_message_encoding(encoded: &str, expected: &str) {
     let env = SubmitTestEnv::new();
     assert_failure(&env.submit(encoded, &[]), expected);
+}
+
+#[test]
+fn rejects_authorization_message_over_transaction_size() {
+    let env = SubmitTestEnv::with_authorization_message_size(v1::MAX_TRANSACTION_SIZE + 1);
+    assert_failure(
+        &env.submit_message(&[]),
+        &format!(
+            "authorization message is {} bytes, which exceeds the v1 transaction size limit of {} \
+             bytes",
+            v1::MAX_TRANSACTION_SIZE + 1,
+            v1::MAX_TRANSACTION_SIZE
+        ),
+    );
+}
+
+#[test]
+fn rejects_relay_transaction_over_transaction_size_before_signing() {
+    let unpadded = SubmitTestEnv::new().relay_transaction_size();
+    let env = SubmitTestEnv::with_padding(
+        v1::MAX_TRANSACTION_SIZE
+            .checked_add(1)
+            .unwrap()
+            .checked_sub(unpadded)
+            .unwrap(),
+    );
+    // The authorization message fits, so only the relay transaction check fails.
+    assert!(env.message.serialize().len() <= v1::MAX_TRANSACTION_SIZE);
+    let authority_entry = env.authority_entry();
+    let fee_payer = env.keypair_file(&env.fee_payer);
+    let durable_nonce = env.durable_nonce.to_string();
+    let durable_nonce_value = env.durable_nonce_value.to_string();
+    // The same relay transaction `relay_transaction_size` measures, with a forwarded relay signer
+    // and no --yes, so it would prompt for confirmation if the size check did not run first.
+    let output = env.submit_message(&[
+        "--signer",
+        &authority_entry,
+        "--fee-payer",
+        &fee_payer,
+        "--relay-signer",
+        &env.keypair_file(&env.ordinary),
+        "--durable-nonce",
+        &durable_nonce,
+        "--blockhash",
+        &durable_nonce_value,
+        "--sign-only",
+    ]);
+    assert_failure(
+        &output,
+        &format!(
+            "relay transaction is {} bytes, which exceeds the v1 transaction size limit of {} \
+             bytes",
+            v1::MAX_TRANSACTION_SIZE + 1,
+            v1::MAX_TRANSACTION_SIZE
+        ),
+    );
+    assert!(!String::from_utf8_lossy(&output.stderr).contains("Sign this message for "));
+}
+
+#[test]
+fn signs_relay_transaction_at_transaction_size_limit() {
+    // `with_relay_transaction_size` runs --sign-only, which succeeds at exactly the limit.
+    SubmitTestEnv::with_relay_transaction_size(v1::MAX_TRANSACTION_SIZE);
 }
 
 #[test_case(

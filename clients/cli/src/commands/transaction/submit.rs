@@ -2,7 +2,10 @@ use {
     super::{
         decode::{read_authorization_message, validate_execution_message},
         summary::{SummarySigners, confirm_signing, render_signing_summary},
-        v1_transaction::{compile_message, return_signers_data, signer_index, try_partial_sign},
+        v1_transaction::{
+            compile_message, ensure_transaction_size, return_signers_data, signer_index,
+            try_partial_sign,
+        },
     },
     crate::{cli::keypair_source_parser, client::Client, output::OutputFormat},
     anyhow::{Context, Result, bail, ensure},
@@ -273,6 +276,11 @@ pub(super) async fn run(
         signatures: vec![Signature::default(); usize::from(message.header.num_required_signatures)],
         message: VersionedMessage::V1(message),
     };
+    // This checks the transaction size including signatures
+    ensure_transaction_size(
+        "relay transaction",
+        &wincode::serialize(&transaction).context("failed to serialize relay transaction")?,
+    )?;
     // Check relay signatures before asking local signers to sign. Each must be for this exact
     // relay transaction, so a mismatch means its run used different arguments.
     let message_data = transaction.message.serialize();
