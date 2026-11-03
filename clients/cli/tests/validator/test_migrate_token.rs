@@ -293,7 +293,13 @@ async fn migrates_tokens(env: &TestEnv, token_program: &Address) {
         "{stderr}"
     );
 
-    // Without --no-close, we close the empty token account
+    // We can close the empty token account, even when it's frozen
+    send(
+        env,
+        &[freeze_account(token_program, &source, &mint, &env.payer.pubkey(), &[]).unwrap()],
+        &[],
+    )
+    .await;
     let rent_recipient = Address::new_unique();
     let migration: TokenMigrationOutput = migrate(
         env,

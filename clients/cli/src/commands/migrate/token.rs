@@ -104,10 +104,6 @@ pub(super) async fn run(
         .await?;
     let source_account = StateWithExtensions::<TokenAccount>::unpack(&source_account.data)
         .with_context(|| format!("account {source} is not a token account"))?;
-    ensure!(
-        !source_account.base.is_frozen(),
-        "token account {source} is frozen"
-    );
     // The executor calls the token program through CPI, which the CPI guard blocks.
     if let Ok(guard) = source_account.get_extension::<CpiGuard>() {
         ensure!(
@@ -152,6 +148,11 @@ pub(super) async fn run(
     let mut funder = None;
     // Mint transfer rules don't apply if we're just closing a zero balance.
     if amount > 0 {
+        // A frozen account can't transfer. This check is here because if balance is 0, we can close even if frozen
+        ensure!(
+            !source_account.base.is_frozen(),
+            "token account {source} is frozen"
+        );
         ensure!(
             mint.get_extension::<NonTransferable>().is_err(),
             "mint {} is non-transferable",
