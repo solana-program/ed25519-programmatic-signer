@@ -132,7 +132,12 @@ fn keypair_file(keypair: &Keypair) -> NamedTempFile {
     file
 }
 
-fn submit(env: &TestEnv, message: &VersionedMessage, extra: &[&str], input: &str) -> Output {
+pub(crate) fn submit(
+    env: &TestEnv,
+    message: &VersionedMessage,
+    extra: &[&str],
+    input: &str,
+) -> Output {
     let encoded = encode(message);
     let mut args = vec![
         "-C",

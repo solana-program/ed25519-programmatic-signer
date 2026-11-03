@@ -17,10 +17,12 @@ use {
     solana_signature::Signature,
     solana_transaction::versioned::VersionedTransaction,
     solana_transaction_status::UiTransactionTokenBalance,
-    spl_ed25519_signer_client::ProgrammaticSigner,
+    spl_ed25519_signer_client::{
+        ProgrammaticSigner, instruction::submit, message::authorization_message,
+    },
     spl_message_executor_client::instruction::execute,
     std::{
-        collections::{BTreeMap, HashSet},
+        collections::{BTreeMap, BTreeSet, HashSet},
         fmt,
     },
 };
@@ -85,10 +87,32 @@ pub(super) async fn run(
     // The fee payer only needs to be funded. Signatures are not verified.
     let fee_payer = client.fee_payer()?.try_pubkey()?;
 
-    // Submit promotes the PDA signers and forwards the other signers to the executor, so every
-    // signer the Execute instruction marks is a signer when it runs. Calling the executor
-    // directly with those signers mirrors that, without the authority signatures Submit checks.
+    // Simulate the relay transaction's Submit -> Execute path, so the message instructions run at
+    // the CPI depth they will have onchain.
+    // We make each signer (including programmatic signers) a relay signer, so all authorization message signatures are missing
+    // This means that `sigVerify=false` works for all signers, and we can simulate the full flow
     let instruction = execute(&command.nonce_account, &nonce_authority, &execution_message);
+    let relay_signers = instruction
+        .accounts
+        .iter()
+        .filter(|meta| meta.is_signer)
+        .map(|meta| meta.pubkey)
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect::<Vec<_>>();
+    ensure!(
+        relay_signers.len() <= usize::from(v1::MAX_SIGNATURES),
+        "too many execution signers to simulate: {} exceeds the v1 limit of {}",
+        relay_signers.len(),
+        v1::MAX_SIGNATURES
+    );
+    let authorization_message = authorization_message(&instruction, &relay_signers);
+    let mut instruction = submit(vec![None; relay_signers.len()], authorization_message);
+    // The authorization message's required signers lead its account keys, which the Submit
+    // accounts mirror.
+    for meta in &mut instruction.accounts[..relay_signers.len()] {
+        meta.is_signer = true;
+    }
     // Simulate replaces the blockhash.
     let message = compile_message(&fee_payer, &[instruction], Hash::default())?;
     // Signatures are not verified.
@@ -296,7 +320,10 @@ impl fmt::Display for SimulateOutput {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "Simulation succeeded")?;
         if let Some(units) = self.units_consumed {
-            write!(f, " ({units} compute units, excluding Submit)")?;
+            write!(
+                f,
+                " ({units} compute units, excluding authority signature verification)"
+            )?;
         }
         writeln!(f)?;
 

@@ -22,7 +22,8 @@ enum TransactionSubcommand {
     /// Wrap an execution message in an authorization message and sign it offline, returning
     /// signatures and the authorization message.
     Sign(sign::SignCommand),
-    /// Simulate an execution message through the executor, without authority signatures.
+    /// Simulate an execution message through Submit and the executor, without authority
+    /// signatures.
     Simulate(simulate::SimulateCommand),
     /// Collect signatures for an authorization message, then submit it in a relay transaction.
     Submit(submit::SubmitCommand),

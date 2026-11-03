@@ -48,7 +48,8 @@ use {
         test_transaction_simulate::{
             prints_verbose_simulation_result, rejects_stale_nonce_hash,
             rejects_transaction_over_transaction_size, reports_failed_simulation_logs,
-            simulates_promoted_and_forwarded_signers, simulates_token_transfer,
+            simulates_at_relay_cpi_depth, simulates_promoted_and_forwarded_signers,
+            simulates_token_transfer,
         },
         test_transaction_submit::{
             cancels_when_forwarded_signer_declines, rejects_durable_nonce_authority_mismatch,
@@ -167,6 +168,7 @@ fn main() -> ExitCode {
             runtime_handle
         ),
         async_trial!(simulates_token_transfer, env, runtime_handle),
+        async_trial!(simulates_at_relay_cpi_depth, env, runtime_handle),
         async_trial!(prints_verbose_simulation_result, env, runtime_handle),
         async_trial!(reports_failed_simulation_logs, env, runtime_handle),
         async_trial!(rejects_stale_nonce_hash, env, runtime_handle),
