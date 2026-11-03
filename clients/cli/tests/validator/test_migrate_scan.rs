@@ -8,22 +8,17 @@ use {
         test_migrate_mint::{create_mint, create_mint_with_extensions},
         test_migrate_program::deploy_program,
         test_migrate_stake::{STAKE_LAMPORTS, create_stake_account},
-        test_migrate_token::{self, DECIMALS, mint_tokens},
+        test_migrate_token::{self, mint_to_new_account, mint_tokens},
         test_migrate_vote::create_vote_account,
     },
     solana_address::Address,
     solana_keypair::Keypair,
     solana_loader_v3_interface::get_program_data_address,
     solana_native_token::LAMPORTS_PER_SOL,
-    solana_program_pack::Pack,
     solana_signer::Signer,
     solana_stake_interface::state::{Authorized, Lockup},
-    solana_system_interface::instruction::{create_account, transfer},
+    solana_system_interface::instruction::transfer,
     spl_programmatic_signer_cli::ScanOutput,
-    spl_token_2022_interface::{
-        instruction::{initialize_account3, mint_to_checked},
-        state::Account as TokenAccount,
-    },
 };
 
 /// Run `migrate scan <owner> [extra]` and parse its JSON output.
@@ -32,49 +27,6 @@ fn scan(env: &TestEnv, owner: &Address, extra: &[&str]) -> ScanOutput {
     let mut args = vec!["scan", &owner];
     args.extend_from_slice(extra);
     migrate_with_args(env, &args)
-}
-
-/// Create a token account for `owner` at a new address, not its associated token account, and
-/// mint `amount` to it.
-async fn mint_to_new_account(
-    env: &TestEnv,
-    token_program: &Address,
-    mint: &Address,
-    owner: &Address,
-    amount: u64,
-) -> Address {
-    let account = Keypair::new();
-    let lamports = env
-        .rpc
-        .get_minimum_balance_for_rent_exemption(TokenAccount::LEN)
-        .await
-        .unwrap();
-    send(
-        env,
-        &[
-            create_account(
-                &env.payer.pubkey(),
-                &account.pubkey(),
-                lamports,
-                TokenAccount::LEN.try_into().unwrap(),
-                token_program,
-            ),
-            initialize_account3(token_program, &account.pubkey(), mint, owner).unwrap(),
-            mint_to_checked(
-                token_program,
-                mint,
-                &account.pubkey(),
-                &env.payer.pubkey(),
-                &[],
-                amount,
-                DECIMALS,
-            )
-            .unwrap(),
-        ],
-        &[&account],
-    )
-    .await;
-    account.pubkey()
 }
 
 pub async fn scans_owner_for_migrations(env: &TestEnv) {
@@ -298,9 +250,9 @@ pub async fn scans_owner_for_migrations(env: &TestEnv) {
             token.to_string(),
             "1.5".to_string(),
             true,
-            Some(command(&format!(
+            command(&format!(
                 "token {held_mint} --owner {owner_arg} --new-authority-signing-pubkey {new_owner}"
-            ))),
+            )),
         ),
         (
             held_2022_account.to_string(),
@@ -308,10 +260,10 @@ pub async fn scans_owner_for_migrations(env: &TestEnv) {
             token_2022.to_string(),
             "0.05".to_string(),
             true,
-            Some(command(&format!(
+            command(&format!(
                 "token {held_2022_mint} --owner {owner_arg} --new-authority-signing-pubkey \
                  {new_owner}"
-            ))),
+            )),
         ),
         (
             other_account.to_string(),
@@ -319,7 +271,10 @@ pub async fn scans_owner_for_migrations(env: &TestEnv) {
             token.to_string(),
             "10".to_string(),
             false,
-            None,
+            command(&format!(
+                "token {held_mint} --source {other_account} --new-authority-signing-pubkey \
+                 {new_owner}"
+            )),
         ),
         (
             empty_account.to_string(),
@@ -327,9 +282,9 @@ pub async fn scans_owner_for_migrations(env: &TestEnv) {
             token.to_string(),
             "0".to_string(),
             true,
-            Some(command(&format!(
+            command(&format!(
                 "token {empty_mint} --owner {owner_arg} --new-authority-signing-pubkey {new_owner}"
-            ))),
+            )),
         ),
     ];
     expected_tokens.sort();
@@ -379,7 +334,7 @@ pub async fn scans_owner_for_migrations(env: &TestEnv) {
     assert!(display.contains("Token accounts (4):"), "{display}");
     assert!(!display.contains("Not scanned"), "{display}");
 
-    // Each item is listed under its heading, followed by its command or why it has none.
+    // Each item is listed under its heading, followed by details such as its command.
     let lines = display.lines().collect::<Vec<_>>();
     assert!(lines[0].starts_with("Owner: "), "{display}");
     let is_item = |line: &str| line.starts_with("  ") && !line.starts_with("    ");
@@ -388,7 +343,7 @@ pub async fn scans_owner_for_migrations(env: &TestEnv) {
     for pair in lines.windows(2) {
         let [line, next] = pair else { unreachable!() };
         assert_eq!(
-            is_item(line) || line.starts_with("SOL: ◎"),
+            is_item(line) || is_detail(line) && is_detail(next) || line.starts_with("SOL: ◎"),
             is_detail(next),
             "{line:?} then {next:?}\n{display}"
         );
@@ -409,9 +364,15 @@ pub async fn scans_owner_for_migrations(env: &TestEnv) {
     );
     assert_eq!(
         following(&format!("  10 of mint {held_mint}")),
+        format!("    In {other_account}, not an associated token account"),
+    );
+    assert_eq!(
+        following(&format!(
+            "    In {other_account}, not an associated token account"
+        )),
         format!(
-            "    In {other_account}, not an associated token account, which `migrate token` \
-             doesn't support"
+            "    {}",
+            command(&format!("token {held_mint} --source {other_account}"))
         ),
     );
 

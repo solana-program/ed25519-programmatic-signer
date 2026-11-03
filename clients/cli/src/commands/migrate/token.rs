@@ -41,8 +41,14 @@ pub(crate) struct TokenCommand {
 
     /// Current owner of the tokens. They move from its associated token account. Defaults to the
     /// pubkey of the configured keypair.
-    #[clap(long)]
+    #[clap(long, conflicts_with = "source")]
     owner: Option<Address>,
+
+    /// Token account to move the tokens from, instead of the owner's associated token account.
+    /// The current owner is then the token account's owner, which also stands in for the owner
+    /// in the other defaults.
+    #[clap(long)]
+    source: Option<Address>,
 
     /// Signing pubkey of the new authority. The tokens move to its programmatic signer's associated
     /// token account. Pass the signing pubkey itself, not its programmatic signer. Defaults to the
@@ -76,34 +82,61 @@ pub(super) async fn run(
     client: &Client,
     output: OutputFormat,
 ) -> Result<String> {
-    let owner = match command.owner {
-        Some(owner) => owner,
-        None => client.config_pubkey()?,
-    };
-    let new_authority_signing_pubkey = match command.new_authority_signing_pubkey {
-        Some(new_authority_signing_pubkey) => new_authority_signing_pubkey,
-        None => default_new_authority("the owner", owner)?,
-    };
-    let new_owner_programmatic_signer =
-        new_owner_programmatic_signer(&new_authority_signing_pubkey)?;
-    ensure!(
-        owner != new_owner_programmatic_signer,
-        "owner {owner} is already the new authority's programmatic signer"
-    );
-
     let mint_account = client.token_program_account(&command.mint, "mint").await?;
     let token_program = mint_account.owner;
     let mint = StateWithExtensions::<Mint>::unpack(&mint_account.data)
         .with_context(|| format!("account {} is not a mint", command.mint))?;
     let decimals = mint.base.decimals;
 
-    let source =
-        get_associated_token_address_with_program_id(&owner, &command.mint, &token_program);
-    let source_account = client
-        .token_program_account(&source, "associated token account")
-        .await?;
+    // Without --source, the tokens move from the owner's associated token account.
+    let (source, owner, kind) = match command.source {
+        Some(source) => (source, None, "token account"),
+        None => {
+            let owner = match command.owner {
+                Some(owner) => owner,
+                None => client.config_pubkey()?,
+            };
+            let source =
+                get_associated_token_address_with_program_id(&owner, &command.mint, &token_program);
+            (source, Some(owner), "associated token account")
+        }
+    };
+    // When the owner is known up front, check it before fetching the source.
+    let new_authority = match owner {
+        Some(owner) => Some(resolve_new_authority(
+            command.new_authority_signing_pubkey,
+            owner,
+        )?),
+        None => None,
+    };
+    let source_account = client.token_program_account(&source, kind).await?;
+    ensure!(
+        source_account.owner == token_program,
+        "token account {source} is owned by {}, but mint {} is owned by {token_program}",
+        source_account.owner,
+        command.mint
+    );
     let source_account = StateWithExtensions::<TokenAccount>::unpack(&source_account.data)
         .with_context(|| format!("account {source} is not a token account"))?;
+    ensure!(
+        source_account.base.mint == command.mint,
+        "token account {source} holds mint {}, not {}",
+        source_account.base.mint,
+        command.mint
+    );
+    let account_owner = source_account.base.owner;
+    let owner = owner.unwrap_or(account_owner);
+    // A Token Program associated token account can be given a new owner.
+    ensure!(
+        account_owner == owner,
+        "token account {source} is owned by {account_owner}, not {owner}. Pass --source {source} \
+         to move its tokens as {account_owner}"
+    );
+
+    let (new_authority_signing_pubkey, new_owner_programmatic_signer) = match new_authority {
+        Some(new_authority) => new_authority,
+        None => resolve_new_authority(command.new_authority_signing_pubkey, owner)?,
+    };
     // The executor calls the token program through CPI, which the CPI guard blocks.
     if let Ok(guard) = source_account.get_extension::<CpiGuard>() {
         ensure!(
@@ -246,6 +279,25 @@ pub(super) async fn run(
         required_signers: RequiredSigners::new(&execution_message, &[new_authority_signing_pubkey]),
         execution_message: BASE64_STANDARD.encode(execution_message.serialize()),
     })
+}
+
+/// The new authority's signing pubkey, defaulting to the owner, and its programmatic signer, which
+/// must not already be the owner.
+fn resolve_new_authority(
+    new_authority_signing_pubkey: Option<Address>,
+    owner: Address,
+) -> Result<(Address, Address)> {
+    let new_authority_signing_pubkey = match new_authority_signing_pubkey {
+        Some(new_authority_signing_pubkey) => new_authority_signing_pubkey,
+        None => default_new_authority("the owner", owner)?,
+    };
+    let new_owner_programmatic_signer =
+        new_owner_programmatic_signer(&new_authority_signing_pubkey)?;
+    ensure!(
+        owner != new_owner_programmatic_signer,
+        "owner {owner} is already the new authority's programmatic signer"
+    );
+    Ok((new_authority_signing_pubkey, new_owner_programmatic_signer))
 }
 
 /// Instructions that close the owner's token account once its balance is zero, sending its rent to

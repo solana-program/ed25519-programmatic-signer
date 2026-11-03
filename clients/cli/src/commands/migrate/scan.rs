@@ -383,20 +383,25 @@ async fn scan_token(
                 .with_context(|| format!("token account {address} has an invalid amount"))?;
             let mint = Address::from_str(&account.mint)
                 .with_context(|| format!("token account {address} has an invalid mint"))?;
-            // `migrate token` only moves from the owner's associated token account.
             let associated =
                 get_associated_token_address_with_program_id(owner, &mint, &token_program)
                     == address;
+            // Any other token account is passed as the source, which names its owner.
+            let address_arg = address.to_string();
+            let source_args = if associated {
+                ["--owner", &owner_arg]
+            } else {
+                ["--source", &address_arg]
+            };
             items.push(TokenScanItem {
-                command: associated.then(|| {
-                    migrate_command(
-                        &[
-                            &["token", &account.mint, "--owner", &owner_arg],
-                            new_authority_args,
-                        ]
-                        .concat(),
-                    )
-                }),
+                command: migrate_command(
+                    &[
+                        &["token", &account.mint],
+                        &source_args[..],
+                        new_authority_args,
+                    ]
+                    .concat(),
+                ),
                 token_account: address.to_string(),
                 mint: account.mint,
                 token_program: token_program.to_string(),
@@ -570,11 +575,10 @@ pub struct TokenScanItem {
     pub mint: String,
     pub token_program: String,
     pub amount: String,
-    /// Whether this is the owner's associated token account, the only kind `migrate token`
-    /// moves from.
+    /// Whether this is the owner's associated token account. The command passes any other token
+    /// account as `--source`.
     pub associated: bool,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub command: Option<String>,
+    pub command: String,
 }
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
@@ -646,15 +650,14 @@ impl fmt::Display for ScanOutput {
             write_heading(&mut out, "Token accounts", token.len())?;
             for item in token {
                 writeln!(out, "  {} of mint {}", item.amount, item.mint)?;
-                match &item.command {
-                    Some(command) => writeln!(out, "    {command}")?,
-                    None => writeln!(
+                if !item.associated {
+                    writeln!(
                         out,
-                        "    In {}, not an associated token account, which `migrate token` \
-                         doesn't support",
+                        "    In {}, not an associated token account",
                         item.token_account
-                    )?,
+                    )?;
                 }
+                writeln!(out, "    {}", item.command)?;
             }
         }
         if let Ok(sol) = &self.sol {
