@@ -3,7 +3,7 @@ use {
         decode::{read_authorization_message, validate_execution_message},
         summary::{SummarySigners, confirm_signing, render_signing_summary},
         v1_transaction::{
-            compile_message, ensure_transaction_size, return_signers_data, signer_index,
+            ensure_transaction_size, relay_transaction, return_signers_data, signer_index,
             try_partial_sign,
         },
     },
@@ -18,8 +18,6 @@ use {
     solana_message::{VersionedMessage, v1},
     solana_signature::Signature,
     solana_signer::Signer,
-    solana_system_interface::instruction::advance_nonce_account,
-    solana_transaction::versioned::VersionedTransaction,
     spl_ed25519_signer_client::ProgrammaticSigner,
     spl_message_executor_interface::instruction::Instruction as ExecutorInstruction,
     std::{collections::BTreeMap, fmt, str::FromStr},
@@ -245,10 +243,6 @@ pub(super) async fn run(
         .map(|address| authority_signatures.get(address).copied())
         .collect();
 
-    let mut submit = spl_ed25519_signer_client::instruction::submit(
-        signatures,
-        VersionedMessage::V1(authorization_message.clone()),
-    );
     // Forwarded signers need to sign the relay transaction, and so do required relay signers
     // without an authorization message signature.
     let required_relay_signers = required_signers
@@ -261,26 +255,22 @@ pub(super) async fn run(
         .filter(|address| !authority_signatures.contains_key(address))
         .copied()
         .collect::<Vec<_>>();
-    for meta in &mut submit.accounts {
-        meta.is_signer |= required_signers.contains(&meta.pubkey)
-            && (execute.is_executor_signer(&meta.pubkey)
-                || relay_signing_required_signers.contains(&meta.pubkey));
-    }
-    // A durable nonce transaction must advance its nonce in its first instruction.
-    let instructions = match durable_nonce {
-        Some((address, authority)) => vec![advance_nonce_account(&address, &authority), submit],
-        None => vec![submit],
-    };
-    let message = compile_message(&fee_payer_address, &instructions, blockhash)?;
-    let mut transaction = VersionedTransaction {
-        signatures: vec![Signature::default(); usize::from(message.header.num_required_signatures)],
-        message: VersionedMessage::V1(message),
-    };
-    // This checks the transaction size including signatures
-    ensure_transaction_size(
-        "relay transaction",
-        &wincode::serialize(&transaction).context("failed to serialize relay transaction")?,
+    let submit_signers = required_signers
+        .iter()
+        .filter(|address| {
+            execute.is_executor_signer(address) || relay_signing_required_signers.contains(address)
+        })
+        .copied()
+        .collect::<Vec<_>>();
+    let mut transaction = relay_transaction(
+        &authorization_message,
+        signatures,
+        &submit_signers,
+        &fee_payer_address,
+        durable_nonce,
+        blockhash,
     )?;
+    ensure_transaction_size("relay transaction", &transaction)?;
     // Check relay signatures before asking local signers to sign. Each must be for this exact
     // relay transaction, so a mismatch means its run used different arguments.
     let message_data = transaction.message.serialize();

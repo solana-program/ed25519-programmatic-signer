@@ -100,14 +100,6 @@ impl SubmitTestEnv {
         }
     }
 
-    /// An env whose authorization message serializes to `size` bytes.
-    fn with_authorization_message_size(size: usize) -> Self {
-        let unpadded = Self::new().message.serialize().len();
-        let env = Self::with_padding(size.checked_sub(unpadded).unwrap());
-        assert_eq!(env.message.serialize().len(), size);
-        env
-    }
-
     /// An env whose relay transaction from `relay_transaction_size` is `size` bytes.
     fn with_relay_transaction_size(size: usize) -> Self {
         let unpadded = Self::new().relay_transaction_size();
@@ -255,20 +247,6 @@ fn accepts_fee_payer_as_forwarded_signer() {
 fn rejects_invalid_message_encoding(encoded: &str, expected: &str) {
     let env = SubmitTestEnv::new();
     assert_failure(&env.submit(encoded, &[]), expected);
-}
-
-#[test]
-fn rejects_authorization_message_over_transaction_size() {
-    let env = SubmitTestEnv::with_authorization_message_size(v1::MAX_TRANSACTION_SIZE + 1);
-    assert_failure(
-        &env.submit_message(&[]),
-        &format!(
-            "authorization message is {} bytes, which exceeds the v1 transaction size limit of {} \
-             bytes",
-            v1::MAX_TRANSACTION_SIZE + 1,
-            v1::MAX_TRANSACTION_SIZE
-        ),
-    );
 }
 
 #[test]

@@ -7,9 +7,10 @@ use {
     solana_cli_output::CliSignOnlyData,
     solana_hash::Hash,
     solana_instruction::Instruction,
-    solana_message::v1,
+    solana_message::{VersionedMessage, v1},
     solana_signature::Signature,
     solana_signer::Signer,
+    solana_system_interface::instruction::advance_nonce_account,
     solana_transaction::versioned::VersionedTransaction,
 };
 
@@ -39,9 +40,46 @@ pub(crate) fn compile_message(
     Ok(message)
 }
 
-/// Check that the serialized `name` fits within the v1 transaction size limit.
-pub(super) fn ensure_transaction_size(name: &str, serialized: &[u8]) -> Result<()> {
-    let size = serialized.len();
+/// Build the unsigned relay transaction that submits `authorization_message`. `signatures` has one
+/// entry per authorization message signer. `submit_signers` are the authorization message signers
+/// that sign the relay transaction, and have their
+/// `Submit` accounts marked as signers.
+pub(super) fn relay_transaction(
+    authorization_message: &v1::Message,
+    signatures: Vec<Option<Signature>>,
+    submit_signers: &[Address],
+    fee_payer: &Address,
+    durable_nonce: Option<(Address, Address)>,
+    blockhash: Hash,
+) -> Result<VersionedTransaction> {
+    let mut submit = spl_ed25519_signer_client::instruction::submit(
+        signatures,
+        VersionedMessage::V1(authorization_message.clone()),
+    );
+    for meta in &mut submit.accounts {
+        meta.is_signer |= submit_signers.contains(&meta.pubkey);
+    }
+    // A durable nonce transaction must advance its nonce in its first instruction.
+    let instructions = match durable_nonce {
+        Some((address, authority)) => vec![advance_nonce_account(&address, &authority), submit],
+        None => vec![submit],
+    };
+    let message = compile_message(fee_payer, &instructions, blockhash)?;
+    Ok(VersionedTransaction {
+        signatures: vec![Signature::default(); usize::from(message.header.num_required_signatures)],
+        message: VersionedMessage::V1(message),
+    })
+}
+
+/// Check that `transaction`, including its signatures, fits within the v1 transaction size limit.
+/// `name` describes it in errors.
+pub(super) fn ensure_transaction_size(
+    name: &str,
+    transaction: &VersionedTransaction,
+) -> Result<()> {
+    let size = wincode::serialize(transaction)
+        .with_context(|| format!("failed to serialize {name}"))?
+        .len();
     ensure!(
         size <= v1::MAX_TRANSACTION_SIZE,
         "{name} is {size} bytes, which exceeds the v1 transaction size limit of {} bytes",

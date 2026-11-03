@@ -282,6 +282,30 @@ pub async fn rejects_stale_nonce_hash(env: &TestEnv) {
     );
 }
 
+pub async fn rejects_transaction_over_transaction_size(env: &TestEnv) {
+    let authority = Keypair::new();
+    let signer = programmatic_signer(&authority.pubkey());
+    let test = SubmitTest::new(env, &signer).await;
+    let mut execution_message = test.execution_message(&[signer]);
+    // The execution message alone is over the limit, so the simulated transaction is too.
+    execution_message.instructions[0]
+        .data
+        .resize(v1::MAX_TRANSACTION_SIZE, 0);
+
+    let output = simulate(env, &test, &execution_message, &[]);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(!output.status.success(), "unexpected success: {stderr}");
+    assert!(output.stdout.is_empty());
+    assert!(stderr.contains("simulated transaction is "), "{stderr}");
+    assert!(
+        stderr.contains(&format!(
+            "bytes, which exceeds the v1 transaction size limit of {} bytes",
+            v1::MAX_TRANSACTION_SIZE
+        )),
+        "{stderr}"
+    );
+}
+
 pub async fn simulates_token_transfer(env: &TestEnv) {
     let authority = Keypair::new();
     // The derived signer owns the source token account and needs no SOL of its own.
