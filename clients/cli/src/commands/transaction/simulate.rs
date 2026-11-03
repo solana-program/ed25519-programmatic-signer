@@ -39,6 +39,12 @@ pub(super) struct SimulateCommand {
     #[clap(long)]
     nonce_hash: Option<Hash>,
 
+    /// Remove transaction config fields (such as compute unit limit and priority fee) from the
+    /// execution message instead of rejecting it. These fields only apply to top-level
+    /// transactions and are ignored by the executor.
+    #[clap(long)]
+    strip_transaction_config: bool,
+
     /// Authority whose derived PDA signer to label in the balance changes. Repeat for each
     /// authority. Only affects the output.
     #[clap(long)]
@@ -58,7 +64,8 @@ pub(super) async fn run(
     let nonce = client.nonce_account(&command.nonce_account).await?.state;
     let nonce_authority = command.nonce_authority.unwrap_or(nonce.authority);
     let nonce_hash = command.nonce_hash.unwrap_or(nonce.nonce);
-    let mut execution_message = read_execution_message(&command.execution_message)?;
+    let mut execution_message =
+        read_execution_message(&command.execution_message, command.strip_transaction_config)?;
     execution_message.lifetime_specifier = nonce_hash;
     ensure!(
         nonce_hash == nonce.nonce,

@@ -381,6 +381,32 @@ fn rejects_invalid_execution_message(mutate: fn(&mut v1::Message), error: &str) 
 }
 
 #[test]
+fn strips_execution_message_transaction_config() {
+    let mut env = SignTestEnv::new();
+    let mut execution_message = env.execution_message.clone();
+    execution_message.config = v1::TransactionConfig::default()
+        .with_priority_fee(1)
+        .with_compute_unit_limit(1);
+    env.encoded = BASE64_STANDARD.encode(execution_message.serialize());
+    let output = run_psigner(&env.args(&[
+        "--strip-transaction-config",
+        "--signer",
+        &env.keypair_file,
+        "--yes",
+        "--output",
+        "json",
+    ]));
+    let value: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    // Matches the message built from the execution message without config.
+    let expected = env.expected(&[env.authority.pubkey()]);
+    assert_eq!(
+        value["authorization_message"],
+        BASE64_STANDARD.encode(expected.serialize())
+    );
+    assert_eq!(value["next_nonce"], env.next_nonce());
+}
+
+#[test]
 fn rejects_too_many_authorization_accounts() {
     let mut env = SignTestEnv::new();
     // The execution message sits at the v1 account limit, and the authorization message adds the
