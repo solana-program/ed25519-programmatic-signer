@@ -124,12 +124,29 @@ pub(super) async fn run(
 
     let verbose_accounts = command.verbose.then(|| writable_accounts(&message));
     let result = client
-        .simulate_transaction(&transaction, verbose_accounts.as_deref())
+        .simulate_transaction(&transaction, verbose_accounts.as_deref(), true)
         .await?;
     if let Some(addresses) = &verbose_accounts {
         let result = verbose_result(&result, addresses)?;
         eprintln!("Simulation result:\n{result}\n");
     }
+    output.render(&simulation_output(
+        &message,
+        &result,
+        &command.change_for_authority,
+        false,
+    )?)
+}
+
+/// Summarize a simulation of `message`, or fail with its logs. `authorities` label their derived
+/// PDA signers in the balance changes. With `relay`, `message` is the relay transaction itself,
+/// so the fee is included.
+pub(super) fn simulation_output(
+    message: &v1::Message,
+    result: &RpcSimulateTransactionResult,
+    authorities: &[Address],
+    relay: bool,
+) -> Result<SimulateOutput> {
     if let Some(error) = &result.err {
         let logs = result.logs.as_deref().unwrap_or_default().join("\n");
         bail!("simulation failed: {error}\nLogs:\n{logs}");
@@ -137,8 +154,7 @@ pub(super) async fn run(
     let fee = result.fee.unwrap_or(0);
 
     // Map each derived PDA signer back to its authority, to label the balance changes.
-    let authorities = command
-        .change_for_authority
+    let authorities = authorities
         .iter()
         .map(|authority| {
             let pda =
@@ -147,15 +163,21 @@ pub(super) async fn run(
         })
         .collect::<BTreeMap<_, _>>();
 
-    output.render(&SimulateOutput {
+    Ok(SimulateOutput {
         units_consumed: result.units_consumed,
-        sol_balance_changes: sol_balance_changes(&message, &result, fee, &authorities)?,
-        token_balance_changes: token_balance_changes(&message, &result, &authorities)?,
+        fee: relay.then_some(fee),
+        sol_balance_changes: sol_balance_changes(
+            message,
+            result,
+            if relay { 0 } else { fee },
+            &authorities,
+        )?,
+        token_balance_changes: token_balance_changes(message, result, &authorities)?,
     })
 }
 
 /// Accounts the message may write to.
-fn writable_accounts(message: &v1::Message) -> Vec<Address> {
+pub(super) fn writable_accounts(message: &v1::Message) -> Vec<Address> {
     message
         .account_keys
         .iter()
@@ -169,7 +191,10 @@ fn writable_accounts(message: &v1::Message) -> Vec<Address> {
 
 /// The full simulation result as pretty JSON, with each returned account paired with the
 /// address it was requested for, since the RPC returns them by position only.
-fn verbose_result(result: &RpcSimulateTransactionResult, addresses: &[Address]) -> Result<String> {
+pub(super) fn verbose_result(
+    result: &RpcSimulateTransactionResult,
+    addresses: &[Address],
+) -> Result<String> {
     let mut value = serde_json::to_value(result).context("failed to encode JSON")?;
     if let Some(accounts) = &result.accounts {
         ensure!(
@@ -185,8 +210,8 @@ fn verbose_result(result: &RpcSimulateTransactionResult, addresses: &[Address]) 
     serde_json::to_string_pretty(&value).context("failed to encode JSON")
 }
 
-/// Lamport changes per account. The simulation fee is added back to the fee payer, since the
-/// relay transaction pays its own fee. `authorities` maps PDA signers to their authorities.
+/// Lamport changes per account, with `fee` added back to the fee payer. `authorities` maps PDA
+/// signers to their authorities.
 fn sol_balance_changes(
     message: &v1::Message,
     result: &RpcSimulateTransactionResult,
@@ -288,8 +313,11 @@ fn token_balance_changes(
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
-struct SimulateOutput {
+pub(super) struct SimulateOutput {
     units_consumed: Option<u64>,
+    /// Relay transaction fee, in lamports. Only set when simulating the relay transaction.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    fee: Option<u64>,
     sol_balance_changes: Vec<SolBalanceChange>,
     token_balance_changes: Vec<TokenBalanceChange>,
 }
@@ -319,13 +347,18 @@ struct TokenBalanceChange {
 impl fmt::Display for SimulateOutput {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "Simulation succeeded")?;
-        if let Some(units) = self.units_consumed {
-            write!(
+        match (self.units_consumed, self.fee) {
+            (Some(units), Some(_)) => write!(f, " ({units} compute units)")?,
+            (Some(units), None) => write!(
                 f,
                 " ({units} compute units, excluding authority signature verification)"
-            )?;
+            )?,
+            (None, _) => {}
         }
         writeln!(f)?;
+        if let Some(fee) = self.fee {
+            writeln!(f, "Fee: {}", Sol(fee))?;
+        }
 
         writeln!(f, "\nSOL balance changes:")?;
         if self.sol_balance_changes.is_empty() {

@@ -418,13 +418,19 @@ fn rejects_signer_arg_for_a_different_message() {
     );
 }
 
-#[test]
-fn rejects_authority_without_signer_arg() {
+/// A dry run points to `transaction simulate`, which needs no authority signatures.
+#[test_case(&[], ""; "submit")]
+#[test_case(&["--dry-run"], ". A dry run still needs authority signatures, since Submit checks them on-chain. To check the execution message before it is signed, use `transaction simulate`"; "dry run")]
+fn rejects_authority_without_signer_arg(extra: &[&str], hint: &str) {
     let env = SubmitTestEnv::new();
+    let relay_signer = env.keypair_file(&env.ordinary);
+    let mut args = vec!["--relay-signer", &relay_signer];
+    args.extend_from_slice(extra);
+    let output = env.submit_message(&args);
     assert_failure(
-        &env.submit_message(&["--relay-signer", &env.keypair_file(&env.ordinary)]),
+        &output,
         &format!(
-            "missing signature for authority {}, authorities sign with `transaction sign`",
+            "missing signature for authority {}, authorities sign with `transaction sign`{hint}\n",
             env.authority.pubkey()
         ),
     );
@@ -891,6 +897,7 @@ fn rejects_address_signer_without_sign_only(args: &[&str]) {
 
 #[test_case(&["--sign-only"], "--blockhash <HASH>"; "sign only without blockhash")]
 #[test_case(&["--dump-transaction-message"], "--sign-only"; "dump without sign only")]
+#[test_case(&["--verbose"], "--dry-run"; "verbose without dry run")]
 #[test_case(&["--relay-signature", "{}=1"], "--blockhash <HASH>"; "relay signature without blockhash")]
 #[test_case(&["--durable-nonce-authority", "{}"], "--durable-nonce <ADDRESS>"; "durable nonce authority without durable nonce")]
 fn rejects_missing_required_args(args: &[&str], expected: &str) {

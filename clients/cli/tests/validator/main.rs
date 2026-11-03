@@ -21,9 +21,9 @@ use {
             rejects_invalid_sol_migrations,
         },
         test_migrate_stake::{
-            migrates_stake_authorities_one_at_a_time, migrates_stake_between_programmatic_signers,
-            migrates_stake_to_new_owner, migrates_stake_with_lockup_custodian,
-            rejects_invalid_stake_migrations,
+            dry_runs_stake_migration, migrates_stake_authorities_one_at_a_time,
+            migrates_stake_between_programmatic_signers, migrates_stake_to_new_owner,
+            migrates_stake_with_lockup_custodian, rejects_invalid_stake_migrations,
         },
         test_migrate_token::{
             migrates_token_2022_balance, migrates_token_balance,
@@ -52,7 +52,9 @@ use {
             simulates_token_transfer,
         },
         test_transaction_submit::{
-            cancels_when_forwarded_signer_declines, rejects_durable_nonce_authority_mismatch,
+            cancels_when_forwarded_signer_declines, dry_run_reports_failed_simulation,
+            dry_run_requires_authority_signatures, dry_runs_with_durable_nonce,
+            dry_runs_without_relay_signers, rejects_durable_nonce_authority_mismatch,
             rejects_nonce_authority_mismatch, rejects_stale_durable_nonce_value,
             submits_authority_signatures_in_any_order,
             submits_authority_signed_transfer_and_rejects_replay,
@@ -178,6 +180,7 @@ fn main() -> ExitCode {
             runtime_handle
         ),
         async_trial!(migrates_stake_to_new_owner, env, runtime_handle),
+        async_trial!(dry_runs_stake_migration, env, runtime_handle),
         async_trial!(
             migrates_stake_between_programmatic_signers,
             env,
@@ -267,6 +270,10 @@ fn main() -> ExitCode {
             env,
             runtime_handle
         ),
+        async_trial!(dry_runs_without_relay_signers, env, runtime_handle),
+        async_trial!(dry_runs_with_durable_nonce, env, runtime_handle),
+        async_trial!(dry_run_reports_failed_simulation, env, runtime_handle),
+        async_trial!(dry_run_requires_authority_signatures, env, runtime_handle),
     ];
     libtest_mimic::run(&arguments, tests).exit_code()
 }

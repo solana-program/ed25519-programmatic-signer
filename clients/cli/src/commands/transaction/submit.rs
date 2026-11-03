@@ -1,6 +1,7 @@
 use {
     super::{
         decode::{read_authorization_message, validate_execution_message},
+        simulate::{simulation_output, verbose_result, writable_accounts},
         summary::{SummarySigners, confirm_signing, render_signing_summary},
         v1_transaction::{
             ensure_transaction_size, relay_transaction, return_signers_data, signer_index,
@@ -84,6 +85,20 @@ pub(super) struct SubmitCommand {
     #[clap(long, requires = "sign-only")]
     dump_transaction_message: bool,
 
+    /// Simulate the relay transaction without signing or submitting it, and print its compute
+    /// units, fee and balance changes. Use it to check the relay transaction before collecting
+    /// relay signatures. Authority signatures are still required, since Submit checks them, but
+    /// signatures on the relay transaction are not verified, so relay signers may be omitted and
+    /// the fee payer and durable nonce authority may be given as an address. Without
+    /// --durable-nonce, simulates against the latest blockhash.
+    #[clap(long, conflicts_with = "sign-only")]
+    dry_run: bool,
+
+    /// With --dry-run, also print the full simulation result to stderr, including logs, inner
+    /// instructions and the post-simulation state of every writable account.
+    #[clap(long, requires = "dry-run")]
+    verbose: bool,
+
     /// Hide the signing summary shown when the authorization message has forwarded signers, or
     /// required relay signers that sign the relay transaction.
     /// Confirmation prompts and errors are still shown.
@@ -118,13 +133,14 @@ pub(super) async fn run(
         .map(|entry| parse_signature_entry(entry, "relay signature"))
         .collect::<Result<BTreeMap<_, _>>>()?;
 
-    // The fee payer and durable nonce authority may be given as an address with --sign-only, or
-    // with a --relay-signature for it. They load as null signers, whose signatures another run
-    // provides. Relay signatures are not loaded as presigners, because
+    // The fee payer and durable nonce authority may be given as an address with --sign-only or
+    // --dry-run, or with a --relay-signature for it. They load as null signers, whose signatures
+    // another run provides. Relay signatures are not loaded as presigners, because
     // `signer_from_source_with_config` looks those up in the `--signer` arg, which holds
     // authorization message signatures here.
     let allow_null_signer = |source: &SignerSource| {
         command.sign_only
+            || command.dry_run
             || matches!(&source.kind, SignerSourceKind::Pubkey(address)
                 if relay_signatures.contains_key(address))
     };
@@ -192,10 +208,14 @@ pub(super) async fn run(
     // Authorities sign the authorization message with `transaction sign`. Signers the executor
     // uses directly sign the relay transaction instead, which is how the executor gets their
     // signer privilege. One address can be both. A required relay signer, which is neither, signs
-    // either one. A relay signer may sign in a separate --sign-only run, and a --sign-only run
-    // reports the relay signers it does not have as absent.
+    // either one. A relay signer may sign in a separate --sign-only run, a --sign-only run
+    // reports the relay signers it does not have as absent, and a --dry-run run does not need
+    // them.
     let signs_relay = |address: &Address| {
-        is_relay(address) || relay_signatures.contains_key(address) || command.sign_only
+        is_relay(address)
+            || relay_signatures.contains_key(address)
+            || command.sign_only
+            || command.dry_run
     };
     for address in &required_signers {
         let is_pda_authority = execute.is_pda_authority(address);
@@ -209,7 +229,13 @@ pub(super) async fn run(
         );
         ensure!(
             !is_pda_authority || authority_signatures.contains_key(address),
-            "missing signature for authority {address}, authorities sign with `transaction sign`"
+            "missing signature for authority {address}, authorities sign with `transaction sign`{}",
+            if command.dry_run {
+                ". A dry run still needs authority signatures, since Submit checks them on-chain. \
+                 To check the execution message before it is signed, use `transaction simulate`"
+            } else {
+                ""
+            }
         );
         ensure!(
             !is_forwarded || signs_relay(address),
@@ -288,6 +314,38 @@ pub(super) async fn run(
             Ok((index, signature))
         })
         .collect::<Result<Vec<_>>>()?;
+
+    // Nothing is signed, so there is no signing summary. The simulation does not verify relay
+    // transaction signatures
+    if command.dry_run {
+        let VersionedMessage::V1(message) = &transaction.message else {
+            unreachable!("compile_message builds a v1 message");
+        };
+        let pda_authorities = required_signers
+            .iter()
+            .filter(|address| execute.is_pda_authority(address))
+            .copied()
+            .collect::<Vec<_>>();
+        let verbose_accounts = command.verbose.then(|| writable_accounts(message));
+        // A durable nonce transaction must keep its nonce value as its blockhash.
+        let result = client
+            .simulate_transaction(
+                &transaction,
+                verbose_accounts.as_deref(),
+                durable_nonce.is_none(),
+            )
+            .await?;
+        if let Some(addresses) = &verbose_accounts {
+            let result = verbose_result(&result, addresses)?;
+            eprintln!("Simulation result:\n{result}\n");
+        }
+        return output.render(&simulation_output(
+            message,
+            &result,
+            &pda_authorities,
+            true,
+        )?);
+    }
 
     // Forwarded signers give the executor their signer privilege, and required relay signers
     // approve the submission by signing the relay transaction, so show the signing summary for

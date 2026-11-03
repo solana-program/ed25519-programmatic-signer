@@ -15,7 +15,10 @@ use {
     solana_transaction::Transaction,
     spl_nonce_interface::state::Nonce,
     spl_programmatic_signer_cli::NonceCreateOutput,
-    std::process::Output,
+    std::{
+        collections::{BTreeMap, BTreeSet},
+        process::Output,
+    },
     tempfile::NamedTempFile,
 };
 
@@ -304,7 +307,7 @@ pub async fn submits_with_forwarded_ordinary_signer(env: &TestEnv) {
 }
 
 /// A required relay signer approves each submission, first by signing the relay transaction, then
-/// by signing the authorization message.
+/// by signing the authorization message. A dry run does not need it.
 pub async fn submits_with_required_relay_signer(env: &TestEnv) {
     let authority = Keypair::new();
     let signer = programmatic_signer(&authority.pubkey());
@@ -352,6 +355,14 @@ pub async fn submits_with_required_relay_signer(env: &TestEnv) {
              transaction or the authorization message"
         ),
     );
+    // A dry run does not need the required relay signer.
+    let output = dry_run(env, &message, &["--signer", &authority_entry]);
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    test.assert_received(env, 0).await;
     let required_relay_signer_file = keypair_file(&required_relay_signer);
     let output = submit(
         env,
@@ -1127,4 +1138,224 @@ pub async fn submits_unsigned_message_with_external_signature(env: &TestEnv) {
         unsigned["next_nonce"].as_str().unwrap()
     );
     test.assert_received(env, 1).await;
+}
+
+/// Run `transaction submit --dry-run` with JSON output.
+fn dry_run(env: &TestEnv, message: &VersionedMessage, extra: &[&str]) -> Output {
+    let mut args = vec!["--output", "json-compact", "--dry-run"];
+    args.extend_from_slice(extra);
+    submit(env, message, &args, "")
+}
+
+/// Each SOL balance change from a dry run, keyed by address.
+fn sol_balance_changes(value: &serde_json::Value) -> BTreeMap<String, serde_json::Value> {
+    value["solBalanceChanges"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|change| {
+            (
+                change["address"].as_str().unwrap().to_owned(),
+                change.clone(),
+            )
+        })
+        .collect()
+}
+
+/// A dry run needs no relay signers: the forwarded signer is omitted and the fee payer is given as
+/// an address. Nothing is signed or submitted.
+pub async fn dry_runs_without_relay_signers(env: &TestEnv) {
+    let authority = Keypair::new();
+    let signer = programmatic_signer(&authority.pubkey());
+    let ordinary = Keypair::new();
+    let fee_payer = Keypair::new();
+    fund(env, &[signer, ordinary.pubkey(), fee_payer.pubkey()]).await;
+    let test = SubmitTest::new(env, &signer).await;
+    let message = build_authorization_message(
+        &test.execution_message(&[signer, ordinary.pubkey()]),
+        &test.nonce_account,
+        &signer,
+        &[authority.pubkey()],
+    );
+
+    let output = dry_run(
+        env,
+        &message,
+        &[
+            "--signer",
+            &signature_entry(&authority, &message),
+            "--fee-payer",
+            &fee_payer.pubkey().to_string(),
+        ],
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(output.status.success(), "{stderr}");
+    // Nothing is signed, so there is no signing summary.
+    assert!(stderr.is_empty(), "{stderr}");
+    let value: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    let fee = value["fee"].as_i64().unwrap();
+    assert!(fee > 0);
+    assert!(value["unitsConsumed"].as_u64().unwrap() > 0);
+    let transfer = i64::try_from(TRANSFER_AMOUNT).unwrap();
+    let sent = transfer.checked_neg().unwrap();
+    let changes = sol_balance_changes(&value);
+    let expected = [
+        (signer, sent, Some(authority.pubkey())),
+        (ordinary.pubkey(), sent, None),
+        (test.recipient, transfer.checked_mul(2).unwrap(), None),
+        // The relay transaction pays its own fee.
+        (fee_payer.pubkey(), fee.checked_neg().unwrap(), None),
+    ]
+    .into_iter()
+    .map(|(address, lamports, authority)| {
+        (
+            address.to_string(),
+            serde_json::json!({
+                "address": address.to_string(),
+                "lamports": lamports,
+                "authority": authority.map(|authority| authority.to_string()),
+            }),
+        )
+    })
+    .collect::<BTreeMap<_, _>>();
+    assert_eq!(changes, expected);
+    assert_eq!(value["tokenBalanceChanges"], serde_json::json!([]));
+
+    // --verbose adds the full simulation result on stderr.
+    let output = dry_run(
+        env,
+        &message,
+        &[
+            "--signer",
+            &signature_entry(&authority, &message),
+            "--fee-payer",
+            &fee_payer.pubkey().to_string(),
+            "--verbose",
+        ],
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(output.status.success(), "{stderr}");
+    let verbose: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(verbose["unitsConsumed"], value["unitsConsumed"]);
+    let result = stderr
+        .strip_prefix("Simulation result:\n")
+        .unwrap_or_else(|| panic!("{stderr}"));
+    let result: serde_json::Value = serde_json::from_str(result).unwrap();
+    assert!(result["err"].is_null());
+    assert!(!result["innerInstructions"].as_array().unwrap().is_empty());
+    // The relay transaction's writable accounts include the executed transfer's.
+    let accounts = result["accounts"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|entry| entry["address"].as_str().unwrap().to_owned())
+        .collect::<BTreeSet<_>>();
+    for address in [
+        fee_payer.pubkey(),
+        signer,
+        ordinary.pubkey(),
+        test.recipient,
+    ] {
+        assert!(accounts.contains(&address.to_string()), "{accounts:?}");
+    }
+
+    test.assert_received(env, 0).await;
+    assert_eq!(test.current_nonce(env).await, test.nonce);
+}
+
+/// A dry run with a durable nonce keeps its value as the blockhash, and checks the durable nonce
+/// authority given as an address.
+pub async fn dry_runs_with_durable_nonce(env: &TestEnv) {
+    let authority = Keypair::new();
+    let signer = programmatic_signer(&authority.pubkey());
+    let durable_nonce_authority = Keypair::new();
+    fund(env, &[signer]).await;
+    let test = SubmitTest::new(env, &signer).await;
+    let durable_nonce = create_durable_nonce(env, &durable_nonce_authority.pubkey()).await;
+    let value = durable_nonce_value(env, &durable_nonce).await;
+    let message = build_authorization_message(
+        &test.execution_message(&[signer]),
+        &test.nonce_account,
+        &signer,
+        &[authority.pubkey()],
+    );
+    let authority_entry = signature_entry(&authority, &message);
+    let durable_nonce = durable_nonce.to_string();
+    let durable_nonce_authority = durable_nonce_authority.pubkey().to_string();
+    let args = |blockhash: &Hash| {
+        dry_run(
+            env,
+            &message,
+            &[
+                "--signer",
+                &authority_entry,
+                "--durable-nonce",
+                &durable_nonce,
+                "--durable-nonce-authority",
+                &durable_nonce_authority,
+                "--blockhash",
+                &blockhash.to_string(),
+            ],
+        )
+    };
+
+    let output = args(&value);
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let output: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert!(output["fee"].as_u64().unwrap() > 0);
+    test.assert_received(env, 0).await;
+    assert_eq!(
+        durable_nonce_value(env, &durable_nonce.parse().unwrap()).await,
+        value
+    );
+
+    // The durable nonce value is checked before simulating.
+    let stale = Hash::new_unique();
+    assert_failure(
+        &args(&stale),
+        &format!("relay transaction uses durable nonce value {stale}"),
+    );
+}
+
+pub async fn dry_run_reports_failed_simulation(env: &TestEnv) {
+    let authority = Keypair::new();
+    // The derived signer is unfunded, so its transfer fails.
+    let signer = programmatic_signer(&authority.pubkey());
+    let test = SubmitTest::new(env, &signer).await;
+    let message = build_authorization_message(
+        &test.execution_message(&[signer]),
+        &test.nonce_account,
+        &signer,
+        &[authority.pubkey()],
+    );
+
+    let output = dry_run(
+        env,
+        &message,
+        &["--signer", &signature_entry(&authority, &message)],
+    );
+    assert_failure(&output, "simulation failed");
+    assert_failure(&output, "Logs:\nProgram ");
+}
+
+/// A dry run still needs the authority signatures, since Submit checks them.
+pub async fn dry_run_requires_authority_signatures(env: &TestEnv) {
+    let authority = Keypair::new();
+    let signer = programmatic_signer(&authority.pubkey());
+    let test = SubmitTest::new(env, &signer).await;
+    let message = build_authorization_message(
+        &test.execution_message(&[signer]),
+        &test.nonce_account,
+        &signer,
+        &[authority.pubkey()],
+    );
+
+    assert_failure(
+        &dry_run(env, &message, &[]),
+        &format!("missing signature for authority {}", authority.pubkey()),
+    );
 }

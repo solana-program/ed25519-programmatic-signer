@@ -101,7 +101,7 @@ async fn current_nonce(env: &TestEnv, nonce_account: &Address) -> Hash {
     Nonce::view(&data).unwrap().nonce
 }
 
-fn keypair_file(keypair: &Keypair) -> NamedTempFile {
+pub fn keypair_file(keypair: &Keypair) -> NamedTempFile {
     let file = NamedTempFile::new().unwrap();
     write_keypair_file(keypair, &file).unwrap();
     file
@@ -171,6 +171,59 @@ pub async fn execute_as_new_owner(
     other_authorities: &[&Keypair],
     relay_signers: &[&Keypair],
 ) {
+    let signed = sign_as_new_owner(
+        env,
+        execution_message,
+        nonce_account,
+        new_owner,
+        other_authorities,
+    )
+    .await;
+    let relay_signer_files = relay_signers
+        .iter()
+        .map(|signer| keypair_file(signer))
+        .collect::<Vec<_>>();
+    let mut args = vec!["--quiet", "--yes"];
+    for file in &relay_signer_files {
+        args.extend(["--relay-signer", file.path().to_str().unwrap()]);
+    }
+    run_psigner(&signed.submit_args(env, &args));
+}
+
+/// An authorization message and its authority signatures, ready for `transaction submit`.
+pub struct SignedMigration {
+    authorization_message: String,
+    signatures: Vec<String>,
+}
+
+impl SignedMigration {
+    /// Arguments for `transaction submit` with the authority signatures, followed by `extra`.
+    pub fn submit_args<'a>(&'a self, env: &'a TestEnv, extra: &[&'a str]) -> Vec<&'a str> {
+        let mut args = vec![
+            "-C",
+            &env.config_file_path,
+            "transaction",
+            "submit",
+            "--authorization-message",
+            &self.authorization_message,
+        ];
+        for signature in &self.signatures {
+            args.extend(["--signer", signature]);
+        }
+        args.extend_from_slice(extra);
+        args
+    }
+}
+
+/// Sign an execution message with the new authority, whose programmatic signer is the nonce
+/// authority, and any other authorities whose programmatic signers the migration needs.
+pub async fn sign_as_new_owner(
+    env: &TestEnv,
+    execution_message: &str,
+    nonce_account: &Address,
+    new_owner: &Keypair,
+    other_authorities: &[&Keypair],
+) -> SignedMigration {
     let nonce_account_arg = nonce_account.to_string();
     let nonce_authority = programmatic_signer(&new_owner.pubkey()).to_string();
     let nonce_hash = current_nonce(env, nonce_account).await.to_string();
@@ -213,31 +266,12 @@ pub async fn execute_as_new_owner(
     }
     let sign: SignOutput = serde_json::from_slice(&run_psigner(&args).stdout).unwrap();
     assert_eq!(sign.signatures.len(), authorities.len());
-    let signatures = sign
-        .signatures
-        .iter()
-        .map(|signature| format!("{}={}", signature.address, signature.signature))
-        .collect::<Vec<_>>();
-
-    let relay_signer_files = relay_signers
-        .iter()
-        .map(|signer| keypair_file(signer))
-        .collect::<Vec<_>>();
-    let mut args = vec![
-        "-C",
-        &env.config_file_path,
-        "transaction",
-        "submit",
-        "--authorization-message",
-        &sign.authorization_message,
-        "--quiet",
-        "--yes",
-    ];
-    for signature in &signatures {
-        args.extend(["--signer", signature]);
+    SignedMigration {
+        authorization_message: sign.authorization_message,
+        signatures: sign
+            .signatures
+            .iter()
+            .map(|signature| format!("{}={}", signature.address, signature.signature))
+            .collect(),
     }
-    for file in &relay_signer_files {
-        args.extend(["--relay-signer", file.path().to_str().unwrap()]);
-    }
-    run_psigner(&args);
 }
