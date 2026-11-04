@@ -202,8 +202,7 @@ impl SignTestEnv {
     /// The nonce value after the executor runs the execution message, derived independently of
     /// the CLI.
     fn next_nonce(&self) -> String {
-        let mut execution_message = self.execution_message.clone();
-        execution_message.lifetime_specifier = self.nonce_hash.parse().unwrap();
+        let execution_message = self.nonce_execution_message();
         Nonce {
             nonce: execution_message.lifetime_specifier,
             ..Nonce::default()
@@ -214,6 +213,32 @@ impl SignTestEnv {
             &derive_transition_commitment(&VersionedMessage::V1(execution_message)),
         )
         .to_string()
+    }
+
+    /// The execution message with the expected nonce as its recent blockhash.
+    fn nonce_execution_message(&self) -> v1::Message {
+        let mut execution_message = self.execution_message.clone();
+        execution_message.lifetime_specifier = self.nonce_hash.parse().unwrap();
+        execution_message
+    }
+
+    fn execution_message_hash(&self) -> String {
+        VersionedMessage::hash_raw_message(&self.nonce_execution_message().serialize()).to_string()
+    }
+
+    /// The display output's nonce values, message hashes, and authorization message, after the
+    /// signer and timestamp lines.
+    fn display_footer(&self, authorization_message: &VersionedMessage) -> String {
+        let bytes = authorization_message.serialize();
+        format!(
+            "Consumed nonce value: {}\nNext nonce value (after execution): {}\nExecution message \
+             hash: {}\nAuthorization message hash: {}\n\nAuthorization message (base64):\n{}\n",
+            self.nonce_hash,
+            self.next_nonce(),
+            self.execution_message_hash(),
+            VersionedMessage::hash_raw_message(&bytes),
+            BASE64_STANDARD.encode(&bytes)
+        )
     }
 
     /// Make the signer fail to load, so tests can check errors are raised before loading it.
@@ -232,6 +257,35 @@ impl SignTestEnv {
         assert!(output.stdout.is_empty());
         assert!(!stderr.contains("Sign this message for "));
     }
+}
+
+/// Check a timestamp is RFC 3339 UTC and recent.
+fn check_timestamp(timestamp: &str) {
+    assert!(timestamp.ends_with('Z'), "{timestamp}");
+    let time: jiff::Timestamp = timestamp.parse().unwrap();
+    let age = jiff::Timestamp::now().duration_since(time);
+    assert!(!age.is_negative(), "timestamp {timestamp} is in the future");
+    assert!(age < jiff::SignedDuration::from_secs(300), "{timestamp}");
+}
+
+/// Remove and check the JSON output's timestamp, which differs between runs.
+fn take_timestamp(mut value: serde_json::Value) -> serde_json::Value {
+    let timestamp = value.as_object_mut().unwrap().remove("timestamp").unwrap();
+    check_timestamp(timestamp.as_str().unwrap());
+    value
+}
+
+/// Remove and check the display output's timestamp line, which differs between runs.
+fn strip_display_timestamp(stdout: &[u8]) -> String {
+    let stdout = String::from_utf8(stdout.to_vec()).unwrap();
+    let (timestamps, rest): (Vec<_>, Vec<_>) = stdout
+        .split_inclusive('\n')
+        .partition(|line| line.starts_with("Timestamp: "));
+    let [timestamp] = timestamps.as_slice() else {
+        panic!("expected one timestamp line: {stdout}");
+    };
+    check_timestamp(timestamp.strip_prefix("Timestamp: ").unwrap().trim_end());
+    rest.concat()
 }
 
 #[test]
@@ -258,9 +312,14 @@ fn signs_authorization_message_offline(format: &str) {
     let value: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
     let expected = env.expected(&[env.authority.pubkey()]);
     assert_eq!(
-        value,
+        take_timestamp(value.clone()),
         serde_json::json!({
             "authorization_message": BASE64_STANDARD.encode(expected.serialize()),
+            "authorization_message_hash": VersionedMessage::hash_raw_message(
+                &expected.serialize()
+            ).to_string(),
+            "execution_message_hash": env.execution_message_hash(),
+            "consumed_nonce": env.nonce_hash,
             "next_nonce": env.next_nonce(),
             "forwarded_signers": [],
             "required_relay_signers": [],
@@ -375,7 +434,9 @@ fn quiet_preserves_json() {
         "--output",
         "json",
     ]));
-    assert_eq!(normal.stdout, quiet.stdout);
+    let normal: serde_json::Value = serde_json::from_slice(&normal.stdout).unwrap();
+    let quiet_value: serde_json::Value = serde_json::from_slice(&quiet.stdout).unwrap();
+    assert_eq!(take_timestamp(normal), take_timestamp(quiet_value));
     assert!(quiet.stderr.is_empty());
 }
 
@@ -766,7 +827,6 @@ fn default_display_shows_pairs_and_one_authorization_message(multiple: bool) {
         keys.push(&second);
     }
     let message = env.expected(&keys.iter().map(|key| key.pubkey()).collect::<Vec<_>>());
-    let encoded = BASE64_STANDARD.encode(message.serialize());
     let expected_pairs = keys
         .iter()
         .map(|key| {
@@ -778,17 +838,14 @@ fn default_display_shows_pairs_and_one_authorization_message(multiple: bool) {
         })
         .collect::<String>();
     let output = run_psigner(&env.args(&extra));
+    let stdout = strip_display_timestamp(&output.stdout);
     assert_eq!(
-        String::from_utf8(output.stdout.clone()).unwrap(),
-        format!(
-            "{expected_pairs}Next nonce value (after execution): {}\n\nAuthorization message \
-             (base64):\n{encoded}\n",
-            env.next_nonce()
-        )
+        stdout,
+        format!("{expected_pairs}{}", env.display_footer(&message))
     );
     extra.extend(["--quiet", "--output", "display"]);
     let quiet = run_psigner(&env.args(&extra));
-    assert_eq!(quiet.stdout, output.stdout);
+    assert_eq!(strip_display_timestamp(&quiet.stdout), stdout);
     assert!(quiet.stderr.is_empty());
 }
 
@@ -823,15 +880,13 @@ fn nonce_only_approval_includes_ordinary_execution_signers() {
 
     let display = run_psigner(&env.args(&["--signer", &env.keypair_file, "--yes", "--quiet"]));
     assert_eq!(
-        String::from_utf8(display.stdout).unwrap(),
+        strip_display_timestamp(&display.stdout),
         format!(
             "Address: {}\nSignature: {}\n\nForwarded signers (sign at submission):\n  \
-             {execution_signer}\n\nNext nonce value (after execution): {}\n\nAuthorization \
-             message (base64):\n{}\n",
+             {execution_signer}\n\n{}",
             env.authority.pubkey(),
             env.authority.sign_message(&expected.serialize()),
-            env.next_nonce(),
-            BASE64_STANDARD.encode(expected.serialize())
+            env.display_footer(&expected)
         )
     );
 }
@@ -984,15 +1039,13 @@ fn required_relay_signer_gets_a_slot_without_being_forwarded() {
 
     let display = run_psigner(&[args.as_slice(), &["--quiet"]].concat());
     assert_eq!(
-        String::from_utf8(display.stdout).unwrap(),
+        strip_display_timestamp(&display.stdout),
         format!(
             "Address: {}\nSignature: {}\n\nRequired relay signers (sign at submission):\n  \
-             {required_relay_signer}\n\nNext nonce value (after execution): {}\n\nAuthorization \
-             message (base64):\n{}\n",
+             {required_relay_signer}\n\n{}",
             env.authority.pubkey(),
             env.authority.sign_message(&expected.serialize()),
-            env.next_nonce(),
-            BASE64_STANDARD.encode(expected.serialize())
+            env.display_footer(&expected)
         )
     );
 }
@@ -1102,9 +1155,14 @@ fn no_signer_returns_unsigned_authorization_message(format: &str) {
     let value: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
     let expected = env.expected(&[env.authority.pubkey()]);
     assert_eq!(
-        value,
+        take_timestamp(value.clone()),
         serde_json::json!({
             "authorization_message": BASE64_STANDARD.encode(expected.serialize()),
+            "authorization_message_hash": VersionedMessage::hash_raw_message(
+                &expected.serialize()
+            ).to_string(),
+            "execution_message_hash": env.execution_message_hash(),
+            "consumed_nonce": env.nonce_hash,
             "next_nonce": env.next_nonce(),
             "forwarded_signers": [],
             "required_relay_signers": [],
@@ -1150,12 +1208,10 @@ fn unsigned_display_shows_authorization_message() {
     let expected = env.expected(&[env.authority.pubkey(), nonce_authority]);
     let output = run_psigner(&env.args(&["--quiet"]));
     assert_eq!(
-        String::from_utf8(output.stdout).unwrap(),
+        strip_display_timestamp(&output.stdout),
         format!(
-            "Forwarded signers (sign at submission):\n  {nonce_authority}\n\nNext nonce value \
-             (after execution): {}\n\nAuthorization message (base64):\n{}\n",
-            env.next_nonce(),
-            BASE64_STANDARD.encode(expected.serialize())
+            "Forwarded signers (sign at submission):\n  {nonce_authority}\n\n{}",
+            env.display_footer(&expected)
         )
     );
     assert!(output.stderr.is_empty());

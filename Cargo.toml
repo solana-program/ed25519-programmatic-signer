@@ -27,6 +27,7 @@ brine-ed25519 = "0.10.0"
 clap = "3.2.25"
 codama-macros = "0.13.1"
 indoc = "2.0.7"
+jiff = { version = "0.2.27", default-features = false, features = ["std"] }
 libtest-mimic = "0.8.2"
 mollusk-svm = "0.15.0"
 pinocchio = { version = "0.11.2", default-features = false }
