@@ -2,18 +2,54 @@
 
 use {
     alloc::vec::Vec,
-    core::iter,
+    core::{fmt, iter},
     solana_address::Address,
     solana_hash::Hash,
     solana_instruction::Instruction,
-    solana_message::{AccountKeys, MessageHeader, VersionedMessage, v1},
+    solana_message::{
+        AccountKeys, CompileError, MessageHeader,
+        v1::{self, MessageError},
+    },
 };
+
+/// Reasons [`authorization_message`] cannot build a message.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum AuthorizationMessageError {
+    /// The executor instruction could not be compiled against the message's account keys.
+    Compile(CompileError),
+    /// The message breaks a v1 message rule, such as a signature or address limit.
+    Invalid(MessageError),
+}
+
+impl fmt::Display for AuthorizationMessageError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Compile(err) => write!(f, "failed to compile executor instruction: {err}"),
+            Self::Invalid(err) => err.fmt(f),
+        }
+    }
+}
+
+impl core::error::Error for AuthorizationMessageError {}
+
+impl From<CompileError> for AuthorizationMessageError {
+    fn from(err: CompileError) -> Self {
+        Self::Compile(err)
+    }
+}
+
+impl From<MessageError> for AuthorizationMessageError {
+    fn from(err: MessageError) -> Self {
+        Self::Invalid(err)
+    }
+}
 
 /// Builds the v1 authorization message that the authorities sign over the executor instruction.
 ///
-/// Callers must keep the inputs within the v1 limits of `v1::MAX_SIGNATURES` authorities and
-/// `v1::MAX_ADDRESSES` account keys. Larger inputs build a message that fails sanitization, and
-/// more than 256 account keys panic.
+/// The returned message is validated against the v1 limits. Inputs beyond `v1::MAX_SIGNATURES`
+/// authorities or `v1::MAX_ADDRESSES` account keys, duplicate authorities, and an empty authority
+/// list return [`AuthorizationMessageError::Invalid`] with the [`MessageError`] naming the violated
+/// rule.
 ///
 /// ```text
 /// account_keys                    privileges
@@ -37,7 +73,12 @@ use {
 pub fn authorization_message(
     executor_instruction: &Instruction,
     authorities: &[Address],
-) -> VersionedMessage {
+) -> Result<v1::Message, AuthorizationMessageError> {
+    // Checked first so the header counts below fit in a u8.
+    if authorities.len() > usize::from(v1::MAX_SIGNATURES) {
+        return Err(MessageError::TooManySignatures.into());
+    }
+
     // Authorities the executor writes to must land in the header's writable-signer range, so
     // they are ordered ahead of the readonly authorities.
     let (writable_authorities, readonly_authorities): (Vec<_>, Vec<_>) =
@@ -90,10 +131,15 @@ pub fn authorization_message(
         .chain(readonly_unsigned.iter().copied())
         .collect::<Vec<_>>();
 
+    // Checked before compiling, which would otherwise report an index overflow above 256 keys,
+    // and so the header counts below fit in a u8.
+    if account_keys.len() > usize::from(v1::MAX_ADDRESSES) {
+        return Err(MessageError::TooManyAddresses.into());
+    }
+
     // Compiling rewrites the program id and account pubkeys as u8 indexes into `account_keys`
     let compiled_instructions = AccountKeys::new(&account_keys, None)
-        .try_compile_instructions(core::slice::from_ref(executor_instruction))
-        .unwrap();
+        .try_compile_instructions(core::slice::from_ref(executor_instruction))?;
 
     let header = MessageHeader {
         num_required_signatures: authorities.len() as u8,
@@ -111,6 +157,7 @@ pub fn authorization_message(
         account_keys,
         compiled_instructions,
     );
+    message.validate()?;
 
-    VersionedMessage::V1(message)
+    Ok(message)
 }

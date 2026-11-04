@@ -124,9 +124,7 @@ pub(super) fn run(command: SignCommand, client: &Client, output: OutputFormat) -
         .collect::<BTreeSet<_>>()
         .into_iter()
         .collect::<Vec<_>>();
-    // Every authority is an authorization signer, so this also bounds the authorization message's
-    // account keys well below the 256 at which authorization_message panics compiling u8 indexes.
-    // Check it before building the message.
+    // authorization_message rejects this too, but checking here names the signers involved.
     ensure!(
         authorization_signers.len() <= usize::from(v1::MAX_SIGNATURES),
         "too many required signers for the authorization message: {} exceeds the v1 limit of {}",
@@ -160,19 +158,11 @@ pub(super) fn run(command: SignCommand, client: &Client, output: OutputFormat) -
              --authority instead"
         );
     }
-    let VersionedMessage::V1(authorization_message) =
-        spl_ed25519_signer_client::message::authorization_message(
-            &instruction,
-            &authorization_signers,
-        )
-    else {
-        unreachable!("authorization_message builds a v1 message");
-    };
-    // Validate the v1 message directly. Its errors name the violated limit, which sanitize's
-    // generic errors do not.
-    authorization_message
-        .validate()
-        .context("invalid authorization message")?;
+    let authorization_message = spl_ed25519_signer_client::message::authorization_message(
+        &instruction,
+        &authorization_signers,
+    )
+    .context("invalid authorization message")?;
     ensure_relay_transaction_fits(&authorization_message, &authorities, &forwarded_signers)?;
     let encoded_authorization_message = BASE64_STANDARD.encode(authorization_message.serialize());
     let authorization_message_hash =

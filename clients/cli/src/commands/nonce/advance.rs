@@ -65,17 +65,11 @@ pub(super) async fn run(
         // The authority signs an authorization message, which promotes its PDA to sign the Execute
         let execution_message = empty_execution_message(&pda, &salt, previous.nonce)?;
         let execute = execute(&nonce_account, &pda, &execution_message);
-        let VersionedMessage::V1(authorization_message) =
-            spl_ed25519_signer_client::message::authorization_message(
-                &execute,
-                &[authority_address],
-            )
-        else {
-            unreachable!("authorization_message builds a v1 message");
-        };
-        authorization_message
-            .validate()
-            .context("invalid authorization message")?;
+        let authorization_message = spl_ed25519_signer_client::message::authorization_message(
+            &execute,
+            &[authority_address],
+        )
+        .context("invalid authorization message")?;
 
         if !authority.can_sign {
             return output.render(&NonceAdvanceAuthorizationOutput {

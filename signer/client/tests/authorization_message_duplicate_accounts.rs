@@ -20,22 +20,21 @@ fn repeated_account_preserves_writable_privilege_and_instruction_positions() {
         data: vec![],
     };
 
-    let message = authorization_message(&instruction, &[authority]);
-    message.sanitize().unwrap();
-    let compiled = &message.instructions()[0];
+    let message = authorization_message(&instruction, &[authority]).unwrap();
+    let compiled = &message.instructions[0];
 
     // Both instruction positions must survive, referencing the same account key.
     assert_eq!(compiled.accounts.len(), 2);
     assert_eq!(compiled.accounts[0], compiled.accounts[1]);
     let index = usize::from(compiled.accounts[0]);
-    assert_eq!(message.static_account_keys()[index], shared_account);
+    assert_eq!(message.account_keys[index], shared_account);
     assert!(
         message.is_maybe_writable_with_reserved_addresses(index, None::<&BTreeSet<Address>>),
         "a readonly occurrence must not erase another occurrence's writable privilege"
     );
     assert_eq!(
         message
-            .static_account_keys()
+            .account_keys
             .iter()
             .filter(|key| **key == shared_account)
             .count(),
@@ -71,19 +70,18 @@ fn duplicate_privileges_are_merged_in_either_order(privileges: [bool; 2]) {
         ],
         data: vec![7, 8],
     };
-    let message = authorization_message(&instruction, &[authority]);
-    message.sanitize().unwrap();
-    let compiled = &message.instructions()[0];
+    let message = authorization_message(&instruction, &[authority]).unwrap();
+    let compiled = &message.instructions[0];
     assert_eq!(compiled.accounts.len(), 3);
     assert_eq!(compiled.accounts[0], compiled.accounts[2]);
     assert_eq!(
-        message.static_account_keys()[usize::from(compiled.accounts[1])],
+        message.account_keys[usize::from(compiled.accounts[1])],
         other
     );
     assert_eq!(compiled.data, instruction.data);
-    assert_eq!(message.static_account_keys().len(), 4);
+    assert_eq!(message.account_keys.len(), 4);
     let index = usize::from(compiled.accounts[0]);
-    assert_eq!(message.static_account_keys()[index], shared);
+    assert_eq!(message.account_keys[index], shared);
     assert!(
         !message.is_signer(index),
         "input signer flags must not grant authorization message signer privilege"
@@ -111,17 +109,17 @@ fn authority_and_program_references_reuse_existing_account_keys() {
         ],
         data: vec![],
     };
-    let message = authorization_message(&instruction, &[readonly_authority, writable_authority]);
-    message.sanitize().unwrap();
+    let message =
+        authorization_message(&instruction, &[readonly_authority, writable_authority]).unwrap();
     assert_eq!(
-        message.static_account_keys(),
+        message.account_keys,
         &[writable_authority, readonly_authority, program_id]
     );
-    assert_eq!(message.instructions()[0].accounts, [0, 2, 1, 0, 2]);
-    assert_eq!(message.instructions()[0].program_id_index, 2);
-    assert_eq!(message.header().num_required_signatures, 2);
-    assert_eq!(message.header().num_readonly_signed_accounts, 1);
-    assert_eq!(message.header().num_readonly_unsigned_accounts, 1);
+    assert_eq!(message.instructions[0].accounts, [0, 2, 1, 0, 2]);
+    assert_eq!(message.instructions[0].program_id_index, 2);
+    assert_eq!(message.header.num_required_signatures, 2);
+    assert_eq!(message.header.num_readonly_signed_accounts, 1);
+    assert_eq!(message.header.num_readonly_unsigned_accounts, 1);
     assert!(message.is_signer(0));
     assert!(message.is_signer(1));
     assert!(!message.is_signer(2));
@@ -131,9 +129,7 @@ fn authority_and_program_references_reuse_existing_account_keys() {
 fn unaffected_message_without_authority_writes_preserves_serialized_bytes() {
     use {
         solana_hash::Hash,
-        solana_message::{
-            MessageHeader, VersionedMessage, compiled_instruction::CompiledInstruction, v1,
-        },
+        solana_message::{MessageHeader, compiled_instruction::CompiledInstruction, v1},
     };
 
     // Deliberately use non-sorted keys and interleave privilege groups.
@@ -157,7 +153,7 @@ fn unaffected_message_without_authority_writes_preserves_serialized_bytes() {
         data: vec![11, 12],
     };
     // With no authority writes, the first authority is the writable fee-payer placeholder.
-    let expected = VersionedMessage::V1(v1::Message::new(
+    let expected = v1::Message::new(
         MessageHeader {
             num_required_signatures: 2,
             num_readonly_signed_accounts: 1,
@@ -179,9 +175,8 @@ fn unaffected_message_without_authority_writes_preserves_serialized_bytes() {
             accounts: vec![5, 2, 6, 3],
             data: vec![11, 12],
         }],
-    ));
-    let actual = authorization_message(&instruction, &[first_authority, second_authority]);
-    actual.sanitize().unwrap();
+    );
+    let actual = authorization_message(&instruction, &[first_authority, second_authority]).unwrap();
     assert_eq!(actual.serialize(), expected.serialize());
 }
 
@@ -189,9 +184,7 @@ fn unaffected_message_without_authority_writes_preserves_serialized_bytes() {
 fn unaffected_message_with_authority_writes_preserves_serialized_bytes() {
     use {
         solana_hash::Hash,
-        solana_message::{
-            MessageHeader, VersionedMessage, compiled_instruction::CompiledInstruction, v1,
-        },
+        solana_message::{MessageHeader, compiled_instruction::CompiledInstruction, v1},
     };
 
     // Deliberately use non-sorted keys and interleave privilege groups.
@@ -216,7 +209,7 @@ fn unaffected_message_with_authority_writes_preserves_serialized_bytes() {
         data: vec![11, 12],
     };
     // The written authority moves ahead of the readonly authority.
-    let expected = VersionedMessage::V1(v1::Message::new(
+    let expected = v1::Message::new(
         MessageHeader {
             num_required_signatures: 2,
             num_readonly_signed_accounts: 1,
@@ -238,9 +231,8 @@ fn unaffected_message_with_authority_writes_preserves_serialized_bytes() {
             accounts: vec![5, 2, 6, 3, 0],
             data: vec![11, 12],
         }],
-    ));
-    let actual = authorization_message(&instruction, &[first_authority, second_authority]);
-    actual.sanitize().unwrap();
+    );
+    let actual = authorization_message(&instruction, &[first_authority, second_authority]).unwrap();
     assert_eq!(actual.serialize(), expected.serialize());
 }
 
@@ -274,12 +266,11 @@ fn interleaved_duplicates_recompile_all_indices_and_preserve_privilege_order() {
         ],
         data: vec![42],
     };
-    let message = authorization_message(&instruction, &[authority]);
-    message.sanitize().unwrap();
+    let message = authorization_message(&instruction, &[authority]).unwrap();
 
     // Writable keys retain first-writable-occurrence order, including a key first seen readonly.
     // Surviving readonly keys retain their relative order after overlapping keys are removed.
-    let keys = message.static_account_keys();
+    let keys = &message.account_keys;
     assert_eq!(
         keys,
         &[
@@ -287,11 +278,11 @@ fn interleaved_duplicates_recompile_all_indices_and_preserve_privilege_order() {
         ]
     );
     assert_eq!(keys.iter().collect::<BTreeSet<_>>().len(), keys.len());
-    assert_eq!(message.header().num_required_signatures, 1);
-    assert_eq!(message.header().num_readonly_signed_accounts, 0);
-    assert_eq!(message.header().num_readonly_unsigned_accounts, 3);
+    assert_eq!(message.header.num_required_signatures, 1);
+    assert_eq!(message.header.num_readonly_signed_accounts, 0);
+    assert_eq!(message.header.num_readonly_unsigned_accounts, 3);
 
-    let compiled = &message.instructions()[0];
+    let compiled = &message.instructions[0];
     assert_eq!(compiled.program_id_index, 4);
     assert_eq!(keys[usize::from(compiled.program_id_index)], program_id);
     assert_eq!(compiled.accounts, [3, 5, 1, 2, 1, 6, 3, 5, 2, 3, 6, 1]);

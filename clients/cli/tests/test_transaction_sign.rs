@@ -115,13 +115,16 @@ impl SignTestEnv {
         let mut authorities = authorities.to_vec();
         authorities.sort_unstable();
         authorities.dedup();
-        authorization_message(
-            &execute(
-                &self.nonce_account.parse().unwrap(),
-                &self.nonce_authority.parse().unwrap(),
-                &execution_message,
-            ),
-            &authorities,
+        VersionedMessage::V1(
+            authorization_message(
+                &execute(
+                    &self.nonce_account.parse().unwrap(),
+                    &self.nonce_authority.parse().unwrap(),
+                    &execution_message,
+                ),
+                &authorities,
+            )
+            .unwrap(),
         )
     }
 
