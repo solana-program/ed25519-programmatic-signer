@@ -20,7 +20,7 @@ use {
     solana_signer::Signer,
     spl_ed25519_signer_client::ProgrammaticSigner,
     spl_message_executor_client::instruction::execute,
-    std::{collections::BTreeSet, fmt, time::SystemTime},
+    std::{collections::BTreeSet, fmt},
 };
 
 #[derive(Debug, Args)]
@@ -246,7 +246,7 @@ pub(super) fn run(command: SignCommand, client: &Client, output: OutputFormat) -
             .map(ToString::to_string)
             .collect(),
         signatures,
-        timestamp: humantime::format_rfc3339_seconds(SystemTime::now()).to_string(),
+        timestamp: format!("{:.0}", jiff::Timestamp::now()),
     })
 }
 

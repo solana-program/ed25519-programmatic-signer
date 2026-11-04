@@ -16,11 +16,7 @@ use {
         Instruction as ExecutorInstruction, derive_transition_commitment,
     },
     spl_nonce_interface::state::Nonce,
-    std::{
-        fs,
-        str::FromStr,
-        time::{Duration, SystemTime},
-    },
+    std::{fs, str::FromStr},
     tempfile::TempDir,
     test_case::test_case,
 };
@@ -266,11 +262,10 @@ impl SignTestEnv {
 /// Check a timestamp is RFC 3339 UTC and recent.
 fn check_timestamp(timestamp: &str) {
     assert!(timestamp.ends_with('Z'), "{timestamp}");
-    let time = humantime::parse_rfc3339(timestamp).unwrap();
-    let age = SystemTime::now()
-        .duration_since(time)
-        .unwrap_or_else(|error| panic!("timestamp {timestamp} is in the future: {error}"));
-    assert!(age < Duration::from_secs(300), "{timestamp}");
+    let time: jiff::Timestamp = timestamp.parse().unwrap();
+    let age = jiff::Timestamp::now().duration_since(time);
+    assert!(!age.is_negative(), "timestamp {timestamp} is in the future");
+    assert!(age < jiff::SignedDuration::from_secs(300), "{timestamp}");
 }
 
 /// Remove and check the JSON output's timestamp, which differs between runs.
