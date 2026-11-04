@@ -20,7 +20,7 @@ use {
     solana_signer::Signer,
     spl_ed25519_signer_client::ProgrammaticSigner,
     spl_message_executor_client::instruction::execute,
-    std::{collections::BTreeSet, fmt},
+    std::{collections::BTreeSet, fmt, time::SystemTime},
 };
 
 #[derive(Debug, Args)]
@@ -175,6 +175,10 @@ pub(super) fn run(command: SignCommand, client: &Client, output: OutputFormat) -
         .context("invalid authorization message")?;
     ensure_relay_transaction_fits(&authorization_message, &authorities, &forwarded_signers)?;
     let encoded_authorization_message = BASE64_STANDARD.encode(authorization_message.serialize());
+    let authorization_message_hash =
+        VersionedMessage::hash_raw_message(&authorization_message.serialize()).to_string();
+    let execution_message_hash =
+        VersionedMessage::hash_raw_message(&execution_message.serialize()).to_string();
     let next_nonce = next_nonce(&command.nonce_account, &execution_message).to_string();
 
     let signers = command
@@ -211,11 +215,13 @@ pub(super) fn run(command: SignCommand, client: &Client, output: OutputFormat) -
                     required_relay: &required_relay_signers,
                 },
                 if unique_signers.is_empty() {
-                    "Returns forwarded signers, the next nonce value, and the base64 authorization \
-                     message for external signers. Nothing is signed or submitted."
+                    "Returns forwarded signers, the consumed and next nonce values, message \
+                     hashes, a timestamp, and the base64 authorization message for external \
+                     signers. Nothing is signed or submitted."
                 } else {
-                    "Signing returns addresses, signatures, forwarded signers, the next nonce \
-                     value, and the base64 authorization message. Nothing is submitted."
+                    "Signing returns addresses, signatures, forwarded signers, the consumed and \
+                     next nonce values, message hashes, a timestamp, and the base64 authorization \
+                     message. Nothing is submitted."
                 },
             )?
         );
@@ -230,6 +236,9 @@ pub(super) fn run(command: SignCommand, client: &Client, output: OutputFormat) -
         .collect();
     output.render(&SignOutput {
         authorization_message: encoded_authorization_message,
+        authorization_message_hash,
+        execution_message_hash,
+        consumed_nonce: command.nonce_hash.to_string(),
         next_nonce,
         forwarded_signers: forwarded_signers.iter().map(ToString::to_string).collect(),
         required_relay_signers: required_relay_signers
@@ -237,16 +246,25 @@ pub(super) fn run(command: SignCommand, client: &Client, output: OutputFormat) -
             .map(ToString::to_string)
             .collect(),
         signatures,
+        timestamp: humantime::format_rfc3339_seconds(SystemTime::now()).to_string(),
     })
 }
 
 #[derive(Serialize)]
 struct SignOutput {
     authorization_message: String,
+    /// Hash of the authorization message, which the signatures cover.
+    authorization_message_hash: String,
+    /// Hash of the execution message, after its recent blockhash is replaced by the consumed nonce.
+    execution_message_hash: String,
+    /// The nonce value the execution consumes, which is the execution message's recent blockhash.
+    consumed_nonce: String,
     next_nonce: String,
     forwarded_signers: Vec<String>,
     required_relay_signers: Vec<String>,
     signatures: Vec<AuthoritySignature>,
+    /// UTC time the output was produced, in RFC 3339 format.
+    timestamp: String,
 }
 
 #[derive(Serialize)]
@@ -276,7 +294,15 @@ impl fmt::Display for SignOutput {
             }
             writeln!(f)?;
         }
+        writeln!(f, "Consumed nonce value: {}", self.consumed_nonce)?;
         writeln!(f, "Next nonce value (after execution): {}", self.next_nonce)?;
+        writeln!(f, "Execution message hash: {}", self.execution_message_hash)?;
+        writeln!(
+            f,
+            "Authorization message hash: {}",
+            self.authorization_message_hash
+        )?;
+        writeln!(f, "Timestamp: {}", self.timestamp)?;
         writeln!(f)?;
         write!(
             f,

@@ -1,5 +1,6 @@
 === Signing ===
-Message hash: CKoZ2gaq6zomRS3XLFWgk5CBXxYeQkWKy58SExhQML6S
+Authorization message hash: CKoZ2gaq6zomRS3XLFWgk5CBXxYeQkWKy58SExhQML6S
+Execution message hash: Gv6pbzG8yyBEBQEARGCaDV7y1qvdAfVG4FCCeWw79t82
 PDA promotion authorities:
   AKnL4NNf3DGWZJS6cPknBuEGnVsV4A4m5tgebLHaRSZ9 (derived signer: 3jCYn5zriQtvK6iEkWyDc3M6dkHvmR9XccrZyjJF96tF)
 
@@ -100,5 +101,5 @@ v1 message:
   }
 }
 
-Signing returns addresses, signatures, forwarded signers, the next nonce value, and the base64 authorization message. Nothing is submitted.
+Signing returns addresses, signatures, forwarded signers, the consumed and next nonce values, message hashes, a timestamp, and the base64 authorization message. Nothing is submitted.
 Sign this message for AKnL4NNf3DGWZJS6cPknBuEGnVsV4A4m5tgebLHaRSZ9? [y/N]

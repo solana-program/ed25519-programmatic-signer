@@ -70,12 +70,15 @@ pub(super) fn render_signing_summary(
         ),
     ]
     .concat();
-    let message_hash = VersionedMessage::hash_raw_message(&authorization_message.serialize());
+    let authorization_message_hash =
+        VersionedMessage::hash_raw_message(&authorization_message.serialize());
+    let execution_message_hash = VersionedMessage::hash_raw_message(&execution_message.serialize());
     let expected_nonce = execution_message.lifetime_specifier;
     let next_nonce = next_nonce(nonce_account, execution_message);
     Ok(formatdoc! {"
         === Signing ===
-        Message hash: {message_hash}
+        Authorization message hash: {authorization_message_hash}
+        Execution message hash: {execution_message_hash}
         PDA promotion authorities:
         {signing_keys}
         {submission_signers_section}
