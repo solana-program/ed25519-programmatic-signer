@@ -314,13 +314,14 @@ impl Client {
         decode_durable_nonce_account(address, &account)
     }
 
-    /// Simulate without verifying signatures, against the latest blockhash. With
-    /// `verbose_accounts`, also requests the inner instructions and the post-simulation state of
-    /// those accounts.
+    /// Simulate without verifying signatures. With `replace_recent_blockhash`, simulates against
+    /// the latest blockhash instead of the transaction's. With `verbose_accounts`, also requests the
+    /// inner instructions and the post-simulation state of those accounts.
     pub(crate) async fn simulate_transaction(
         &self,
         transaction: &VersionedTransaction,
         verbose_accounts: Option<&[Address]>,
+        replace_recent_blockhash: bool,
     ) -> Result<RpcSimulateTransactionResult> {
         let accounts = verbose_accounts.map(|addresses| RpcSimulateTransactionAccountsConfig {
             encoding: Some(UiAccountEncoding::JsonParsed),
@@ -331,7 +332,7 @@ impl Client {
                 transaction,
                 RpcSimulateTransactionConfig {
                     sig_verify: false,
-                    replace_recent_blockhash: true,
+                    replace_recent_blockhash,
                     commitment: Some(self.rpc.commitment()),
                     accounts,
                     inner_instructions: verbose_accounts.is_some(),

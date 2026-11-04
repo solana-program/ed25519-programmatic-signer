@@ -1,9 +1,12 @@
 use {
     crate::{
-        common::{execute::programmatic_signer, helpers::TestEnv},
+        common::{
+            execute::programmatic_signer,
+            helpers::{TestEnv, run_psigner},
+        },
         migration::{
             assert_signers, authorization, create_nonce, decode_execution_message,
-            execute_as_new_owner, migrate, migrate_error,
+            execute_as_new_owner, keypair_file, migrate, migrate_error, sign_as_new_owner,
         },
     },
     solana_address::Address,
@@ -133,6 +136,63 @@ pub async fn migrates_stake_to_new_owner(env: &TestEnv) {
         &[&old_owner],
     )
     .await;
+    assert_eq!(
+        stake_authorized(env, &stake).await,
+        Authorized::auto(&new_owner_programmatic_signer)
+    );
+}
+
+/// The relay transaction for a stake migration can be checked with `transaction submit --dry-run`
+/// once the authorities have signed, before asking the old owner to sign it.
+pub async fn dry_runs_stake_migration(env: &TestEnv) {
+    let old_owner = Keypair::new();
+    let new_owner = Keypair::new();
+    let new_owner_programmatic_signer = programmatic_signer(&new_owner.pubkey());
+    let stake = create_stake_account(
+        env,
+        &Authorized::auto(&old_owner.pubkey()),
+        &Lockup::default(),
+    )
+    .await;
+    let nonce_account = create_nonce(env, &new_owner.pubkey());
+    let migration = migrate_stake(env, &stake, Some(&new_owner.pubkey()), &[]);
+    let signed = sign_as_new_owner(
+        env,
+        &migration.execution_message,
+        &nonce_account,
+        &new_owner,
+        &[],
+    )
+    .await;
+
+    // The old owner is a forwarded signer, but the dry run does not need it.
+    let output = run_psigner(&signed.submit_args(env, &["--output", "json-compact", "--dry-run"]));
+    let value: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    let fee = value["fee"].as_i64().unwrap();
+    assert!(fee > 0);
+    assert!(value["unitsConsumed"].as_u64().unwrap() > 0);
+    // Only the relay fee payer's balance changes.
+    let changes = value["solBalanceChanges"].as_array().unwrap();
+    assert_eq!(changes.len(), 1);
+    assert_eq!(
+        changes[0]["lamports"].as_i64().unwrap(),
+        fee.checked_neg().unwrap()
+    );
+    assert_eq!(
+        stake_authorized(env, &stake).await,
+        Authorized::auto(&old_owner.pubkey())
+    );
+
+    let old_owner_file = keypair_file(&old_owner);
+    run_psigner(&signed.submit_args(
+        env,
+        &[
+            "--relay-signer",
+            old_owner_file.path().to_str().unwrap(),
+            "--quiet",
+            "--yes",
+        ],
+    ));
     assert_eq!(
         stake_authorized(env, &stake).await,
         Authorized::auto(&new_owner_programmatic_signer)
