@@ -5,6 +5,7 @@ use {
             SummarySigners, confirm_signing, next_nonce, render_signing_summary,
             sign_authorization_message,
         },
+        v1_transaction::{ensure_transaction_size, relay_transaction},
     },
     crate::{cli::keypair_source_parser, client::Client, output::OutputFormat},
     anyhow::{Context, Result, ensure},
@@ -15,6 +16,7 @@ use {
     solana_clap_v3_utils::input_parsers::signer::SignerSource,
     solana_hash::Hash,
     solana_message::{VersionedMessage, v1},
+    solana_signature::Signature,
     solana_signer::Signer,
     spl_ed25519_signer_client::ProgrammaticSigner,
     spl_message_executor_client::instruction::execute,
@@ -171,6 +173,7 @@ pub(super) fn run(command: SignCommand, client: &Client, output: OutputFormat) -
     authorization_message
         .validate()
         .context("invalid authorization message")?;
+    ensure_relay_transaction_fits(&authorization_message, &authorities, &forwarded_signers)?;
     let encoded_authorization_message = BASE64_STANDARD.encode(authorization_message.serialize());
     let next_nonce = next_nonce(&command.nonce_account, &execution_message).to_string();
 
@@ -281,4 +284,43 @@ impl fmt::Display for SignOutput {
             self.authorization_message
         )
     }
+}
+
+/// Check that the smallest relay transaction `transaction submit` could build for the
+/// authorization message fits within the transaction size limit, so it can be submitted. The
+/// actual one is checked at submission, and may be larger, for example if there are extra accounts or a durable nonce.
+fn ensure_relay_transaction_fits(
+    authorization_message: &v1::Message,
+    authorities: &[Address],
+    forwarded_signers: &[Address],
+) -> Result<()> {
+    let authorization_signers = &authorization_message.account_keys
+        [..usize::from(authorization_message.header.num_required_signatures)];
+    // Slots in Submit's data for authorization message signatures. Authorities must sign the
+    // authorization message. Forwarded signers that are not authorities sign the relay transaction
+    // instead, leaving their slot here empty.
+    let signatures = authorization_signers
+        .iter()
+        .map(|address| {
+            (authorities.contains(address) || !forwarded_signers.contains(address))
+                .then(Signature::default)
+        })
+        .collect();
+    // Make any authorization signer the fee payer
+    // Infallible: --authority is required, so there is at least one authorization signer.
+    let fee_payer = forwarded_signers
+        .first()
+        .unwrap_or(&authorization_signers[0]);
+    let transaction = relay_transaction(
+        authorization_message,
+        signatures,
+        forwarded_signers,
+        fee_payer,
+        None,
+        Hash::default(),
+    )?;
+    ensure_transaction_size(
+        "the smallest relay transaction for this authorization message",
+        &transaction,
+    )
 }

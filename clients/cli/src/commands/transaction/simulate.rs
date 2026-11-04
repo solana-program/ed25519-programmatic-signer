@@ -1,5 +1,8 @@
 use {
-    super::{decode::read_execution_message, v1_transaction::compile_message},
+    super::{
+        decode::read_execution_message,
+        v1_transaction::{compile_message, ensure_transaction_size},
+    },
     crate::{client::Client, output::OutputFormat},
     anyhow::{Context, Result, bail, ensure},
     clap::Args,
@@ -93,6 +96,7 @@ pub(super) async fn run(
         signatures: vec![Signature::default(); usize::from(message.header.num_required_signatures)],
         message: VersionedMessage::V1(message.clone()),
     };
+    ensure_transaction_size("simulated transaction", &transaction)?;
 
     let verbose_accounts = command.verbose.then(|| writable_accounts(&message));
     let result = client

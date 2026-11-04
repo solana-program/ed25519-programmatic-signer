@@ -125,6 +125,80 @@ impl SignTestEnv {
         )
     }
 
+    /// Pad the execution message's instruction data so its serialization is `size` bytes.
+    fn set_execution_message_size(&mut self, size: usize) {
+        let current = self.execution_message.serialize().len();
+        let data = &mut self.execution_message.instructions[0].data;
+        let padding = size.checked_sub(current).unwrap();
+        data.resize(data.len().checked_add(padding).unwrap(), 0);
+        assert_eq!(self.execution_message.serialize().len(), size);
+        self.encoded = BASE64_STANDARD.encode(self.execution_message.serialize());
+    }
+
+    /// The size of the relay transaction `transaction submit --sign-only` builds for the
+    /// authorization message, with the authority as fee payer and no durable nonce. This is the
+    /// smallest relay transaction for it, which `transaction sign` checks fits.
+    fn relay_transaction_size(&self) -> usize {
+        let authorization_message = self.expected(&self.authority_addresses()).serialize();
+        let authority_entry = format!(
+            "{}={}",
+            self.authority.pubkey(),
+            self.authority.sign_message(&authorization_message)
+        );
+        let blockhash = Hash::new_from_array([7; 32]).to_string();
+        let encoded = BASE64_STANDARD.encode(&authorization_message);
+        let output = run_psigner(&[
+            "-C",
+            &self.config,
+            "transaction",
+            "submit",
+            "--authorization-message",
+            &encoded,
+            "--signer",
+            &authority_entry,
+            "--fee-payer",
+            &self.keypair_file,
+            "--blockhash",
+            &blockhash,
+            "--sign-only",
+            "--dump-transaction-message",
+            "--quiet",
+            "--yes",
+            "--output",
+            "json",
+        ]);
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let value: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+        let message_bytes = BASE64_STANDARD
+            .decode(value["message"].as_str().unwrap())
+            .unwrap();
+        let message = wincode::deserialize_exact::<VersionedMessage>(&message_bytes).unwrap();
+        let signatures = usize::from(message.header().num_required_signatures);
+        message_bytes
+            .len()
+            .checked_add(signatures.checked_mul(64).unwrap())
+            .unwrap()
+    }
+
+    /// Pad the execution message so the smallest relay transaction for its authorization message
+    /// is `size` bytes. Padding grows the relay transaction byte for byte.
+    fn set_relay_transaction_size(&mut self, size: usize) {
+        let padding = size.checked_sub(self.relay_transaction_size()).unwrap();
+        let current = self.execution_message.serialize().len();
+        self.set_execution_message_size(current.checked_add(padding).unwrap());
+    }
+
+    fn authority_addresses(&self) -> Vec<Address> {
+        self.authorities
+            .iter()
+            .map(|authority| authority.parse().unwrap())
+            .collect()
+    }
+
     /// The nonce value after the executor runs the execution message, derived independently of
     /// the CLI.
     fn next_nonce(&self) -> String {
@@ -378,6 +452,68 @@ fn rejects_invalid_execution_message(mutate: fn(&mut v1::Message), error: &str) 
     mutate(&mut env.execution_message);
     env.encoded = BASE64_STANDARD.encode(env.execution_message.serialize());
     env.reject(error);
+}
+
+/// A sign env, optionally with the authority also signing the execution message directly, so it
+/// signs both the authorization message and the relay transaction.
+fn size_test_env(authority_forwarded: bool) -> SignTestEnv {
+    let mut env = SignTestEnv::new();
+    if authority_forwarded {
+        let pda = env.execution_message.account_keys[0];
+        env.execution_message = v1::Message::try_compile(
+            &pda,
+            &[
+                transfer(&pda, &Address::new_unique(), 1),
+                transfer(&env.authority.pubkey(), &Address::new_unique(), 1),
+            ],
+            Hash::default(),
+        )
+        .unwrap();
+        env.encoded = BASE64_STANDARD.encode(env.execution_message.serialize());
+    }
+    env
+}
+
+#[test_case(false; "authority only")]
+#[test_case(true; "authority also forwarded")]
+fn rejects_relay_transaction_over_transaction_size_before_loading_signer(
+    authority_forwarded: bool,
+) {
+    let mut env = size_test_env(authority_forwarded);
+    env.set_relay_transaction_size(v1::MAX_TRANSACTION_SIZE + 1);
+    env.break_keypair();
+    env.reject(&format!(
+        "the smallest relay transaction for this authorization message is {} bytes, which exceeds \
+         the v1 transaction size limit of {} bytes",
+        v1::MAX_TRANSACTION_SIZE + 1,
+        v1::MAX_TRANSACTION_SIZE
+    ));
+}
+
+#[test_case(false; "authority only")]
+#[test_case(true; "authority also forwarded")]
+fn signs_when_relay_transaction_is_at_transaction_size_limit(authority_forwarded: bool) {
+    let mut env = size_test_env(authority_forwarded);
+    env.set_relay_transaction_size(v1::MAX_TRANSACTION_SIZE);
+    assert_eq!(env.relay_transaction_size(), v1::MAX_TRANSACTION_SIZE);
+    let output = run_psigner(&env.args(&[
+        "--signer",
+        &env.keypair_file,
+        "--quiet",
+        "--yes",
+        "--output",
+        "json",
+    ]));
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let value: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(
+        value["authorization_message"],
+        BASE64_STANDARD.encode(env.expected(&env.authority_addresses()).serialize())
+    );
 }
 
 #[test]
