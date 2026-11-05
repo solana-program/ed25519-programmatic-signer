@@ -57,9 +57,9 @@ pub(crate) struct TokenAccountCommand {
     /// to the new authority's associated token account instead, use `migrate token`.
     token_account: Address,
 
-    /// Signing pubkey of the new authority. Its programmatic signer becomes the token account's
-    /// authorities. Pass the signing pubkey itself, not its programmatic signer. Defaults to the
-    /// current authority, which then moves to its own programmatic signer.
+    /// Signing public key that controls the destination programmatic signer, which becomes the
+    /// token account's authorities. Pass the signing pubkey itself, not its programmatic signer.
+    /// Defaults to the current authority, which then moves to its own programmatic signer.
     #[clap(long)]
     new_authority_signing_pubkey: Option<Address>,
 
@@ -88,11 +88,11 @@ pub(super) async fn run(
         .token_program_account(&address, "token account")
         .await?;
     let token_program = account.owner;
-    let account = StateWithExtensions::<TokenAccount>::unpack(&account.data)
+    let state = StateWithExtensions::<TokenAccount>::unpack(&account.data)
         .with_context(|| format!("account {address} is not a token account"))?;
-    let mint = account.base.mint;
-    let owner = account.base.owner;
-    let close_authority: Option<Address> = account.base.close_authority.into();
+    let mint = state.base.mint;
+    let owner = state.base.owner;
+    let close_authority: Option<Address> = state.base.close_authority.into();
     let current_authority = |role| match role {
         AuthorityType::Owner => Some(owner),
         AuthorityType::Close => close_authority,
@@ -122,10 +122,10 @@ pub(super) async fn run(
 
     // Checked by the token program for any authority change.
     ensure!(
-        !account.base.is_frozen(),
+        !state.base.is_frozen(),
         "token account {address} is frozen, so its authorities can't change"
     );
-    if let Ok(guard) = account.get_extension::<CpiGuard>() {
+    if let Ok(guard) = state.get_extension::<CpiGuard>() {
         ensure!(
             !bool::from(guard.lock_cpi),
             "token account {address} has the CPI guard enabled, which blocks changing its \
@@ -137,7 +137,7 @@ pub(super) async fn run(
         get_associated_token_address_with_program_id(&owner, &mint, &token_program) == address;
     if moves_owner {
         // Every Token-2022 associated token account has this extension.
-        if account.get_extension::<ImmutableOwner>().is_ok() {
+        if state.get_extension::<ImmutableOwner>().is_ok() {
             let alternative = if associated {
                 ". Use `migrate token` to move its tokens instead"
             } else {
@@ -219,9 +219,9 @@ pub(super) async fn run(
 
     // Changing the owner revokes any delegate, and unsets a wrapped SOL account's close
     // authority.
-    let revoked_delegate = Option::<Address>::from(account.base.delegate).filter(|_| moves_owner);
+    let revoked_delegate = Option::<Address>::from(state.base.delegate).filter(|_| moves_owner);
     let unset_close_authority = close_authority.filter(|_| {
-        moves_owner && account.base.is_native() && !roles.contains(&AuthorityType::Close)
+        moves_owner && state.base.is_native() && !roles.contains(&AuthorityType::Close)
     });
 
     output.render(&TokenAccountMigrationOutput {
