@@ -2,7 +2,9 @@
 
 use {
     crate::{instruction::submit, message::authorization_message},
+    alloc::string::ToString,
     solana_instruction::Instruction,
+    solana_message::VersionedMessage,
     solana_signer::{SignerError, signers::Signers},
     solana_transaction::versioned::VersionedTransaction,
 };
@@ -14,7 +16,9 @@ pub fn sign_and_submit<S: Signers + ?Sized>(
     signers: &S,
 ) -> Result<Instruction, SignerError> {
     let authorities = signers.try_pubkeys()?;
-    let message = authorization_message(executor_instruction, &authorities);
+    let message = authorization_message(executor_instruction, &authorities)
+        .map_err(|err| SignerError::InvalidInput(err.to_string()))?;
+    let message = VersionedMessage::V1(message);
     let VersionedTransaction {
         signatures,
         message,

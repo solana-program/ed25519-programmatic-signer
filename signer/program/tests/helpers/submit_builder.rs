@@ -184,8 +184,9 @@ impl<'a> SubmitBuilder<'a> {
                     mutation(&mut executor_instruction);
                 }
 
-                let mut message =
-                    authorization_message(&executor_instruction, &context.authorities);
+                let mut message = VersionedMessage::V1(
+                    authorization_message(&executor_instruction, &context.authorities).unwrap(),
+                );
                 let VersionedMessage::V1(v1_message) = &mut message else {
                     panic!("expected v1 message");
                 };

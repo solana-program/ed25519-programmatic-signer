@@ -106,8 +106,12 @@ pub(super) async fn run(
         relay_signers.len(),
         v1::MAX_SIGNATURES
     );
-    let authorization_message = authorization_message(&instruction, &relay_signers);
-    let mut instruction = submit(vec![None; relay_signers.len()], authorization_message);
+    let authorization_message = authorization_message(&instruction, &relay_signers)
+        .context("invalid authorization message")?;
+    let mut instruction = submit(
+        vec![None; relay_signers.len()],
+        VersionedMessage::V1(authorization_message),
+    );
     // The authorization message's required signers lead its account keys, which the Submit
     // accounts mirror.
     for meta in &mut instruction.accounts[..relay_signers.len()] {

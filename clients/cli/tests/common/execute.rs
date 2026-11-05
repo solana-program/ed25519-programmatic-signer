@@ -36,9 +36,12 @@ pub fn build_authorization_message(
         .collect::<BTreeSet<_>>()
         .into_iter()
         .collect::<Vec<_>>();
-    authorization_message(
-        &execute(nonce_account, nonce_authority, execution_message),
-        &signers,
+    VersionedMessage::V1(
+        authorization_message(
+            &execute(nonce_account, nonce_authority, execution_message),
+            &signers,
+        )
+        .unwrap(),
     )
 }
 

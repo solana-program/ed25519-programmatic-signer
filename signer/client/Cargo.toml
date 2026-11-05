@@ -25,4 +25,5 @@ solana-transaction = { workspace = true, features = ["wincode"] }
 spl-ed25519-signer-interface = { workspace = true }
 
 [dev-dependencies]
+solana-address = { workspace = true, features = ["atomic"] }
 test-case = { workspace = true }

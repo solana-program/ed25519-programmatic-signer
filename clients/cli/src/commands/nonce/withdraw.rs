@@ -125,17 +125,11 @@ pub(super) async fn run(
             .context("invalid execution message")?;
         let next_nonce = next_nonce(&nonce_account, &execution_message);
         let execute = execute(&nonce_account, &pda, &execution_message);
-        let VersionedMessage::V1(authorization_message) =
-            spl_ed25519_signer_client::message::authorization_message(
-                &execute,
-                &[authority.address],
-            )
-        else {
-            unreachable!("authorization_message builds a v1 message");
-        };
-        authorization_message
-            .validate()
-            .context("invalid authorization message")?;
+        let authorization_message = spl_ed25519_signer_client::message::authorization_message(
+            &execute,
+            &[authority.address],
+        )
+        .context("invalid authorization message")?;
 
         if !authority.can_sign {
             return output.render(&NonceWithdrawAuthorizationOutput {

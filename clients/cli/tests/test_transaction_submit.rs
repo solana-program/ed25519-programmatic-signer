@@ -330,9 +330,12 @@ fn rejects_authorization_message_the_signer_cannot_submit(
 #[test]
 fn rejects_non_executor_instruction() {
     let env = SubmitTestEnv::new();
-    let message = authorization_message(
-        &transfer(&env.authority.pubkey(), &Address::new_unique(), 1),
-        &[env.authority.pubkey()],
+    let message = VersionedMessage::V1(
+        authorization_message(
+            &transfer(&env.authority.pubkey(), &Address::new_unique(), 1),
+            &[env.authority.pubkey()],
+        )
+        .unwrap(),
     );
     assert_failure(
         &env.submit(&encode(&message), &[]),
@@ -348,7 +351,9 @@ fn rejects_execute_without_nonce_accounts() {
         &ExecutorInstruction::Execute(VersionedMessage::V1(v1::Message::default())),
         vec![AccountMeta::new(Address::new_unique(), false)],
     );
-    let message = authorization_message(&instruction, &[env.authority.pubkey()]);
+    let message = VersionedMessage::V1(
+        authorization_message(&instruction, &[env.authority.pubkey()]).unwrap(),
+    );
     assert_failure(
         &env.submit(&encode(&message), &[]),
         "expected the nonce authority, nonce account, and SPL Nonce program in Execute accounts",
@@ -378,7 +383,9 @@ fn rejects_execution_message_the_executor_cannot_invoke(
         &ExecutorInstruction::Execute(execution_message),
         vec![AccountMeta::new(Address::new_unique(), false)],
     );
-    let message = authorization_message(&instruction, &[env.authority.pubkey()]);
+    let message = VersionedMessage::V1(
+        authorization_message(&instruction, &[env.authority.pubkey()]).unwrap(),
+    );
     assert_failure(&env.submit(&encode(&message), &[]), expected);
 }
 
@@ -647,9 +654,12 @@ fn required_relay_signer_must_approve(approval: Option<&str>) {
         Hash::new_unique(),
     )
     .unwrap();
-    let message = authorization_message(
-        &execute(&env.nonce_account, &signer, &execution_message),
-        &[authority, required_relay_signer.pubkey()],
+    let message = VersionedMessage::V1(
+        authorization_message(
+            &execute(&env.nonce_account, &signer, &execution_message),
+            &[authority, required_relay_signer.pubkey()],
+        )
+        .unwrap(),
     );
     let authority_entry = signature_entry(&env.authority, &message);
     let required_relay_signer_entry = signature_entry(&required_relay_signer, &message);
