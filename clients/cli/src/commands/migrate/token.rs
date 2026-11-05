@@ -56,6 +56,11 @@ pub(crate) struct TokenCommand {
     #[clap(long)]
     new_authority_signing_pubkey: Option<Address>,
 
+    /// Token account to move the tokens to, instead of the new authority's associated token
+    /// account. It must already exist and be owned by the new authority's programmatic signer.
+    #[clap(long, conflicts_with = "funder")]
+    destination: Option<Address>,
+
     /// Amount to move, in tokens using the mint's decimals, such as 1.5. Moves the whole balance
     /// when omitted, as read when the message is built.
     #[clap(long)]
@@ -172,15 +177,73 @@ pub(super) async fn run(
         .rent_recipient
         .unwrap_or(new_authority_signing_pubkey);
 
-    let destination = get_associated_token_address_with_program_id(
-        &new_owner_programmatic_signer,
-        &command.mint,
-        &token_program,
-    );
+    // Without --destination, the tokens move to the new authority's associated token account.
+    let destination = match command.destination {
+        Some(destination) => destination,
+        None => get_associated_token_address_with_program_id(
+            &new_owner_programmatic_signer,
+            &command.mint,
+            &token_program,
+        ),
+    };
     ensure!(
         source != destination,
         "token account {source} is both the source and the destination"
     );
+    let destination_account = match command.destination {
+        // A destination passed in must already exist
+        Some(destination) => {
+            let account = client
+                .token_program_account(&destination, "token account")
+                .await?;
+            ensure!(
+                account.owner == token_program,
+                "token account {destination} is owned by {}, but mint {} is owned by \
+                 {token_program}",
+                account.owner,
+                command.mint
+            );
+            Some(account)
+        }
+        // The associated token account is used by a transfer, which creates it if needed.
+        None if amount > 0 => client
+            .optional_account(&destination)
+            .await?
+            .filter(|account| account.owner == token_program),
+        // Only closing the source account
+        None => None,
+    };
+    if let Some(account) = &destination_account {
+        let account = StateWithExtensions::<TokenAccount>::unpack(&account.data)
+            .with_context(|| format!("account {destination} is not a token account"))?;
+        ensure!(
+            account.base.mint == command.mint,
+            "token account {destination} holds mint {}, not {}",
+            account.base.mint,
+            command.mint
+        );
+        // A Token Program associated token account can be given a new owner.
+        if account.base.owner != new_owner_programmatic_signer {
+            // The associated token account can't be recreated, so suggest another destination.
+            let hint = match command.destination {
+                Some(_) => String::new(),
+                None => format!(
+                    ". Pass --destination with a token account owned by \
+                     {new_owner_programmatic_signer}"
+                ),
+            };
+            bail!(
+                "token account {destination} is owned by {}, not the new authority's programmatic \
+                 signer {new_owner_programmatic_signer}{hint}",
+                account.base.owner
+            );
+        }
+        // Tokens can't move into a frozen account, but closing the source doesn't touch it.
+        ensure!(
+            amount == 0 || !account.base.is_frozen(),
+            "token account {destination} is frozen"
+        );
+    }
     let mut instructions = vec![];
     let mut funder = None;
     // Mint transfer rules don't apply if we're just closing a zero balance.
@@ -203,20 +266,7 @@ pub(super) async fn run(
             );
         }
 
-        // Check if the destination is already a token account
-        let destination_exists = match client.optional_account(&destination).await? {
-            Some(account) if account.owner == token_program => {
-                let account = StateWithExtensions::<TokenAccount>::unpack(&account.data)
-                    .with_context(|| format!("account {destination} is not a token account"))?;
-                ensure!(
-                    !account.base.is_frozen(),
-                    "token account {destination} is frozen"
-                );
-                true
-            }
-            _ => false,
-        };
-        if !destination_exists {
+        if destination_account.is_none() {
             if let Ok(default_state) = mint.get_extension::<DefaultAccountState>() {
                 ensure!(
                     default_state.state != u8::from(AccountState::Frozen),

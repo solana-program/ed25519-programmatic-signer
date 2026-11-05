@@ -27,11 +27,13 @@ use {
         },
         test_migrate_token::{
             migrates_token_2022_balance, migrates_token_2022_balance_from_source,
-            migrates_token_balance, migrates_token_balance_from_source,
+            migrates_token_2022_balance_to_destination, migrates_token_balance,
+            migrates_token_balance_from_source, migrates_token_balance_to_destination,
             migrates_tokens_between_programmatic_signers,
             migrates_tokens_from_reassigned_associated_account,
-            migrates_tokens_with_close_authority, migrates_tokens_with_funder,
-            migrates_tokens_with_transfer_fee, rejects_invalid_token_migrations,
+            migrates_tokens_past_reassigned_destination, migrates_tokens_with_close_authority,
+            migrates_tokens_with_funder, migrates_tokens_with_transfer_fee,
+            rejects_invalid_token_destinations, rejects_invalid_token_migrations,
             rejects_invalid_token_sources, rejects_unsupported_token_2022_migrations,
         },
         test_migrate_vote::{
@@ -248,6 +250,18 @@ fn main() -> ExitCode {
             runtime_handle
         ),
         async_trial!(rejects_invalid_token_sources, env, runtime_handle),
+        async_trial!(migrates_token_balance_to_destination, env, runtime_handle),
+        async_trial!(
+            migrates_token_2022_balance_to_destination,
+            env,
+            runtime_handle
+        ),
+        async_trial!(rejects_invalid_token_destinations, env, runtime_handle),
+        async_trial!(
+            migrates_tokens_past_reassigned_destination,
+            env,
+            runtime_handle
+        ),
         async_trial!(migrates_tokens_with_funder, env, runtime_handle),
         async_trial!(migrates_tokens_with_close_authority, env, runtime_handle),
         async_trial!(
