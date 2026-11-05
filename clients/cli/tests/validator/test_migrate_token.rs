@@ -6,9 +6,11 @@ use {
             execute_as_new_owner, migrate, migrate_error, send,
         },
     },
+    base64::{Engine, prelude::BASE64_STANDARD},
     solana_address::Address,
     solana_hash::Hash,
     solana_keypair::Keypair,
+    solana_message::v1,
     solana_native_token::LAMPORTS_PER_SOL,
     solana_program_pack::Pack,
     solana_signer::Signer,
@@ -617,6 +619,49 @@ pub async fn rejects_invalid_token_sources(env: &TestEnv) {
     let stderr = migrate_error(&mint, &["--source", &missing.to_string()]);
     assert!(
         stderr.contains(&format!("token account {missing} was not found")),
+        "{stderr}"
+    );
+
+    // The new authority's associated token account, reassigned to the owner, would be both the
+    // source and the destination.
+    let new_owner_programmatic_signer = programmatic_signer(&new_owner.pubkey());
+    let destination = mint_tokens(
+        env,
+        &token_program,
+        &mint,
+        &new_owner_programmatic_signer,
+        1_000,
+    )
+    .await;
+    let reassign = v1::Message::try_compile(
+        &new_owner_programmatic_signer,
+        &[set_authority(
+            &token_program,
+            &destination,
+            Some(&owner.pubkey()),
+            AuthorityType::AccountOwner,
+            &new_owner_programmatic_signer,
+            &[],
+        )
+        .unwrap()],
+        Hash::default(),
+    )
+    .unwrap();
+    let nonce_account = create_nonce(env, &new_owner.pubkey());
+    execute_as_new_owner(
+        env,
+        &BASE64_STANDARD.encode(reassign.serialize()),
+        &nonce_account,
+        &new_owner,
+        &[],
+        &[],
+    )
+    .await;
+    let stderr = migrate_error(&mint, &["--source", &destination.to_string()]);
+    assert!(
+        stderr.contains(&format!(
+            "token account {destination} is both the source and the destination"
+        )),
         "{stderr}"
     );
 }

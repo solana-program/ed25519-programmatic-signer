@@ -177,6 +177,10 @@ pub(super) async fn run(
         &command.mint,
         &token_program,
     );
+    ensure!(
+        source != destination,
+        "token account {source} is both the source and the destination"
+    );
     let mut instructions = vec![];
     let mut funder = None;
     // Mint transfer rules don't apply if we're just closing a zero balance.
