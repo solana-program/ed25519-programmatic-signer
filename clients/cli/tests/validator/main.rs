@@ -35,6 +35,7 @@ use {
             migrates_tokens_with_funder, migrates_tokens_with_transfer_fee,
             rejects_invalid_token_destinations, rejects_invalid_token_migrations,
             rejects_invalid_token_sources, rejects_unsupported_token_2022_migrations,
+            warns_of_scheduled_token_transfer_fee,
         },
         test_migrate_vote::{
             migrates_vote_withdrawer_between_programmatic_signers,
@@ -275,6 +276,7 @@ fn main() -> ExitCode {
             runtime_handle
         ),
         async_trial!(migrates_tokens_with_transfer_fee, env, runtime_handle),
+        async_trial!(warns_of_scheduled_token_transfer_fee, env, runtime_handle),
         async_trial!(rejects_invalid_token_migrations, env, runtime_handle),
         async_trial!(
             rejects_unsupported_token_2022_migrations,
