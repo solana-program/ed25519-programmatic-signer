@@ -705,6 +705,40 @@ pub async fn cancels_when_forwarded_signer_declines(env: &TestEnv) {
     test.assert_received(env, 0).await;
 }
 
+/// A failed submission leaves the nonce unchanged, so the error says how to invalidate the
+/// authorization message.
+pub async fn suggests_nonce_advance_after_failed_submission(env: &TestEnv) {
+    let authority = Keypair::new();
+    // The derived signer is unfunded, so its transfer fails.
+    let signer = programmatic_signer(&authority.pubkey());
+    let test = SubmitTest::new(env, &signer).await;
+    let message = build_authorization_message(
+        &test.execution_message(&[signer]),
+        &test.nonce_account,
+        &signer,
+        &[authority.pubkey()],
+    );
+
+    let output = submit(
+        env,
+        &message,
+        &["--signer", &signature_entry(&authority, &message)],
+        "",
+    );
+    assert_failure(&output, "Error: relay transaction ");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.ends_with(&format!(
+            "\n\nIf the relay transaction did not land, the authorization message can still be \
+             submitted until nonce account {nonce_account} advances. To invalidate it, run `nonce \
+             advance {nonce_account}` with its nonce authority.\n",
+            nonce_account = test.nonce_account,
+        )),
+        "{stderr}"
+    );
+    assert_eq!(test.current_nonce(env).await, test.nonce);
+}
+
 pub async fn submits_quietly_without_confirmation(env: &TestEnv) {
     let authority = Keypair::new();
     let signer = programmatic_signer(&authority.pubkey());

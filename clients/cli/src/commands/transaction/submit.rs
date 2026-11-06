@@ -421,12 +421,25 @@ pub(super) async fn run(
             transaction.message.static_account_keys()[index]
         );
     }
+    // A failed submission leaves the nonce unchanged. The error may also be a timeout or RPC
+    // error after the transaction landed, so the hint does not assume it failed.
     let signature = client
         .send_and_confirm_transaction(&transaction)
         .await
-        .with_context(|| format!("relay transaction {}", transaction.signatures[0]))?;
+        .with_context(|| format!("relay transaction {}", transaction.signatures[0]))
+        .map_err(|error| with_invalidation_hint(&error, &execute.nonce_account))?;
 
     output.render(&SubmitOutput { signature })
+}
+
+/// Append to `error` how to invalidate the authorization message, which stays valid until its
+/// nonce account advances. The error is flattened so the hint prints after its causes.
+fn with_invalidation_hint(error: &anyhow::Error, nonce_account: &Address) -> anyhow::Error {
+    anyhow::anyhow!(
+        "{error:?}\n\nIf the relay transaction did not land, the authorization message can still \
+         be submitted until nonce account {nonce_account} advances. To invalidate it, run `nonce \
+         advance {nonce_account}` with its nonce authority."
+    )
 }
 
 /// Load and add a relay signer, returning its address. With `allow_null_signer`, an address source

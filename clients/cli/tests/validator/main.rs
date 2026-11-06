@@ -71,6 +71,7 @@ use {
             submits_with_forwarded_authority, submits_with_forwarded_ordinary_signer,
             submits_with_offline_durable_nonce_authority, submits_with_offline_relay_signatures,
             submits_with_plain_key_nonce_authority, submits_with_required_relay_signer,
+            suggests_nonce_advance_after_failed_submission,
         },
     },
     libtest_mimic::{Arguments, Trial},
@@ -143,6 +144,11 @@ fn main() -> ExitCode {
         async_trial!(rejects_expired_execution_message, env, runtime_handle),
         async_trial!(submits_with_forwarded_ordinary_signer, env, runtime_handle),
         async_trial!(cancels_when_forwarded_signer_declines, env, runtime_handle),
+        async_trial!(
+            suggests_nonce_advance_after_failed_submission,
+            env,
+            runtime_handle
+        ),
         async_trial!(submits_quietly_without_confirmation, env, runtime_handle),
         async_trial!(submits_with_plain_key_nonce_authority, env, runtime_handle),
         async_trial!(submits_with_required_relay_signer, env, runtime_handle),
