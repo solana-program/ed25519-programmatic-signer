@@ -98,7 +98,7 @@ export type WithdrawInput<
     TAccountNonceAccount extends InstructionAccountInput = InstructionAccountInput,
     TAccountDestination extends InstructionAccountInput = InstructionAccountInput,
 > = {
-    /** Authority stored in the nonce account */
+    /** Authority stored in the nonce account, or the nonce account itself if it is not initialized */
     authority: TAccountAuthority;
     /** Nonce account to withdraw from */
     nonceAccount: TAccountNonceAccount;
@@ -161,7 +161,7 @@ export type ParsedWithdrawInstruction<
 > = {
     programAddress: Address<TProgram>;
     accounts: {
-        /** Authority stored in the nonce account */
+        /** Authority stored in the nonce account, or the nonce account itself if it is not initialized */
         authority: TAccountMetas[0];
         /** Nonce account to withdraw from */
         nonceAccount: TAccountMetas[1];

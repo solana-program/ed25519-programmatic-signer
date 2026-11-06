@@ -36,7 +36,8 @@ pub(crate) struct WithdrawCommand {
     /// authority: a keypair file, usb:// URL, prompt:// URL, or the ASK keyword. Defaults to the
     /// configured keypair. For a PDA nonce authority, also accepts the authority's address, which
     /// prints the authorization message for it to sign externally and pass to
-    /// `transaction submit`.
+    /// `transaction submit`. For an account that was never initialized, for example one created
+    /// with the wrong size, pass the nonce account's own keypair and withdraw ALL.
     #[clap(long, value_parser = keypair_source_parser())]
     nonce_authority: Option<SignerSource>,
 }
@@ -70,8 +71,7 @@ pub(super) async fn run(
         "destination must differ from nonce account {nonce_account}"
     );
 
-    let account = client.nonce_account(&nonce_account).await?;
-    let previous = account.state;
+    let account = client.nonce_program_account(&nonce_account).await?;
     let lamports = match command.amount {
         Amount::All => account.lamports,
         Amount::Lamports(lamports) => lamports,
@@ -85,6 +85,38 @@ pub(super) async fn run(
         )
     })?;
     let closes = remaining == 0;
+
+    let Ok(previous) = Nonce::view(&account.data).cloned() else {
+        // An uninitialized account, possibly with the wrong size, can only be closed, by its own
+        // keypair.
+        ensure!(
+            authority.address == nonce_account,
+            "nonce account {nonce_account} is not initialized, so only its own keypair can \
+             withdraw from it. Pass the nonce account keypair as --nonce-authority"
+        );
+        ensure!(
+            closes,
+            "nonce account {nonce_account} is not initialized, so it can only be closed. Withdraw \
+             ALL"
+        );
+        authority.ensure_can_sign()?;
+        let withdraw = spl_nonce_client::instruction::withdraw(
+            &nonce_account,
+            &nonce_account,
+            &destination,
+            lamports,
+        );
+        let signature =
+            send_relay_transaction(client, withdraw, Some(authority.signer.as_ref())).await?;
+        return output.render(&NonceWithdrawOutput {
+            signature,
+            nonce_account: nonce_account.to_string(),
+            destination: destination.to_string(),
+            lamports,
+            nonce: None,
+        });
+    };
+
     if !closes {
         let rent_exempt_minimum = client
             .minimum_balance_for_rent_exemption(Nonce::LEN)

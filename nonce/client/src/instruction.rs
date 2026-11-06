@@ -62,6 +62,9 @@ pub fn advance(
 }
 
 /// Creates a `Withdraw` instruction. Withdrawing the full balance closes the account.
+///
+/// `authority` is the stored nonce authority, or `nonce_account` itself to recover funds from
+/// an account that is not initialized (for example, one created with the wrong size).
 pub fn withdraw(
     authority: &Address,
     nonce_account: &Address,

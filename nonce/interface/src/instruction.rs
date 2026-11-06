@@ -112,17 +112,20 @@ pub enum Instruction {
 
     /// Withdraws lamports from a nonce account to a destination.
     ///
-    /// The stored authority must sign. A partial withdrawal must leave at least
-    /// the rent-exempt minimum. Withdrawing the entire balance closes the account
-    /// (removing its data and assigning it to the system program) and requires
-    /// the current slot to be strictly greater than `initialize_slot` to prevent
-    /// restoring the initial nonce by closing and recreating in the same slot.
-    /// The destination must differ from the nonce account.
+    /// The stored authority must sign. If the account is not an initialized nonce,
+    /// the authority must instead be the nonce account itself, signing with its
+    /// own keypair; this recovers funds from an account that was created with the
+    /// wrong size. A partial withdrawal must leave at least the rent-exempt
+    /// minimum. Withdrawing the entire balance closes the account (removing its
+    /// data and assigning it to the system program); for an initialized nonce this
+    /// requires the current slot to be strictly greater than `initialize_slot` to
+    /// prevent restoring the initial nonce by closing and recreating in the same slot. The destination must differ from the nonce account.
     ///
     /// Instruction data is the discriminator followed by a little-endian `u64` amount.
     ///
     /// Required accounts.
-    /// - `[signer]` Authority stored in the nonce account
+    /// - `[signer]` Authority stored in the nonce account, or the nonce account
+    ///   itself if it is not initialized
     /// - `[writable]` Nonce account
     /// - `[writable]` Destination receiving the lamports
     #[cfg_attr(
@@ -135,7 +138,8 @@ pub enum Instruction {
         codama(account(
             name = "authority",
             signer,
-            docs = "Authority stored in the nonce account",
+            docs = "Authority stored in the nonce account, or the nonce account itself if it is \
+                    not initialized",
             display(label = "Nonce authority")
         )),
         codama(account(

@@ -8,6 +8,9 @@ use {
 };
 
 /// Withdraws lamports, closing the nonce account when its full balance is withdrawn.
+///
+/// An initialized nonce account requires its stored authority to sign. Any other
+/// program-owned account can only be withdrawn from with the nonce account's own signature, so they can be recovered.
 #[inline(never)]
 pub fn process_withdraw(
     program_id: &Address,
@@ -25,10 +28,21 @@ pub fn process_withdraw(
         return Err(ProgramError::InvalidArgument);
     }
     let data = nonce_account.try_borrow()?;
-    let state = Nonce::view(&data).map_err(|_| Error::InvalidNonceAccount)?;
-    if authority.address() != &state.authority {
-        return Err(Error::AuthorityMismatch.into());
-    }
+    // Slot the account was initialized at, or `None` if it was never initialized.
+    let initialize_slot = match Nonce::view(&data) {
+        Ok(state) => {
+            if authority.address() != &state.authority {
+                return Err(Error::AuthorityMismatch.into());
+            }
+            Some(u64::from(state.initialize_slot))
+        }
+        Err(_) => {
+            if authority.address() != nonce_account.address() {
+                return Err(Error::InvalidNonceAccount.into());
+            }
+            None
+        }
+    };
     if !authority.is_signer() {
         return Err(ProgramError::MissingRequiredSignature);
     }
@@ -38,10 +52,15 @@ pub fn process_withdraw(
         .checked_sub(lamports)
         .ok_or(ProgramError::InsufficientFunds)?;
     if remaining == 0 {
-        if Clock::get()?.slot <= state.initialize_slot.into() {
-            return Err(Error::CloseSameSlot.into());
+        // Do not allow closing an initialized nonce account in the same slot
+        // that it was initialized. This would allow re-initializing it with
+        // the same value.
+        if let Some(initialize_slot) = initialize_slot {
+            if Clock::get()?.slot <= initialize_slot {
+                return Err(Error::CloseSameSlot.into());
+            }
         }
-    } else if remaining < Rent::get()?.try_minimum_balance(Nonce::LEN)? {
+    } else if remaining < Rent::get()?.try_minimum_balance(data.len())? {
         return Err(ProgramError::AccountNotRentExempt);
     }
     drop(data);

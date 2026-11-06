@@ -45,8 +45,9 @@ use {
             rejects_unrelated_nonce_authority,
         },
         test_nonce_withdraw::{
-            rejects_invalid_withdrawals, withdraws_with_cold_authority,
-            withdraws_with_external_cold_authority, withdraws_with_plain_key_authority,
+            recovers_uninitialized_nonce_account, rejects_invalid_withdrawals,
+            withdraws_with_cold_authority, withdraws_with_external_cold_authority,
+            withdraws_with_plain_key_authority,
         },
         test_transaction_simulate::{
             prints_verbose_simulation_result, rejects_stale_nonce_hash,
@@ -131,6 +132,7 @@ fn main() -> ExitCode {
         async_trial!(withdraws_with_cold_authority, env, runtime_handle),
         async_trial!(withdraws_with_external_cold_authority, env, runtime_handle),
         async_trial!(rejects_invalid_withdrawals, env, runtime_handle),
+        async_trial!(recovers_uninitialized_nonce_account, env, runtime_handle),
         async_trial!(
             submits_authority_signed_transfer_and_rejects_replay,
             env,
