@@ -37,7 +37,8 @@ use {
         test_migrate_vote::{
             migrates_vote_withdrawer_between_programmatic_signers,
             migrates_vote_withdrawer_held_by_identity, migrates_vote_withdrawer_to_new_owner,
-            rejects_invalid_vote_migrations,
+            rejects_invalid_vote_migrations, simulates_vote_identity_change,
+            simulates_vote_voter_change, simulates_vote_withdrawer_migration,
         },
         test_nonce_advance::{
             advances_nonce_with_cold_authority, advances_nonce_with_external_cold_authority,
@@ -49,8 +50,9 @@ use {
             withdraws_with_external_cold_authority, withdraws_with_plain_key_authority,
         },
         test_transaction_simulate::{
-            prints_verbose_simulation_result, rejects_stale_nonce_hash,
-            rejects_transaction_over_transaction_size, reports_failed_simulation_logs,
+            parses_scaled_ui_amount_token_accounts, prints_verbose_simulation_result,
+            rejects_stale_nonce_hash, rejects_transaction_over_transaction_size,
+            reports_created_and_closed_accounts, reports_failed_simulation_logs,
             simulates_at_relay_cpi_depth, simulates_promoted_and_forwarded_signers,
             simulates_token_transfer,
         },
@@ -173,6 +175,8 @@ fn main() -> ExitCode {
             runtime_handle
         ),
         async_trial!(simulates_token_transfer, env, runtime_handle),
+        async_trial!(reports_created_and_closed_accounts, env, runtime_handle),
+        async_trial!(parses_scaled_ui_amount_token_accounts, env, runtime_handle),
         async_trial!(simulates_at_relay_cpi_depth, env, runtime_handle),
         async_trial!(prints_verbose_simulation_result, env, runtime_handle),
         async_trial!(reports_failed_simulation_logs, env, runtime_handle),
@@ -197,6 +201,9 @@ fn main() -> ExitCode {
         async_trial!(migrates_stake_with_lockup_custodian, env, runtime_handle),
         async_trial!(rejects_invalid_stake_migrations, env, runtime_handle),
         async_trial!(migrates_vote_withdrawer_to_new_owner, env, runtime_handle),
+        async_trial!(simulates_vote_withdrawer_migration, env, runtime_handle),
+        async_trial!(simulates_vote_voter_change, env, runtime_handle),
+        async_trial!(simulates_vote_identity_change, env, runtime_handle),
         async_trial!(
             migrates_vote_withdrawer_between_programmatic_signers,
             env,

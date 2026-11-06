@@ -1,7 +1,7 @@
 use {
     super::{
         decode::{read_authorization_message, validate_execution_message},
-        simulate::{simulation_output, verbose_result, writable_accounts},
+        simulate::{SimulateOptions, simulate},
         summary::{SummarySigners, confirm_signing, render_signing_summary},
         v1_transaction::{
             ensure_transaction_size, relay_transaction, return_signers_data, signer_index,
@@ -326,25 +326,20 @@ pub(super) async fn run(
             .filter(|address| execute.is_pda_authority(address))
             .copied()
             .collect::<Vec<_>>();
-        let verbose_accounts = command.verbose.then(|| writable_accounts(message));
-        // A durable nonce transaction must keep its nonce value as its blockhash.
-        let result = client
-            .simulate_transaction(
+        return output.render(
+            &simulate(
+                client,
                 &transaction,
-                verbose_accounts.as_deref(),
-                durable_nonce.is_none(),
+                message,
+                &SimulateOptions {
+                    signing_pubkeys: &pda_authorities,
+                    relay: true,
+                    replace_recent_blockhash: durable_nonce.is_none(),
+                    verbose: command.verbose,
+                },
             )
-            .await?;
-        if let Some(addresses) = &verbose_accounts {
-            let result = verbose_result(&result, addresses)?;
-            eprintln!("Simulation result:\n{result}\n");
-        }
-        return output.render(&simulation_output(
-            message,
-            &result,
-            &pda_authorities,
-            true,
-        )?);
+            .await?,
+        );
     }
 
     // Forwarded signers give the executor their signer privilege, and required relay signers
