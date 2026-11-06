@@ -1029,6 +1029,119 @@ pub async fn submits_with_offline_relay_signatures(env: &TestEnv) {
     );
 }
 
+/// The fee payer, forwarded signer and a separate durable nonce authority each sign in a separate
+/// --sign-only run, and a final run with no local signers submits their signatures.
+pub async fn submits_with_offline_durable_nonce_authority(env: &TestEnv) {
+    let authority = Keypair::new();
+    let signer = programmatic_signer(&authority.pubkey());
+    let ordinary = Keypair::new();
+    let fee_payer = Keypair::new();
+    let durable_nonce_authority = Keypair::new();
+    fund(env, &[signer, ordinary.pubkey(), fee_payer.pubkey()]).await;
+    let test = SubmitTest::new(env, &signer).await;
+    let durable_nonce = create_durable_nonce(env, &durable_nonce_authority.pubkey()).await;
+    let value = durable_nonce_value(env, &durable_nonce).await;
+    let message = build_authorization_message(
+        &test.execution_message(&[signer, ordinary.pubkey()]),
+        &test.nonce_account,
+        &signer,
+        &[authority.pubkey()],
+    );
+    let authority_entry = signature_entry(&authority, &message);
+    let durable_nonce = durable_nonce.to_string();
+    let value = value.to_string();
+    let fee_payer_address = fee_payer.pubkey().to_string();
+    let durable_nonce_authority_address = durable_nonce_authority.pubkey().to_string();
+    let fee_payer_file = keypair_file(&fee_payer);
+    let ordinary_file = keypair_file(&ordinary);
+    let durable_nonce_authority_file = keypair_file(&durable_nonce_authority);
+    let sign_only = |extra: &[&str]| {
+        let mut args = vec![
+            "--output",
+            "json",
+            "--signer",
+            &authority_entry,
+            "--durable-nonce",
+            &durable_nonce,
+            "--blockhash",
+            &value,
+            "--sign-only",
+        ];
+        args.extend_from_slice(extra);
+        let output = submit(env, &message, &args, "");
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let [entry] = serde_json::from_slice::<CliSignOnlyData>(&output.stdout)
+            .unwrap()
+            .signers
+            .try_into()
+            .unwrap();
+        entry
+    };
+    let fee_payer_entry = sign_only(&[
+        "--fee-payer",
+        fee_payer_file.path().to_str().unwrap(),
+        "--durable-nonce-authority",
+        &durable_nonce_authority_address,
+    ]);
+    let ordinary_entry = sign_only(&[
+        "--fee-payer",
+        &fee_payer_address,
+        "--durable-nonce-authority",
+        &durable_nonce_authority_address,
+        "--relay-signer",
+        ordinary_file.path().to_str().unwrap(),
+        "--yes",
+    ]);
+    let durable_nonce_authority_entry = sign_only(&[
+        "--fee-payer",
+        &fee_payer_address,
+        "--durable-nonce-authority",
+        durable_nonce_authority_file.path().to_str().unwrap(),
+    ]);
+
+    assert_submitted(
+        &submit(
+            env,
+            &message,
+            &[
+                "--signer",
+                &authority_entry,
+                "--fee-payer",
+                &fee_payer_address,
+                "--durable-nonce",
+                &durable_nonce,
+                "--durable-nonce-authority",
+                &durable_nonce_authority_address,
+                "--blockhash",
+                &value,
+                "--relay-signature",
+                &fee_payer_entry,
+                "--relay-signature",
+                &ordinary_entry,
+                "--relay-signature",
+                &durable_nonce_authority_entry,
+            ],
+            "",
+        ),
+        Some(Summary {
+            authorities: &[authority.pubkey()],
+            forwarded_signers: &[ordinary.pubkey()],
+            confirmed_by: &[],
+        }),
+    );
+    test.assert_received(env, 2).await;
+    assert_ne!(
+        durable_nonce_value(env, &durable_nonce.parse().unwrap())
+            .await
+            .to_string(),
+        value
+    );
+}
+
 pub async fn rejects_stale_durable_nonce_value(env: &TestEnv) {
     let authority = Keypair::new();
     let signer = programmatic_signer(&authority.pubkey());
