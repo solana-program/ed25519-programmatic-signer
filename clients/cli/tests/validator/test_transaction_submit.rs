@@ -2,6 +2,7 @@ use {
     crate::common::{
         execute::{build_authorization_message, encode, programmatic_signer, signature_entry},
         helpers::{TestEnv, run_psigner, run_psigner_with_input},
+        lighthouse,
     },
     base64::{Engine, prelude::BASE64_STANDARD},
     solana_address::Address,
@@ -269,6 +270,54 @@ pub async fn submits_authority_signed_transfer_and_rejects_replay(env: &TestEnv)
         ),
     );
     test.assert_received(env, 1).await;
+}
+
+/// A failed Execute does not advance the nonce, so a failing authorization stays valid until the
+/// nonce is used. An execution message expires by asserting a last valid slot: once the slot
+/// passes, Execute fails, and no submission can succeed. The nonce stays usable by a new
+/// authorization.
+pub async fn rejects_expired_execution_message(env: &TestEnv) {
+    let authority = Keypair::new();
+    let signer = programmatic_signer(&authority.pubkey());
+    fund(env, &[signer]).await;
+    let test = SubmitTest::new(env, &signer).await;
+    let authorize = |last_valid_slot| {
+        let execution_message = v1::Message::try_compile(
+            &signer,
+            &[
+                lighthouse::assert_slot_at_most(last_valid_slot),
+                transfer(&signer, &test.recipient, TRANSFER_AMOUNT),
+            ],
+            test.nonce,
+        )
+        .unwrap();
+        let message = build_authorization_message(
+            &execution_message,
+            &test.nonce_account,
+            &signer,
+            &[authority.pubkey()],
+        );
+        let authority_entry = signature_entry(&authority, &message);
+        (message, authority_entry)
+    };
+
+    // A slot that has already passed, so the execution message has expired.
+    let last_valid_slot = env.rpc.get_slot().await.unwrap().checked_sub(1).unwrap();
+    let (expired, expired_entry) = authorize(last_valid_slot);
+    assert_failure(
+        &submit(env, &expired, &["--signer", &expired_entry], ""),
+        lighthouse::ASSERTION_FAILED,
+    );
+    test.assert_received(env, 0).await;
+    assert_eq!(test.current_nonce(env).await, test.nonce);
+
+    let (message, authority_entry) = authorize(u64::MAX);
+    assert_submitted(
+        &submit(env, &message, &["--signer", &authority_entry], ""),
+        None,
+    );
+    test.assert_received(env, 1).await;
+    assert_ne!(test.current_nonce(env).await, test.nonce);
 }
 
 pub async fn submits_with_forwarded_ordinary_signer(env: &TestEnv) {
