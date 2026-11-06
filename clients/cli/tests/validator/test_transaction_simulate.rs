@@ -4,6 +4,7 @@ use {
             execute::{build_authorization_message, programmatic_signer, signature_entry},
             helpers::{TestEnv, run_psigner, run_psigner_with_input},
         },
+        test_migrate_token::{self as token, create_mint, mint_tokens},
         test_transaction_submit::{SubmitTest, TRANSFER_AMOUNT, fund, submit},
     },
     base64::{Engine, prelude::BASE64_STANDARD},
@@ -15,9 +16,10 @@ use {
     solana_rpc_client_types::config::RpcSimulateTransactionConfig,
     solana_signature::Signature,
     solana_signer::Signer,
-    solana_system_interface::instruction::create_account,
+    solana_system_interface::instruction::{create_account, transfer},
     solana_transaction::{Transaction, versioned::VersionedTransaction},
     spl_message_executor_client::instruction::execute,
+    spl_token_2022_interface::extension::ExtensionType,
     spl_token_interface::{
         instruction::{initialize_account3, initialize_mint2, mint_to, transfer_checked},
         state::{Account as TokenAccount, Mint},
@@ -133,7 +135,7 @@ pub async fn simulates_promoted_and_forwarded_signers(env: &TestEnv) {
         env,
         &test,
         &execution_message,
-        &["--change-for-authority", &for_authority],
+        &["--signing-pubkey", &for_authority],
     );
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(output.status.success(), "{stderr}");
@@ -146,17 +148,15 @@ pub async fn simulates_promoted_and_forwarded_signers(env: &TestEnv) {
         serde_json::json!({
             "address": signer.to_string(),
             "lamports": sent,
-            "authority": for_authority,
+            "signingPubkey": for_authority,
         }),
         serde_json::json!({
             "address": ordinary.pubkey().to_string(),
             "lamports": sent,
-            "authority": null,
         }),
         serde_json::json!({
             "address": test.recipient.to_string(),
             "lamports": transfer.checked_mul(2).unwrap(),
-            "authority": null,
         }),
     ];
     expected.sort_by_key(|change| change["address"].as_str().unwrap().to_owned());
@@ -201,7 +201,13 @@ pub async fn prints_verbose_simulation_result(env: &TestEnv) {
     let summary: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
     assert_eq!(
         summary.as_object().unwrap().keys().collect::<Vec<_>>(),
-        ["solBalanceChanges", "tokenBalanceChanges", "unitsConsumed"]
+        [
+            "accountChanges",
+            "authorityChanges",
+            "solBalanceChanges",
+            "tokenBalanceChanges",
+            "unitsConsumed"
+        ]
     );
 
     let result = stderr
@@ -261,6 +267,27 @@ pub async fn reports_failed_simulation_logs(env: &TestEnv) {
     assert!(output.stdout.is_empty());
     assert!(stderr.contains("simulation failed: "), "{stderr}");
     assert!(stderr.contains("Logs:\nProgram "), "{stderr}");
+
+    // With --verbose, the logs are only in the simulation result, not repeated in the error.
+    let output = simulate(
+        env,
+        &test,
+        &test.execution_message(&[signer]),
+        &["--verbose"],
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(!output.status.success(), "unexpected success: {stderr}");
+    let (result, error) = stderr
+        .strip_prefix("Simulation result:\n")
+        .and_then(|stderr| stderr.split_once("\n\n"))
+        .unwrap_or_else(|| panic!("{stderr}"));
+    let result: serde_json::Value = serde_json::from_str(result).unwrap();
+    assert!(!result["logs"].as_array().unwrap().is_empty());
+    assert!(
+        error.contains("See the logs in the simulation result above."),
+        "{stderr}"
+    );
+    assert!(!error.contains("Logs:"), "{stderr}");
 }
 
 pub async fn rejects_stale_nonce_hash(env: &TestEnv) {
@@ -310,6 +337,106 @@ pub async fn rejects_transaction_over_transaction_size(env: &TestEnv) {
     );
 }
 
+pub async fn reports_created_and_closed_accounts(env: &TestEnv) {
+    let authority = Keypair::new();
+    let signer = programmatic_signer(&authority.pubkey());
+    let closing = Keypair::new().pubkey();
+    let created = Keypair::new().pubkey();
+    fund(env, &[signer, closing]).await;
+    let test = SubmitTest::new(env, &signer).await;
+    let balance = env.rpc.get_balance(&closing).await.unwrap();
+    let owner = Address::new_unique();
+    let space = 42;
+    let rent = env
+        .rpc
+        .get_minimum_balance_for_rent_exemption(space)
+        .await
+        .unwrap();
+    let execution_message = v1::Message::try_compile(
+        &signer,
+        &[
+            create_account(&signer, &created, rent, space as u64, &owner),
+            transfer(&closing, &test.recipient, balance),
+        ],
+        test.nonce,
+    )
+    .unwrap();
+
+    let output = simulate(env, &test, &execution_message, &[]);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(output.status.success(), "{stderr}");
+    let value: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    let mut changes = value["accountChanges"].as_array().unwrap().clone();
+    changes.sort_by_key(|change| change["address"].as_str().unwrap().to_owned());
+    let mut expected = vec![
+        serde_json::json!({
+            "address": created.to_string(),
+            "before": null,
+            "after": { "owner": owner.to_string(), "size": space },
+        }),
+        serde_json::json!({
+            "address": closing.to_string(),
+            "before": {
+                "owner": solana_system_interface::program::id().to_string(),
+                "size": 0,
+            },
+            "after": null,
+        }),
+    ];
+    expected.sort_by_key(|change| change["address"].as_str().unwrap().to_owned());
+    assert_eq!(changes, expected);
+    assert_eq!(value["authorityChanges"], serde_json::json!([]));
+}
+
+/// The verbose result parses Token-2022 accounts with their mint's display configs, as the RPC
+/// node would.
+pub async fn parses_scaled_ui_amount_token_accounts(env: &TestEnv) {
+    let authority = Keypair::new();
+    let signer = programmatic_signer(&authority.pubkey());
+    let recipient = Keypair::new().pubkey();
+    let token_program = spl_token_2022_interface::id();
+    let mint = create_mint(env, &token_program, &[ExtensionType::ScaledUiAmount]).await;
+    let source = mint_tokens(env, &token_program, &mint, &signer, 1_000).await;
+    let destination = mint_tokens(env, &token_program, &mint, &recipient, 0).await;
+    let test = SubmitTest::new(env, &signer).await;
+    let execution_message = v1::Message::try_compile(
+        &signer,
+        &[spl_token_2022_interface::instruction::transfer_checked(
+            &token_program,
+            &source,
+            &mint,
+            &destination,
+            &signer,
+            &[],
+            100,
+            token::DECIMALS,
+        )
+        .unwrap()],
+        test.nonce,
+    )
+    .unwrap();
+
+    let output = simulate(env, &test, &execution_message, &["--verbose"]);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(output.status.success(), "{stderr}");
+    let result = stderr
+        .strip_prefix("Simulation result:\n")
+        .unwrap_or_else(|| panic!("{stderr}"));
+    let result: serde_json::Value = serde_json::from_str(result).unwrap();
+    let parsed = result["accounts"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|entry| entry["address"] == destination.to_string())
+        .unwrap()["account"]["data"]["parsed"]
+        .clone();
+    assert_eq!(parsed["type"], "account", "{parsed}");
+    // 100 base units with 2 decimals is 1, which the multiplier doubles.
+    let amount = &parsed["info"]["tokenAmount"];
+    assert_eq!(amount["amount"], "100", "{parsed}");
+    assert_eq!(amount["uiAmountString"], "2", "{parsed}");
+}
+
 pub async fn simulates_token_transfer(env: &TestEnv) {
     let authority = Keypair::new();
     // The derived signer owns the source token account and needs no SOL of its own.
@@ -351,7 +478,6 @@ pub async fn simulates_token_transfer(env: &TestEnv) {
             "programId": spl_token_interface::id().to_string(),
             "amount": amount,
             "decimals": DECIMALS,
-            "authority": null,
         })
     };
     let mut expected = vec![
@@ -360,6 +486,30 @@ pub async fn simulates_token_transfer(env: &TestEnv) {
     ];
     expected.sort_by_key(|change| change["account"].as_str().unwrap().to_owned());
     assert_eq!(changes, expected);
+
+    // The verbose result parses the token accounts, using the decimals from the token balances.
+    let output = simulate(env, &test, &execution_message, &["--verbose"]);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(output.status.success(), "{stderr}");
+    let result = stderr
+        .strip_prefix("Simulation result:\n")
+        .unwrap_or_else(|| panic!("{stderr}"));
+    let result: serde_json::Value = serde_json::from_str(result).unwrap();
+    let parsed = |address: &Address| {
+        result["accounts"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|entry| entry["address"] == address.to_string())
+            .unwrap()["account"]["data"]["parsed"]
+            .clone()
+    };
+    for (account, amount) in [(&source, MINTED - 1_500_000), (&destination, 1_500_000)] {
+        let parsed = parsed(account);
+        assert_eq!(parsed["type"], "account", "{parsed}");
+        assert_eq!(parsed["info"]["tokenAmount"]["amount"], amount.to_string());
+        assert_eq!(parsed["info"]["tokenAmount"]["decimals"], DECIMALS);
+    }
 
     // The display output shows the amounts with their decimals, and labels the token account
     // owned by the authority's derived signer.
@@ -373,7 +523,7 @@ pub async fn simulates_token_transfer(env: &TestEnv) {
         "simulate",
         &encoded,
         &nonce_account,
-        "--change-for-authority",
+        "--signing-pubkey",
         &for_authority,
     ]);
     let display = String::from_utf8(display.stdout).unwrap();

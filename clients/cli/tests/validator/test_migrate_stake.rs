@@ -178,6 +178,26 @@ pub async fn dry_runs_stake_migration(env: &TestEnv) {
         changes[0]["lamports"].as_i64().unwrap(),
         fee.checked_neg().unwrap()
     );
+    // Both authorities move to the new owner's programmatic signer, labelled with the new owner.
+    assert_eq!(value["accountChanges"], serde_json::json!([]));
+    let authority_change = |role: &str| {
+        serde_json::json!({
+            "account": stake.to_string(),
+            "kind": "stake",
+            "role": role,
+            "before": {
+                "address": old_owner.pubkey().to_string(),
+            },
+            "after": {
+                "address": new_owner_programmatic_signer.to_string(),
+                "signingPubkey": new_owner.pubkey().to_string(),
+            },
+        })
+    };
+    assert_eq!(
+        value["authorityChanges"],
+        serde_json::json!([authority_change("staker"), authority_change("withdrawer")])
+    );
     assert_eq!(
         stake_authorized(env, &stake).await,
         Authorized::auto(&old_owner.pubkey())

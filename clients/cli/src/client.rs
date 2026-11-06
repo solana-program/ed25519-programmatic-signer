@@ -12,7 +12,7 @@ use {
         keypair::{SignerFromPathConfig, signer_from_source_with_config},
     },
     solana_cli_config::{CONFIG_FILE, Config as SolanaCliConfig},
-    solana_clock::Clock,
+    solana_clock::{Clock, Slot},
     solana_commitment_config::CommitmentConfig,
     solana_hash::Hash,
     solana_loader_v3_interface::state::UpgradeableLoaderState,
@@ -30,7 +30,7 @@ use {
             RpcSimulateTransactionAccountsConfig, RpcSimulateTransactionConfig,
         },
         filter::RpcFilterType,
-        request::TokenAccountsFilter,
+        request::{MAX_MULTIPLE_ACCOUNTS, TokenAccountsFilter},
         response::RpcSimulateTransactionResult,
     },
     solana_signer::Signer,
@@ -46,6 +46,17 @@ use {
 pub(crate) struct NonceAccount {
     pub(crate) state: Nonce,
     pub(crate) lamports: u64,
+}
+
+pub(crate) struct SimulateConfig<'a> {
+    /// Accounts whose post-simulation state to return, in base 64.
+    pub(crate) accounts: &'a [Address],
+    /// Simulate at this slot or later.
+    pub(crate) min_context_slot: Slot,
+    /// Also return the inner instructions.
+    pub(crate) inner_instructions: bool,
+    /// Simulate against the latest blockhash instead of the transaction's.
+    pub(crate) replace_recent_blockhash: bool,
 }
 
 pub(crate) struct Client {
@@ -159,6 +170,30 @@ impl Client {
             .map_err(rpc_error)
             .with_context(|| format!("failed to fetch account {address}"))?
             .value)
+    }
+
+    /// Fetch accounts that may not exist, along with the latest slot they were read at.
+    pub(crate) async fn multiple_accounts(
+        &self,
+        addresses: &[Address],
+    ) -> Result<(Slot, Vec<Option<Account>>)> {
+        let mut slot = 0;
+        let mut accounts = Vec::with_capacity(addresses.len());
+        for chunk in addresses.chunks(MAX_MULTIPLE_ACCOUNTS) {
+            let response = self
+                .rpc
+                .get_multiple_accounts_with_commitment(chunk, self.rpc.commitment())
+                .await
+                .map_err(rpc_error)
+                .context("failed to fetch accounts")?;
+            ensure!(
+                response.value.len() == chunk.len(),
+                "the RPC node returned accounts that do not match the requested accounts"
+            );
+            slot = slot.max(response.context.slot);
+            accounts.extend(response.value);
+        }
+        Ok((slot, accounts))
     }
 
     /// Fetch an account that must exist. `kind` names it in the error when it doesn't.
@@ -314,28 +349,25 @@ impl Client {
         decode_durable_nonce_account(address, &account)
     }
 
-    /// Simulate without verifying signatures. With `replace_recent_blockhash`, simulates against
-    /// the latest blockhash instead of the transaction's. With `verbose_accounts`, also requests the
-    /// inner instructions and the post-simulation state of those accounts.
+    /// Simulate `transaction` without verifying signatures.
     pub(crate) async fn simulate_transaction(
         &self,
         transaction: &VersionedTransaction,
-        verbose_accounts: Option<&[Address]>,
-        replace_recent_blockhash: bool,
+        config: &SimulateConfig<'_>,
     ) -> Result<RpcSimulateTransactionResult> {
-        let accounts = verbose_accounts.map(|addresses| RpcSimulateTransactionAccountsConfig {
-            encoding: Some(UiAccountEncoding::JsonParsed),
-            addresses: addresses.iter().map(ToString::to_string).collect(),
-        });
         self.rpc
             .simulate_transaction_with_config(
                 transaction,
                 RpcSimulateTransactionConfig {
                     sig_verify: false,
-                    replace_recent_blockhash,
+                    replace_recent_blockhash: config.replace_recent_blockhash,
                     commitment: Some(self.rpc.commitment()),
-                    accounts,
-                    inner_instructions: verbose_accounts.is_some(),
+                    accounts: Some(RpcSimulateTransactionAccountsConfig {
+                        encoding: Some(UiAccountEncoding::Base64),
+                        addresses: config.accounts.iter().map(ToString::to_string).collect(),
+                    }),
+                    min_context_slot: Some(config.min_context_slot),
+                    inner_instructions: config.inner_instructions,
                     ..RpcSimulateTransactionConfig::default()
                 },
             )

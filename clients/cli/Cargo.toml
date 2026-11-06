@@ -25,6 +25,7 @@ rand = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
 solana-account = { workspace = true }
+solana-account-decoder = { workspace = true, features = ["agave-unstable-api"] }
 solana-account-decoder-client-types = { workspace = true }
 solana-address = { workspace = true }
 solana-clap-v3-utils = { workspace = true, features = ["agave-unstable-api"] }

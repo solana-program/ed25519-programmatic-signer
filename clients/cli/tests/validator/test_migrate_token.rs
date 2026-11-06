@@ -25,6 +25,7 @@ use {
             ExtensionType, StateWithExtensions,
             cpi_guard::instruction::enable_cpi_guard,
             default_account_state::instruction::initialize_default_account_state,
+            scaled_ui_amount,
             transfer_fee::instruction::{
                 harvest_withheld_tokens_to_mint, initialize_transfer_fee_config,
             },
@@ -40,6 +41,8 @@ use {
 };
 
 pub const DECIMALS: u8 = 2;
+/// The UI amount multiplier of mints created with the `ScaledUiAmount` extension.
+pub const SCALED_UI_AMOUNT_MULTIPLIER: f64 = 2.0;
 
 /// Create a mint with the test payer as its mint and freeze authority, and the given Token-2022
 /// extensions.
@@ -79,6 +82,12 @@ pub async fn create_mint(
                     token_program,
                     &mint.pubkey(),
                     &AccountState::Frozen,
+                ),
+                ExtensionType::ScaledUiAmount => scaled_ui_amount::instruction::initialize(
+                    token_program,
+                    &mint.pubkey(),
+                    None,
+                    SCALED_UI_AMOUNT_MULTIPLIER,
                 ),
                 ExtensionType::TransferFeeConfig => initialize_transfer_fee_config(
                     token_program,

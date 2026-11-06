@@ -1208,14 +1208,14 @@ pub async fn dry_runs_without_relay_signers(env: &TestEnv) {
     ]
     .into_iter()
     .map(|(address, lamports, authority)| {
-        (
-            address.to_string(),
-            serde_json::json!({
-                "address": address.to_string(),
-                "lamports": lamports,
-                "authority": authority.map(|authority| authority.to_string()),
-            }),
-        )
+        let mut change = serde_json::json!({
+            "address": address.to_string(),
+            "lamports": lamports,
+        });
+        if let Some(authority) = authority {
+            change["signingPubkey"] = authority.to_string().into();
+        }
+        (address.to_string(), change)
     })
     .collect::<BTreeMap<_, _>>();
     assert_eq!(changes, expected);

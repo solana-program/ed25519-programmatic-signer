@@ -1,6 +1,9 @@
 use {
     crate::{
-        common::{execute::programmatic_signer, helpers::TestEnv},
+        common::{
+            execute::programmatic_signer,
+            helpers::{TestEnv, run_psigner},
+        },
         migration::{
             assert_signers, authorization, create_nonce, decode_execution_message,
             execute_as_new_owner, migrate, migrate_error,
@@ -14,8 +17,11 @@ use {
     solana_signer::Signer,
     solana_transaction::Transaction,
     solana_vote_interface::{
-        instruction::{CreateVoteAccountConfig, create_account_with_config, withdraw},
-        state::{VoteInit, VoteStateV4, VoteStateVersions},
+        instruction::{
+            CreateVoteAccountConfig, authorize, create_account_with_config,
+            update_validator_identity, withdraw,
+        },
+        state::{VoteAuthorize, VoteInit, VoteStateV4, VoteStateVersions},
     },
     spl_programmatic_signer_cli::{Authorization, VoteMigrationOutput},
 };
@@ -153,6 +159,182 @@ pub async fn migrates_vote_withdrawer_to_new_owner(env: &TestEnv) {
     assert_eq!(
         env.rpc.get_balance(&recipient).await.unwrap(),
         WITHDRAWABLE_LAMPORTS
+    );
+}
+
+/// Simulate `execution_message` against `nonce_account`, returning the JSON summary.
+fn simulate(
+    env: &TestEnv,
+    execution_message: &str,
+    nonce_account: &Address,
+    extra: &[&str],
+) -> serde_json::Value {
+    let mut args = vec![
+        "-C",
+        &env.config_file_path,
+        "--output",
+        "json-compact",
+        "transaction",
+        "simulate",
+        execution_message,
+    ];
+    let nonce_account = nonce_account.to_string();
+    args.push(&nonce_account);
+    args.extend_from_slice(extra);
+    let output = run_psigner(&args);
+    serde_json::from_slice(&output.stdout).unwrap()
+}
+
+/// Simulating a vote migration reports the withdrawer change, but no voter change, labelling the
+/// new withdrawer with its signing pubkey.
+pub async fn simulates_vote_withdrawer_migration(env: &TestEnv) {
+    let withdrawer_change = |vote: &Address, before: &Address, signing_pubkey: &Address| {
+        serde_json::json!([{
+            "account": vote.to_string(),
+            "kind": "vote",
+            "role": "withdrawer",
+            "before": { "address": before.to_string() },
+            "after": {
+                "address": programmatic_signer(signing_pubkey).to_string(),
+                "signingPubkey": signing_pubkey.to_string(),
+            },
+        }])
+    };
+
+    // To a new owner. Only its programmatic signer is in the transaction, so its signing pubkey
+    // needs --signing-pubkey.
+    let identity = Keypair::new();
+    let old_withdrawer = Keypair::new();
+    let new_owner = Keypair::new();
+    let vote = create_vote_account(env, &identity, &old_withdrawer.pubkey()).await;
+    let nonce_account = create_nonce(env, &new_owner.pubkey());
+    let migration: VoteMigrationOutput =
+        migrate(env, "vote", &vote, Some(&new_owner.pubkey()), &[]);
+    let new_owner_signing_pubkey = new_owner.pubkey().to_string();
+    let value = simulate(
+        env,
+        &migration.execution_message,
+        &nonce_account,
+        &["--signing-pubkey", &new_owner_signing_pubkey],
+    );
+    assert_eq!(value["accountChanges"], serde_json::json!([]));
+    assert_eq!(
+        value["authorityChanges"],
+        withdrawer_change(&vote, &old_withdrawer.pubkey(), &new_owner.pubkey())
+    );
+    // Nothing is submitted.
+    assert_eq!(vote_withdrawer(env, &vote).await, old_withdrawer.pubkey());
+
+    // To the current withdrawer's own programmatic signer. The current withdrawer signs the
+    // execution message, so it is labelled without --signing-pubkey.
+    let vote = create_vote_account(env, &identity, &old_withdrawer.pubkey()).await;
+    let nonce_account = create_nonce(env, &old_withdrawer.pubkey());
+    let migration: VoteMigrationOutput = migrate(env, "vote", &vote, None, &[]);
+    let value = simulate(env, &migration.execution_message, &nonce_account, &[]);
+    assert_eq!(
+        value["authorityChanges"],
+        withdrawer_change(&vote, &old_withdrawer.pubkey(), &old_withdrawer.pubkey())
+    );
+}
+
+/// Simulating a voter change reports the epoch each voter applies from, since a new voter only
+/// takes effect after the current leader schedule epoch.
+pub async fn simulates_vote_voter_change(env: &TestEnv) {
+    let identity = Keypair::new();
+    let withdrawer = Keypair::new();
+    let new_voter = Address::new_unique();
+    let vote = create_vote_account(env, &identity, &withdrawer.pubkey()).await;
+    let nonce_account = create_nonce(env, &withdrawer.pubkey());
+    let execution_message = v1::Message::try_compile(
+        &withdrawer.pubkey(),
+        &[authorize(
+            &vote,
+            &withdrawer.pubkey(),
+            &new_voter,
+            VoteAuthorize::Voter,
+        )],
+        Hash::default(),
+    )
+    .unwrap();
+
+    let epoch_schedule = env.rpc.get_epoch_schedule().await.unwrap();
+    let target_epoch = |slot| {
+        epoch_schedule
+            .get_leader_schedule_epoch(slot)
+            .checked_add(1)
+            .unwrap()
+    };
+    let slot_before = env.rpc.get_slot().await.unwrap();
+    let output = run_psigner(&[
+        "-C",
+        &env.config_file_path,
+        "--output",
+        "json-compact",
+        "transaction",
+        "simulate",
+        &BASE64_STANDARD.encode(execution_message.serialize()),
+        &nonce_account.to_string(),
+    ]);
+    let slot_after = env.rpc.get_slot().await.unwrap();
+    let value: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    let changes = value["authorityChanges"].as_array().unwrap();
+    assert_eq!(changes.len(), 1, "{value}");
+    let change = &changes[0];
+    assert_eq!(change["account"], vote.to_string());
+    assert_eq!(change["kind"], "vote");
+    assert_eq!(change["role"], "voter");
+    assert_eq!(change["before"]["address"], identity.pubkey().to_string());
+    assert_eq!(change["after"]["address"], new_voter.to_string());
+    assert!(change["after"].get("signingPubkey").is_none(), "{change}");
+    // The identity has been the voter since the account was created. The new voter applies from
+    // the epoch after the leader schedule epoch at the simulation's slot, which may have advanced
+    // while running it.
+    let before_epoch = change["before"]["effectiveEpoch"].as_u64().unwrap();
+    let after_epoch = change["after"]["effectiveEpoch"].as_u64().unwrap();
+    assert!(
+        before_epoch <= epoch_schedule.get_epoch(slot_before),
+        "{change}"
+    );
+    assert!(
+        (target_epoch(slot_before)..=target_epoch(slot_after)).contains(&after_epoch),
+        "{change}"
+    );
+}
+
+/// Simulating a validator identity change reports it as an identity change.
+pub async fn simulates_vote_identity_change(env: &TestEnv) {
+    let identity = Keypair::new();
+    let withdrawer = Keypair::new();
+    let new_identity = Address::new_unique();
+    let vote = create_vote_account(env, &identity, &withdrawer.pubkey()).await;
+    let nonce_account = create_nonce(env, &withdrawer.pubkey());
+    let execution_message = v1::Message::try_compile(
+        &withdrawer.pubkey(),
+        &[update_validator_identity(
+            &vote,
+            &withdrawer.pubkey(),
+            &new_identity,
+        )],
+        Hash::default(),
+    )
+    .unwrap();
+
+    let value = simulate(
+        env,
+        &BASE64_STANDARD.encode(execution_message.serialize()),
+        &nonce_account,
+        &[],
+    );
+    assert_eq!(value["accountChanges"], serde_json::json!([]));
+    assert_eq!(
+        value["authorityChanges"],
+        serde_json::json!([{
+            "account": vote.to_string(),
+            "kind": "vote",
+            "role": "identity",
+            "before": { "address": identity.pubkey().to_string() },
+            "after": { "address": new_identity.to_string() },
+        }])
     );
 }
 
