@@ -666,6 +666,320 @@ pub async fn rejects_invalid_token_sources(env: &TestEnv) {
     );
 }
 
+/// Move tokens into a token account that isn't the new authority's associated token account.
+async fn migrates_tokens_to_destination(env: &TestEnv, token_program: &Address) {
+    let owner = Keypair::new();
+    let new_owner = Keypair::new();
+    let new_owner_programmatic_signer = programmatic_signer(&new_owner.pubkey());
+    let mint = create_mint(env, token_program, &[]).await;
+    let source = mint_tokens(env, token_program, &mint, &owner.pubkey(), 1_000).await;
+    let destination = mint_to_new_account(
+        env,
+        token_program,
+        &mint,
+        &new_owner_programmatic_signer,
+        100,
+    )
+    .await;
+    let destination_arg = destination.to_string();
+    let associated = get_associated_token_address_with_program_id(
+        &new_owner_programmatic_signer,
+        &mint,
+        token_program,
+    );
+    let nonce_account = create_nonce(env, &new_owner.pubkey());
+
+    // The destination already exists, so nothing is created and no funder is needed.
+    let migration: TokenMigrationOutput = migrate(
+        env,
+        "token",
+        &mint,
+        Some(&new_owner.pubkey()),
+        &[
+            "--owner",
+            &owner.pubkey().to_string(),
+            "--destination",
+            &destination_arg,
+        ],
+    );
+    assert_eq!(migration.source, source.to_string());
+    assert_eq!(migration.destination, destination_arg);
+    assert_eq!(migration.funder, None);
+    assert_eq!(
+        migration.new_authority,
+        new_owner_programmatic_signer.to_string()
+    );
+    assert_signers(
+        &migration.required_signers,
+        &[authorization(&new_owner.pubkey())],
+        &[owner.pubkey()],
+    );
+    execute_as_new_owner(
+        env,
+        &migration.execution_message,
+        &nonce_account,
+        &new_owner,
+        &[],
+        &[&owner],
+    )
+    .await;
+    assert_closed(env, &source).await;
+    assert_eq!(token_balance(env, &destination).await, 1_100);
+    assert!(env.rpc.get_account(&associated).await.is_err());
+
+    // The new authority's associated token account can be passed as the destination too.
+    mint_tokens(env, token_program, &mint, &owner.pubkey(), 100).await;
+    mint_tokens(env, token_program, &mint, &new_owner_programmatic_signer, 0).await;
+    let owner_arg = owner.pubkey().to_string();
+    let to_destination: TokenMigrationOutput = migrate(
+        env,
+        "token",
+        &mint,
+        Some(&new_owner.pubkey()),
+        &[
+            "--owner",
+            &owner_arg,
+            "--destination",
+            &associated.to_string(),
+        ],
+    );
+    let to_associated: TokenMigrationOutput = migrate(
+        env,
+        "token",
+        &mint,
+        Some(&new_owner.pubkey()),
+        &["--owner", &owner_arg],
+    );
+    assert_eq!(
+        to_destination.execution_message,
+        to_associated.execution_message
+    );
+}
+
+pub async fn migrates_token_balance_to_destination(env: &TestEnv) {
+    migrates_tokens_to_destination(env, &spl_token_interface::id()).await;
+}
+
+pub async fn migrates_token_2022_balance_to_destination(env: &TestEnv) {
+    migrates_tokens_to_destination(env, &spl_token_2022_interface::id()).await;
+}
+
+pub async fn rejects_invalid_token_destinations(env: &TestEnv) {
+    let owner = Keypair::new();
+    let new_owner = Keypair::new();
+    let new_owner_programmatic_signer = programmatic_signer(&new_owner.pubkey());
+    let token_program = spl_token_interface::id();
+    let mint = create_mint(env, &token_program, &[]).await;
+    let other_mint = create_mint(env, &token_program, &[]).await;
+    let mint_2022 = create_mint(env, &spl_token_2022_interface::id(), &[]).await;
+    let source = mint_tokens(env, &token_program, &mint, &owner.pubkey(), 1_000).await;
+    let owner_arg = owner.pubkey().to_string();
+    let migrate_error = |mint: &Address, destination: &Address, extra: &[&str]| {
+        let destination = destination.to_string();
+        let mut args = vec!["--owner", &owner_arg, "--destination", &destination];
+        args.extend_from_slice(extra);
+        migrate_error(env, "token", mint, Some(&new_owner.pubkey()), &args)
+    };
+
+    let destination = mint_to_new_account(
+        env,
+        &token_program,
+        &mint,
+        &new_owner_programmatic_signer,
+        0,
+    )
+    .await;
+    let stderr = migrate_error(
+        &mint,
+        &destination,
+        &["--funder", &Address::new_unique().to_string()],
+    );
+    assert!(stderr.contains("cannot be used with"), "{stderr}");
+
+    // Only an associated token account is created, so the destination must exist.
+    let missing = Address::new_unique();
+    let stderr = migrate_error(&mint, &missing, &[]);
+    assert!(
+        stderr.contains(&format!("token account {missing} was not found")),
+        "{stderr}"
+    );
+
+    let stderr = migrate_error(&mint, &mint, &[]);
+    assert!(
+        stderr.contains(&format!("account {mint} is not a token account")),
+        "{stderr}"
+    );
+
+    let stderr = migrate_error(&mint, &source, &[]);
+    assert!(
+        stderr.contains(&format!(
+            "token account {source} is both the source and the destination"
+        )),
+        "{stderr}"
+    );
+
+    let other_mint_destination = mint_to_new_account(
+        env,
+        &token_program,
+        &other_mint,
+        &new_owner_programmatic_signer,
+        0,
+    )
+    .await;
+    let stderr = migrate_error(&mint, &other_mint_destination, &[]);
+    assert!(
+        stderr.contains(&format!(
+            "token account {other_mint_destination} holds mint {other_mint}, not {mint}"
+        )),
+        "{stderr}"
+    );
+
+    let destination_2022 = mint_to_new_account(
+        env,
+        &spl_token_2022_interface::id(),
+        &mint_2022,
+        &new_owner_programmatic_signer,
+        0,
+    )
+    .await;
+    let stderr = migrate_error(&mint, &destination_2022, &[]);
+    assert!(
+        stderr.contains(&format!(
+            "token account {destination_2022} is owned by {}, but mint {mint} is owned by \
+             {token_program}",
+            spl_token_2022_interface::id()
+        )),
+        "{stderr}"
+    );
+
+    // The destination must belong to the new authority's programmatic signer, not its signing
+    // pubkey.
+    let signing_pubkey_destination =
+        mint_to_new_account(env, &token_program, &mint, &new_owner.pubkey(), 0).await;
+    let stderr = migrate_error(&mint, &signing_pubkey_destination, &[]);
+    assert!(
+        stderr.contains(&format!(
+            "token account {signing_pubkey_destination} is owned by {}, not the new authority's \
+             programmatic signer {new_owner_programmatic_signer}",
+            new_owner.pubkey()
+        )),
+        "{stderr}"
+    );
+
+    send(
+        env,
+        &[freeze_account(
+            &token_program,
+            &destination,
+            &mint,
+            &env.payer.pubkey(),
+            &[],
+        )
+        .unwrap()],
+        &[],
+    )
+    .await;
+    let stderr = migrate_error(&mint, &destination, &[]);
+    assert!(
+        stderr.contains(&format!("token account {destination} is frozen")),
+        "{stderr}"
+    );
+}
+
+/// A Token Program associated token account can be given a new owner. If the new authority's
+/// associated token account is reassigned away, the tokens move with --destination instead.
+pub async fn migrates_tokens_past_reassigned_destination(env: &TestEnv) {
+    let owner = Keypair::new();
+    let new_owner = Keypair::new();
+    let account_owner = Address::new_unique();
+    let new_owner_programmatic_signer = programmatic_signer(&new_owner.pubkey());
+    let token_program = spl_token_interface::id();
+    let mint = create_mint(env, &token_program, &[]).await;
+    let source = mint_tokens(env, &token_program, &mint, &owner.pubkey(), 1_000).await;
+    let associated = mint_tokens(
+        env,
+        &token_program,
+        &mint,
+        &new_owner_programmatic_signer,
+        0,
+    )
+    .await;
+    let reassign = v1::Message::try_compile(
+        &new_owner_programmatic_signer,
+        &[set_authority(
+            &token_program,
+            &associated,
+            Some(&account_owner),
+            AuthorityType::AccountOwner,
+            &new_owner_programmatic_signer,
+            &[],
+        )
+        .unwrap()],
+        Hash::default(),
+    )
+    .unwrap();
+    let nonce_account = create_nonce(env, &new_owner.pubkey());
+    execute_as_new_owner(
+        env,
+        &BASE64_STANDARD.encode(reassign.serialize()),
+        &nonce_account,
+        &new_owner,
+        &[],
+        &[],
+    )
+    .await;
+    let owner_arg = owner.pubkey().to_string();
+
+    let stderr = migrate_error(
+        env,
+        "token",
+        &mint,
+        Some(&new_owner.pubkey()),
+        &["--owner", &owner_arg],
+    );
+    assert!(
+        stderr.contains(&format!(
+            "token account {associated} is owned by {account_owner}, not the new authority's \
+             programmatic signer {new_owner_programmatic_signer}. Pass --destination with a token \
+             account owned by {new_owner_programmatic_signer}"
+        )),
+        "{stderr}"
+    );
+
+    let destination = mint_to_new_account(
+        env,
+        &token_program,
+        &mint,
+        &new_owner_programmatic_signer,
+        0,
+    )
+    .await;
+    let migration: TokenMigrationOutput = migrate(
+        env,
+        "token",
+        &mint,
+        Some(&new_owner.pubkey()),
+        &[
+            "--owner",
+            &owner_arg,
+            "--destination",
+            &destination.to_string(),
+        ],
+    );
+    execute_as_new_owner(
+        env,
+        &migration.execution_message,
+        &nonce_account,
+        &new_owner,
+        &[],
+        &[&owner],
+    )
+    .await;
+    assert_closed(env, &source).await;
+    assert_eq!(token_balance(env, &destination).await, 1_000);
+    assert_eq!(token_balance(env, &associated).await, 0);
+}
+
 pub async fn migrates_tokens_with_funder(env: &TestEnv) {
     // The owner holds no SOL, so only the funder can pay rent for the new token account.
     let owner = Keypair::new();
