@@ -1,10 +1,12 @@
 use {
+    crate::common::lighthouse,
+    solana_address::Address,
     solana_cli_config::Config as SolanaConfig,
     solana_commitment_config::CommitmentConfig,
     solana_keypair::{Keypair, write_keypair_file},
     solana_rpc_client::nonblocking::rpc_client::RpcClient,
     solana_signer::Signer,
-    solana_test_validator::{TestValidator, TestValidatorGenesis},
+    solana_test_validator::{TestValidator, TestValidatorGenesis, UpgradeableProgramInfo},
     spl_nonce_interface::state::Nonce,
     std::{
         io::Write,
@@ -35,6 +37,12 @@ pub async fn setup_test_env() -> TestEnv {
         "spl_message_executor_program",
         spl_message_executor_interface::id(),
     );
+    genesis.add_upgradeable_programs_with_path(&[UpgradeableProgramInfo {
+        program_id: lighthouse::id(),
+        loader: solana_sdk_ids::bpf_loader_upgradeable::id(),
+        upgrade_authority: Address::default(),
+        program_path: concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/lighthouse.so").into(),
+    }]);
     let (validator, payer) = genesis.start_async().await;
     let rpc = RpcClient::new_with_commitment(validator.rpc_url(), CommitmentConfig::processed());
     let nonce_rent_lamports = rpc
