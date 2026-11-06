@@ -7,6 +7,9 @@ use {
     solana_address::Address,
     solana_keypair::{Keypair, write_keypair_file},
     solana_signer::Signer,
+    solana_system_interface::instruction::create_account,
+    solana_transaction::Transaction,
+    spl_nonce_interface::state::Nonce,
     spl_programmatic_signer_cli::{
         NonceCreateOutput, NonceShowOutput, NonceWithdrawAuthorizationOutput, NonceWithdrawOutput,
     },
@@ -361,6 +364,87 @@ pub async fn rejects_invalid_withdrawals(env: &TestEnv) {
         show_nonce(env, &create.nonce_account).lamports,
         initial_balance
     );
+}
+
+/// Create an account owned by the SPL Nonce program with `space` bytes of zeroed data, in a
+/// separate transaction from any `Initialize`, and return its keypair and keypair file.
+async fn create_uninitialized_nonce(env: &TestEnv, space: usize) -> (Keypair, NamedTempFile) {
+    let nonce_account = Keypair::new();
+    let lamports = env
+        .rpc
+        .get_minimum_balance_for_rent_exemption(space)
+        .await
+        .unwrap();
+    let transaction = Transaction::new_signed_with_payer(
+        &[create_account(
+            &env.payer.pubkey(),
+            &nonce_account.pubkey(),
+            lamports,
+            space as u64,
+            &spl_nonce_interface::id(),
+        )],
+        Some(&env.payer.pubkey()),
+        &[&env.payer, &nonce_account],
+        env.rpc.get_latest_blockhash().await.unwrap(),
+    );
+    env.rpc
+        .send_and_confirm_transaction(&transaction)
+        .await
+        .unwrap();
+    // Fund it beyond the rent-exempt minimum, so a partial withdrawal is possible.
+    fund(env, &[nonce_account.pubkey()]).await;
+    let nonce_account_file = NamedTempFile::new().unwrap();
+    write_keypair_file(&nonce_account, &nonce_account_file).unwrap();
+    (nonce_account, nonce_account_file)
+}
+
+pub async fn recovers_uninitialized_nonce_account(env: &TestEnv) {
+    for space in [Nonce::LEN, Nonce::LEN.checked_add(1).unwrap(), 0] {
+        let (nonce_account, nonce_account_file) = create_uninitialized_nonce(env, space).await;
+        let nonce_address = nonce_account.pubkey().to_string();
+        let nonce_account_path = nonce_account_file.path().to_str().unwrap();
+        let destination = Keypair::new().pubkey().to_string();
+        let initial_balance = balance(env, &nonce_address).await;
+
+        for (amount, extra, expected) in [
+            (
+                "ALL",
+                vec![],
+                "so only its own keypair can withdraw from it".to_string(),
+            ),
+            (
+                "ALL",
+                vec!["--nonce-authority", nonce_address.as_str()],
+                format!("nonce authority {nonce_address} signs the relay transaction directly"),
+            ),
+            (
+                PARTIAL_SOL,
+                vec!["--nonce-authority", nonce_account_path],
+                "so it can only be closed. Withdraw ALL".to_string(),
+            ),
+        ] {
+            let output = run_psigner_with_input(
+                &withdraw_args(env, &nonce_address, &destination, amount, &extra),
+                "",
+            );
+            assert!(!output.status.success());
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            assert!(stderr.contains(&expected), "{stderr}");
+        }
+        assert_eq!(balance(env, &nonce_address).await, initial_balance);
+
+        let all = withdraw(
+            env,
+            &nonce_address,
+            &destination,
+            "ALL",
+            Some(nonce_account_path),
+        );
+        assert_eq!(all.lamports, initial_balance);
+        assert_eq!(all.nonce, None);
+        assert_closed(env, &nonce_address).await;
+        assert_eq!(balance(env, &destination).await, initial_balance);
+    }
 }
 
 /// Format lamports as an exact SOL amount.

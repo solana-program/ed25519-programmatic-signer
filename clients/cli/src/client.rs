@@ -169,8 +169,21 @@ impl Client {
     }
 
     pub(crate) async fn nonce_account(&self, address: &Address) -> Result<NonceAccount> {
-        let account = self.account(address, "nonce account").await?;
+        let account = self.nonce_program_account(address).await?;
         decode_nonce_account(address, account)
+    }
+
+    /// Fetch an account owned by the SPL Nonce program, which may not hold initialized nonce
+    /// state.
+    pub(crate) async fn nonce_program_account(&self, address: &Address) -> Result<Account> {
+        let account = self.account(address, "nonce account").await?;
+        ensure!(
+            account.owner == spl_nonce_interface::id(),
+            "account {address} is owned by {}, not the SPL Nonce program {}",
+            account.owner,
+            spl_nonce_interface::id()
+        );
+        Ok(account)
     }
 
     /// Fetch a stake account's state.
@@ -372,14 +385,8 @@ fn rpc_error(error: ClientError) -> anyhow::Error {
     anyhow::Error::new(*error.kind)
 }
 
+/// Decode an SPL Nonce program account's initialized nonce state.
 fn decode_nonce_account(address: &Address, account: Account) -> Result<NonceAccount> {
-    if account.owner != spl_nonce_interface::id() {
-        bail!(
-            "account {address} is owned by {}, not the SPL Nonce program {}",
-            account.owner,
-            spl_nonce_interface::id()
-        );
-    }
     let state = Nonce::view(&account.data)
         .cloned()
         .with_context(|| format!("account {address} contains invalid SPL Nonce data"))?;

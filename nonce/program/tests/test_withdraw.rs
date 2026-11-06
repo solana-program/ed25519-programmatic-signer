@@ -48,22 +48,96 @@ fn withdraw_rejects_self_destination() {
         .execute();
 }
 
+#[test_case(Nonce::LEN; "zeroed")]
 #[test_case(Nonce::LEN - 1; "too short")]
 #[test_case(Nonce::LEN + 1; "too long")]
-fn withdraw_rejects_wrong_data_length(len: usize) {
+#[test_case(0; "empty")]
+fn uninitialized_withdraw_rejects_authority_other_than_nonce_account(len: usize) {
     WithdrawBuilder::default()
-        .initialization_slot(42)
         .nonce_account(NonceAccountBuilder::new().data(vec![0; len]).build())
         .check(Check::err(Error::InvalidNonceAccount.into()))
         .execute();
 }
 
 #[test]
-fn withdraw_rejects_uninitialized_account() {
+fn uninitialized_withdraw_requires_nonce_account_signature() {
+    let (nonce_address, nonce_account) = NonceAccountBuilder::new().build();
     WithdrawBuilder::default()
-        .initialization_slot(42)
-        .nonce_account(NonceAccountBuilder::new().build())
-        .check(Check::err(Error::InvalidNonceAccount.into()))
+        .nonce_account((nonce_address, nonce_account))
+        .withdraw_authority(nonce_address)
+        .authority_not_signer()
+        .withdraw_all()
+        .check(Check::err(ProgramError::MissingRequiredSignature))
+        .execute();
+}
+
+#[test]
+fn initialized_withdraw_rejects_nonce_account_signature() {
+    let authority = Address::from([2; 32]);
+    let (nonce_address, nonce_account) = initialize_nonce_account(&init_mollusk(), &authority);
+    WithdrawBuilder::default()
+        .nonce_account((nonce_address, nonce_account))
+        .withdraw_authority(nonce_address)
+        .withdrawal_slot(1)
+        .withdraw_all()
+        .check(Check::err(Error::AuthorityMismatch.into()))
+        .execute();
+}
+
+#[test_case(Nonce::LEN; "zeroed")]
+#[test_case(Nonce::LEN - 1; "too short")]
+#[test_case(Nonce::LEN + 1; "too long")]
+#[test_case(0; "empty")]
+fn uninitialized_full_withdraw_closes_account_in_same_slot(len: usize) {
+    let (nonce_address, nonce_account) = NonceAccountBuilder::new().data(vec![0; len]).build();
+    let balance = nonce_account.lamports;
+    let destination = Address::new_unique();
+    WithdrawBuilder::default()
+        .nonce_account((nonce_address, nonce_account))
+        .withdraw_authority(nonce_address)
+        .destination_account((
+            destination,
+            Account {
+                lamports: 1_000_000,
+                ..Account::default()
+            },
+        ))
+        .withdraw_all()
+        .check(Check::success())
+        .check(Check::account(&nonce_address).closed().build())
+        .check(
+            Check::account(&destination)
+                .lamports(balance.checked_add(1_000_000).unwrap())
+                .build(),
+        )
+        .execute();
+}
+
+#[test_case(Nonce::LEN - 1; "too short")]
+#[test_case(Nonce::LEN + 1; "too long")]
+fn uninitialized_partial_withdraw_uses_actual_size_for_rent(len: usize) {
+    let rent_minimum = Rent::default().minimum_balance(len);
+    let (nonce_address, nonce_account) = NonceAccountBuilder::new()
+        .data(vec![0; len])
+        .lamports(rent_minimum.checked_add(100).unwrap())
+        .build();
+
+    WithdrawBuilder::default()
+        .nonce_account((nonce_address, nonce_account.clone()))
+        .withdraw_authority(nonce_address)
+        .amount(100)
+        .check(Check::success())
+        .check(
+            Check::account(&nonce_address)
+                .lamports(rent_minimum)
+                .build(),
+        )
+        .execute();
+    WithdrawBuilder::default()
+        .nonce_account((nonce_address, nonce_account))
+        .withdraw_authority(nonce_address)
+        .amount(101)
+        .check(Check::err(ProgramError::AccountNotRentExempt))
         .execute();
 }
 

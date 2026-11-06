@@ -586,7 +586,7 @@
               "isSigner": true,
               "isOptional": false,
               "docs": [
-                "Authority stored in the nonce account"
+                "Authority stored in the nonce account, or the nonce account itself if it is not initialized"
               ],
               "display": {
                 "kind": "instructionAccountDisplayNode",
