@@ -12,7 +12,7 @@ pub fn process_advance(
     current_nonce: Hash,
     transition_commitment: Hash,
 ) -> ProgramResult {
-    let [authority, nonce_account, ..] = accounts else {
+    let [authority, transition_signer, nonce_account, ..] = accounts else {
         return Err(ProgramError::NotEnoughAccountKeys);
     };
 
@@ -29,7 +29,7 @@ pub fn process_advance(
     if authority.address() != &state.authority {
         return Err(Error::AuthorityMismatch.into());
     }
-    if !authority.is_signer() {
+    if !authority.is_signer() || !transition_signer.is_signer() {
         return Err(ProgramError::MissingRequiredSignature);
     }
 
@@ -39,8 +39,12 @@ pub fn process_advance(
         return Err(Error::NonceMismatch.into());
     }
 
-    state.nonce =
-        state.derive_next_nonce(program_id, nonce_account.address(), &transition_commitment);
+    state.nonce = state.derive_next_nonce(
+        program_id,
+        nonce_account.address(),
+        transition_signer.address(),
+        &transition_commitment,
+    );
 
     Ok(())
 }

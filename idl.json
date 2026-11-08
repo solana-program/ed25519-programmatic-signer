@@ -518,6 +518,20 @@
             },
             {
               "kind": "instructionAccountNode",
+              "name": "transitionSigner",
+              "isWritable": false,
+              "isSigner": true,
+              "isOptional": false,
+              "docs": [
+                "Signer identity bound into the successor nonce"
+              ],
+              "display": {
+                "kind": "instructionAccountDisplayNode",
+                "label": "Transition signer"
+              }
+            },
+            {
+              "kind": "instructionAccountNode",
               "name": "nonceAccount",
               "isWritable": true,
               "isSigner": false,

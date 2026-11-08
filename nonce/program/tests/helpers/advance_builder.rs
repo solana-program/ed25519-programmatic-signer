@@ -21,6 +21,8 @@ pub struct AdvanceBuilder<'a> {
     transition_commitment: Hash,
     authority_is_signer: bool,
     advance_authority: Option<Address>,
+    transition_signer: Address,
+    without_transition_signature: bool,
     checks: Vec<Check<'a>>,
 }
 
@@ -36,12 +38,19 @@ impl Default for AdvanceBuilder<'_> {
             transition_commitment: Hash::new_from_array([3; 32]),
             authority_is_signer: true,
             advance_authority: None,
+            transition_signer: Address::new_from_array([4; 32]),
+            without_transition_signature: false,
             checks: vec![],
         }
     }
 }
 
 impl<'a> AdvanceBuilder<'a> {
+    pub fn authority(mut self, authority: Address) -> Self {
+        self.authority = authority;
+        self
+    }
+
     /// Sets the address used when no nonce account override is supplied.
     pub fn nonce_address(mut self, nonce_address: Address) -> Self {
         self.nonce_address = nonce_address;
@@ -83,6 +92,16 @@ impl<'a> AdvanceBuilder<'a> {
         self
     }
 
+    pub fn transition_signer(mut self, signer: Address) -> Self {
+        self.transition_signer = signer;
+        self
+    }
+
+    pub fn without_transition_signature(mut self) -> Self {
+        self.without_transition_signature = true;
+        self
+    }
+
     pub fn check(mut self, check: Check<'a>) -> Self {
         self.checks.push(check);
         self
@@ -103,6 +122,7 @@ impl<'a> AdvanceBuilder<'a> {
 
         let mut instruction = advance(
             &advance_authority,
+            &self.transition_signer,
             &nonce_account_address,
             current_nonce,
             self.transition_commitment,
@@ -110,10 +130,14 @@ impl<'a> AdvanceBuilder<'a> {
         if !self.authority_is_signer {
             instruction.accounts[0] = AccountMeta::new_readonly(advance_authority, false);
         }
+        if self.without_transition_signature {
+            instruction.accounts[1].is_signer = false;
+        }
 
-        let accounts = vec![
+        let accounts = [
             (advance_authority, Account::default()),
             (nonce_account_address, nonce_account),
+            (self.transition_signer, Account::default()),
         ];
 
         if self.checks.is_empty() {

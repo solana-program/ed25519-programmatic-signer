@@ -26,8 +26,8 @@ pub const NONCE_STEP_TAG: &[u8] = b"spl-nonce::step::v1";
 )]
 pub struct Nonce {
     /// Single-use value that prevents a signed message from being replayed. `Advance`
-    /// requires the caller to present this value and the stored authority's signer
-    /// privilege, then replaces it with a freshly derived hash.
+    /// requires this value, the stored authority's signer privilege, and a transition
+    /// signer whose address is included in the freshly derived hash.
     #[cfg_attr(feature = "codama", codama(type = public_key))]
     pub nonce: Hash,
     /// Address allowed to consume this nonce and advance its value.
@@ -64,6 +64,7 @@ impl Nonce {
         &self,
         program_id: &Address,
         nonce_account: &Address,
+        transition_signer: &Address,
         transition_commitment: &Hash,
     ) -> Hash {
         hashv(&[
@@ -71,6 +72,7 @@ impl Nonce {
             program_id.as_array(),            // binds the derivation to the program address
             nonce_account.as_array(),         // binds each successor to the nonce-account address
             self.nonce.as_bytes(),            // makes the successor depend on the current nonce
+            transition_signer.as_array(),     // binds the successor to the transition signer
             transition_commitment.as_bytes(), // binds the successor to the action this step authorizes
         ])
     }
@@ -182,8 +184,13 @@ mod tests {
             initialize_slot: 42.into(),
         };
         assert_eq!(
-            state.derive_next_nonce(&program_id, &nonce_account, &transition_commitment),
-            "EgbzChWYoCDgPbJNWv8nVUqdxnoxDTRXg2stzPKhYZu4"
+            state.derive_next_nonce(
+                &program_id,
+                &nonce_account,
+                &Address::from([5; 32]),
+                &transition_commitment,
+            ),
+            "FYhH2U33x6G4riCkS4A2J4v3vW87BJWoSPaiLzaZyyZq"
                 .parse::<Hash>()
                 .unwrap()
         );

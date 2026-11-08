@@ -148,6 +148,7 @@ fn execute_supports_precomputed_nonce_chain() {
     let first_nonce = initial_state.derive_next_nonce(
         &spl_nonce_interface::id(),
         &nonce_address,
+        &DEFAULT_AUTHORITY,
         &derive_transition_commitment(&VersionedMessage::V1(first_message.clone())),
     );
 
@@ -166,6 +167,7 @@ fn execute_supports_precomputed_nonce_chain() {
     .derive_next_nonce(
         &spl_nonce_interface::id(),
         &nonce_address,
+        &DEFAULT_AUTHORITY,
         &derive_transition_commitment(&VersionedMessage::V1(second_message.clone())),
     );
 
@@ -197,6 +199,7 @@ fn tampered_message_invalidates_precomputed_successor() {
     let planned_successor = initial_state.derive_next_nonce(
         &spl_nonce_interface::id(),
         &nonce_address,
+        &DEFAULT_AUTHORITY,
         &derive_transition_commitment(&VersionedMessage::V1(planned_message.clone())),
     );
 
@@ -379,6 +382,7 @@ fn execute_rejects_message_that_consumes_its_own_nonce() {
     ExecuteBuilder::new(mollusk)
         .nonce_account(nonce_address, nonce_account)
         .message_instruction(advance(
+            &DEFAULT_AUTHORITY,
             &DEFAULT_AUTHORITY,
             &nonce_address,
             old_nonce,
