@@ -11,9 +11,19 @@ use {
     solana_keypair::{Keypair, write_keypair_file},
     solana_message::{VersionedMessage, v1},
     solana_nonce::{state::State, versions::Versions},
+    solana_rpc_client_types::config::RpcSimulateTransactionConfig,
     solana_signer::Signer,
     solana_system_interface::instruction::{create_nonce_account, transfer},
-    solana_transaction::Transaction,
+    solana_transaction::{InstructionError, Transaction, TransactionError},
+    spl_ed25519_signer_client::{
+        instruction::submit as submit_instruction, message::authorization_message,
+    },
+    spl_message_executor_client::instruction::execute,
+    spl_message_executor_interface::{
+        error::Error as ExecutorError, instruction::derive_transition_commitment,
+        pda::TransitionSigner,
+    },
+    spl_nonce_client::instruction::advance,
     spl_nonce_interface::state::Nonce,
     spl_programmatic_signer_cli::NonceCreateOutput,
     std::{
@@ -919,6 +929,96 @@ pub async fn submits_chain_signed_offline_with_next_nonce(env: &TestEnv) {
     );
     assert_eq!(test.current_nonce(env).await.to_string(), second_next);
     test.assert_received(env, 2).await;
+}
+
+/// Build a real Submit transaction without the CLI's additional signer validation.
+async fn signed_submit_transaction(
+    env: &TestEnv,
+    nonce: &SubmitTest,
+    authority: &Keypair,
+    message: &v1::Message,
+) -> Transaction {
+    let signer = programmatic_signer(&authority.pubkey());
+    let execute = execute(&nonce.nonce_account, &signer, message);
+    let authorization = authorization_message(&execute, &[authority.pubkey()]).unwrap();
+    let signature = authority.sign_message(&authorization.serialize());
+    Transaction::new_signed_with_payer(
+        &[submit_instruction(
+            vec![Some(signature)],
+            VersionedMessage::V1(authorization),
+        )],
+        Some(&env.payer.pubkey()),
+        &[&env.payer],
+        env.rpc.get_latest_blockhash().await.unwrap(),
+    )
+}
+
+pub async fn rejects_nonce_chain_skips_through_submit(env: &TestEnv) {
+    let authority = Keypair::new();
+    let signer = programmatic_signer(&authority.pubkey());
+    fund(env, &[signer]).await;
+    let chain = SubmitTest::new(env, &signer).await;
+    // Use a separate nonce to execute attempts to skip the chain's predecessor.
+    let attack_nonce = SubmitTest::new(env, &signer).await;
+    let predecessor = chain.execution_message(&[signer]);
+    let commitment = derive_transition_commitment(&VersionedMessage::V1(predecessor));
+    let expected_successor = Nonce {
+        nonce: chain.nonce,
+        ..Nonce::default()
+    }
+    .derive_next_nonce(
+        &spl_nonce_interface::ID,
+        &chain.nonce_account,
+        &TransitionSigner::ADDRESS,
+        &commitment,
+    );
+    let mut successor = chain.execution_message(&[signer]);
+    successor.lifetime_specifier = expected_successor;
+    let presigned_successor = signed_submit_transaction(env, &chain, &authority, &successor).await;
+
+    // The promoted user PDA can advance the other account with itself as transition signer.
+    // That succeeds, but produces a different nonce than the next message was signed for.
+    let attack = advance(
+        &signer,
+        &signer,
+        &chain.nonce_account,
+        chain.nonce,
+        commitment,
+    );
+    let message = v1::Message::try_compile(&signer, &[attack], attack_nonce.nonce).unwrap();
+    let transaction = signed_submit_transaction(env, &attack_nonce, &authority, &message).await;
+    env.rpc
+        .send_and_confirm_transaction(&transaction)
+        .await
+        .unwrap();
+    assert_ne!(chain.current_nonce(env).await, expected_successor);
+
+    let simulation = env
+        .rpc
+        .simulate_transaction_with_config(
+            &presigned_successor,
+            RpcSimulateTransactionConfig {
+                sig_verify: true,
+                commitment: Some(env.rpc.commitment()),
+                ..RpcSimulateTransactionConfig::default()
+            },
+        )
+        .await
+        .unwrap()
+        .value;
+    let nonce_mismatch = ExecutorError::NonceMismatch as u32;
+    let error: TransactionError = simulation
+        .err
+        .expect("presigned successor was unlocked")
+        .into();
+    assert_eq!(
+        error,
+        TransactionError::InstructionError(0, InstructionError::Custom(nonce_mismatch)),
+    );
+    assert!(simulation.logs.unwrap().contains(&format!(
+        "Program {} failed: custom program error: {nonce_mismatch:#x}",
+        spl_message_executor_interface::ID,
+    )));
 }
 
 pub async fn submits_with_durable_nonce(env: &TestEnv) {

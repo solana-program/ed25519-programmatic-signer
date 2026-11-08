@@ -62,7 +62,8 @@ use {
             dry_run_requires_authority_signatures, dry_runs_with_durable_nonce,
             dry_runs_without_relay_signers, rejects_durable_nonce_authority_mismatch,
             rejects_expired_execution_message, rejects_nonce_authority_mismatch,
-            rejects_stale_durable_nonce_value, submits_authority_signatures_in_any_order,
+            rejects_nonce_chain_skips_through_submit, rejects_stale_durable_nonce_value,
+            submits_authority_signatures_in_any_order,
             submits_authority_signed_transfer_and_rejects_replay,
             submits_chain_signed_offline_with_next_nonce, submits_quietly_without_confirmation,
             submits_unsigned_message_with_external_signature,
@@ -301,6 +302,11 @@ fn main() -> ExitCode {
         async_trial!(rejects_invalid_scans, env, runtime_handle),
         async_trial!(
             submits_chain_signed_offline_with_next_nonce,
+            env,
+            runtime_handle
+        ),
+        async_trial!(
+            rejects_nonce_chain_skips_through_submit,
             env,
             runtime_handle
         ),

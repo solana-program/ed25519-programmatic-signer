@@ -556,12 +556,27 @@ impl ExecuteAccounts {
             .iter()
             .map(|index| account_keys[usize::from(*index)])
             .collect::<Vec<_>>();
-        let [nonce_authority, nonce_account, _nonce_program, ..] = accounts.as_slice() else {
+        let [
+            nonce_authority,
+            nonce_account,
+            nonce_program,
+            transition_signer,
+            ..,
+        ] = accounts.as_slice()
+        else {
             bail!(
-                "expected the nonce authority, nonce account, and SPL Nonce program in Execute \
-                 accounts"
+                "expected the nonce authority, nonce account, SPL Nonce program, and transition \
+                 signer in Execute accounts"
             );
         };
+        ensure!(
+            nonce_program == &spl_nonce_interface::ID,
+            "invalid SPL Nonce program in Execute accounts"
+        );
+        ensure!(
+            transition_signer == &spl_message_executor_interface::pda::TransitionSigner::ADDRESS,
+            "invalid transition signer in Execute accounts"
+        );
         Ok(Self {
             nonce_authority: *nonce_authority,
             nonce_account: *nonce_account,

@@ -460,12 +460,18 @@ pub async fn simulates_at_relay_cpi_depth(env: &TestEnv) {
     const CALL_DEPTH_ERROR: &str = "Cross-program invocation call depth too deep";
     let authority = Keypair::new();
     let signer = programmatic_signer(&authority.pubkey());
-    fund(env, &[signer]).await;
+
+    // Reuse the authorization authority as recipient to keep the nested relay within the
+    // transaction size limit, so this test reaches the CPI depth limit.
+    fund(env, &[signer, authority.pubkey()]).await;
     let outer = SubmitTest::new(env, &signer).await;
+
     let mut inner = Vec::new();
     for nesting in 0..=MAX_NESTING {
         if nesting > 0 {
-            inner.push(SubmitTest::new(env, &signer).await);
+            let mut test = SubmitTest::new(env, &signer).await;
+            test.recipient = authority.pubkey();
+            inner.push(test);
         }
         let execution_message = nested_execution_message(&signer, &outer, &inner);
         let output = simulate(env, &outer, &execution_message, &[]);

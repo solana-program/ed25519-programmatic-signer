@@ -37,6 +37,7 @@ pub enum Instruction {
     /// - `[signer]` Nonce authority
     /// - `[writable]` Nonce account to advance
     /// - `[]` SPL Nonce program
+    /// - `[]` Executor transition signer PDA
     /// - Message accounts referenced by the execution message, in order
     #[cfg_attr(
         feature = "codama",
@@ -57,6 +58,12 @@ pub enum Instruction {
             name = "nonce_program",
             docs = "SPL Nonce program",
             default_value = public_key("Noncediea1fH12usShuQAz28UhgAeuE5Maf32LsMUQB"),
+            display(skip = always)
+        )),
+        codama(account(
+            name = "transition_signer",
+            docs = "Executor transition signer",
+            default_value = public_key("EjCSGNbrrM7YJBwR9iqnrb87L1TYHfUtZ5L4gwQjWLFg"),
             display(skip = always)
         ))
     )]

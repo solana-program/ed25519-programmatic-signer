@@ -169,12 +169,7 @@ pub(super) fn run(command: SignCommand, client: &Client, output: OutputFormat) -
         VersionedMessage::hash_raw_message(&authorization_message.serialize()).to_string();
     let execution_message_hash =
         VersionedMessage::hash_raw_message(&execution_message.serialize()).to_string();
-    let next_nonce = next_nonce(
-        &command.nonce_account,
-        &command.nonce_authority,
-        &execution_message,
-    )
-    .to_string();
+    let next_nonce = next_nonce(&command.nonce_account, &execution_message).to_string();
 
     let signers = command
         .signer

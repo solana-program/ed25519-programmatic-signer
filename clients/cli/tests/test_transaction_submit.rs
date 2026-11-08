@@ -343,20 +343,24 @@ fn rejects_non_executor_instruction() {
     );
 }
 
-#[test]
-fn rejects_execute_without_nonce_accounts() {
+#[test_case(1; "missing nonce accounts")]
+#[test_case(3; "missing transition signer")]
+fn rejects_execute_with_missing_accounts(account_count: usize) {
     let env = SubmitTestEnv::new();
     let instruction = Instruction::new_with_wincode(
         spl_message_executor_interface::id(),
         &ExecutorInstruction::Execute(VersionedMessage::V1(v1::Message::default())),
-        vec![AccountMeta::new(Address::new_unique(), false)],
+        (0..account_count)
+            .map(|_| AccountMeta::new(Address::new_unique(), false))
+            .collect(),
     );
     let message = VersionedMessage::V1(
         authorization_message(&instruction, &[env.authority.pubkey()]).unwrap(),
     );
     assert_failure(
         &env.submit(&encode(&message), &[]),
-        "expected the nonce authority, nonce account, and SPL Nonce program in Execute accounts",
+        "expected the nonce authority, nonce account, SPL Nonce program, and transition signer in \
+         Execute accounts",
     );
 }
 

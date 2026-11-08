@@ -13,7 +13,7 @@ import {
 } from '@solana/kit';
 import { describe, expect, it } from 'vitest';
 
-import { getExecuteInstruction, getSubmitInstruction, NONCE_PROGRAM_ADDRESS } from '../src';
+import { findTransitionSignerPda, getExecuteInstruction, getSubmitInstruction, NONCE_PROGRAM_ADDRESS } from '../src';
 
 const UNSUPPORTED_MESSAGE_VERSIONS = [
     ['legacy', 'legacy'],
@@ -121,7 +121,7 @@ const getExecuteAccounts = (message: TestMessage) =>
         nonceAuthority: NONCE_AUTHORITY,
     }).accounts;
 
-const getRemainingExecuteAccounts = (message: TestMessage) => getExecuteAccounts(message).slice(3);
+const getRemainingExecuteAccounts = (message: TestMessage) => getExecuteAccounts(message).slice(4);
 
 const getSubmitAccounts = (message: TestMessage) =>
     getSubmitInstruction({
@@ -146,11 +146,13 @@ const expectedSubmitAccounts = [
 ];
 
 describe('remaining account resolvers', () => {
-    it('resolves account order and permissions for a v1 execution message', () => {
+    it('resolves account order and permissions for a v1 execution message', async () => {
+        const [transitionSigner] = await findTransitionSignerPda();
         expect(getExecuteAccounts(getTestMessage(1))).toEqual([
             { address: NONCE_AUTHORITY.address, role: AccountRole.READONLY_SIGNER, signer: NONCE_AUTHORITY },
             { address: NONCE_ACCOUNT, role: AccountRole.WRITABLE },
             { address: NONCE_PROGRAM_ADDRESS, role: AccountRole.READONLY },
+            { address: transitionSigner, role: AccountRole.READONLY },
             ...expectedExecuteAccounts,
         ]);
     });
