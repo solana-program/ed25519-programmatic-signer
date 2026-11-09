@@ -1,5 +1,5 @@
 === Signing ===
-Authorization message hash: CKoZ2gaq6zomRS3XLFWgk5CBXxYeQkWKy58SExhQML6S
+Authorization message hash: 4eTEfuBADPtCSxPNgAXAo5RB3PJENEuVHMTYwU7BTizh
 Execution message hash: Gv6pbzG8yyBEBQEARGCaDV7y1qvdAfVG4FCCeWw79t82
 PDA promotion authorities:
   AKnL4NNf3DGWZJS6cPknBuEGnVsV4A4m5tgebLHaRSZ9 (derived signer: 3jCYn5zriQtvK6iEkWyDc3M6dkHvmR9XccrZyjJF96tF)
@@ -8,7 +8,7 @@ PDA promotion authorities:
 SPL nonce account address: 8qbHbw2BbbTHBW1sbeqakYXVKRQM8Ne7pLK7m6CVfeR
 Nonce authority: 3jCYn5zriQtvK6iEkWyDc3M6dkHvmR9XccrZyjJF96tF
 Expected nonce value (execution message's recent blockhash): YMN9Qj5jPNp7j14VPcML1B6xGgcPWVZUGLFU3Mnyfaf
-Next nonce value (after this message executes): EGw77qP9hXfsQMtJUt83K35R5BE1vMVExUAeecW4cB5n
+Next nonce value (after this message executes): HnGZVYmYvZ5wYkdTRNfxWa81yHwJgC58dbxXQJY63PcU
 
 === Authorization message ===
 Your signatures authorize this Execute call, including its accounts, permissions,
@@ -19,7 +19,7 @@ v1 message:
   "header": {
     "numRequiredSignatures": 1,
     "numReadonlySignedAccounts": 0,
-    "numReadonlyUnsignedAccounts": 3
+    "numReadonlyUnsignedAccounts": 4
   },
   "accountKeys": [
     "AKnL4NNf3DGWZJS6cPknBuEGnVsV4A4m5tgebLHaRSZ9",
@@ -28,6 +28,7 @@ v1 message:
     "CktRuQ2mttgRGkXJtyksdKHjUdc2C4TgDzyB98oEzy8",
     "ExecxgyHYsAXB4c5dZodV1zJZ9hqfsDCYkRDRATrpkFR",
     "Noncediea1fH12usShuQAz28UhgAeuE5Maf32LsMUQB",
+    "EjCSGNbrrM7YJBwR9iqnrb87L1TYHfUtZ5L4gwQjWLFg",
     "11111111111111111111111111111111"
   ],
   "recentBlockhash": "11111111111111111111111111111111",
@@ -38,9 +39,10 @@ v1 message:
         2,
         1,
         5,
+        6,
         2,
         3,
-        6
+        7
       ],
       "data": "1bm15vGCmstjf134AARVYmBoKBdVgTo9ixtMzP2JZqcf3b8qGALaXhZaRRYMPmgGA3DG4E11MQDTvDLhWme2RqoWxNv2UjAJHq7CivKZhDBiH5GC5qoT7fCQ3ea6qSfET2zFqjto7FoF257Y9KXBBgnxMURbWREC2Y52gkaZY64CUxwZufTToKBy5hSHqUHpjAcjLjtJPVosnfQYMoN9Nw",
       "stackHeight": 1

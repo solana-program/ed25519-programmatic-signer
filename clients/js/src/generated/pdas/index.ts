@@ -7,3 +7,4 @@
  */
 
 export * from './programmaticSigner';
+export * from './transitionSigner';

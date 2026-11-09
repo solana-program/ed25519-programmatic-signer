@@ -46,6 +46,14 @@ pub enum Error {
         codama(error(message = "The execution message sets transaction config fields"))
     )]
     UnsupportedTransactionConfig = 5,
+    /// The transition signer is not the Executor PDA for this nonce account.
+    #[cfg_attr(
+        feature = "codama",
+        codama(error(
+            message = "The transition signer is not the Executor PDA for this nonce account"
+        ))
+    )]
+    InvalidTransitionSigner = 6,
 }
 
 impl From<Error> for ProgramError {

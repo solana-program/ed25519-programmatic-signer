@@ -155,7 +155,7 @@ pub(super) async fn run(
         execution_message
             .validate()
             .context("invalid execution message")?;
-        let next_nonce = next_nonce(&nonce_account, &pda, &execution_message);
+        let next_nonce = next_nonce(&nonce_account, &execution_message);
         let execute = execute(&nonce_account, &pda, &execution_message);
         let authorization_message = spl_ed25519_signer_client::message::authorization_message(
             &execute,

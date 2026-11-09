@@ -30,6 +30,7 @@ import {
     type ExecuteInput,
     type ParsedExecuteInstruction,
 } from '../instructions';
+import { findTransitionSignerPda } from '../pdas';
 
 export const MESSAGE_EXECUTOR_PROGRAM_ADDRESS =
     'ExecxgyHYsAXB4c5dZodV1zJZ9hqfsDCYkRDRATrpkFR' as Address<'ExecxgyHYsAXB4c5dZodV1zJZ9hqfsDCYkRDRATrpkFR'>;
@@ -73,6 +74,7 @@ export function parseMessageExecutorInstruction<TProgram extends string>(
 
 export type MessageExecutorPlugin = {
     instructions: MessageExecutorPluginInstructions;
+    pdas: MessageExecutorPluginPdas;
     identifyInstruction: typeof identifyMessageExecutorInstruction;
     parseInstruction: typeof parseMessageExecutorInstruction;
 };
@@ -83,6 +85,8 @@ export type MessageExecutorPluginInstructions = {
         config?: { programAddress?: Address | HasAddress },
     ) => ReturnType<typeof getExecuteInstruction> & SelfPlanAndSendFunctions;
 };
+
+export type MessageExecutorPluginPdas = { transitionSigner: typeof findTransitionSignerPda };
 
 export type MessageExecutorPluginRequirements = ClientWithTransactionPlanning & ClientWithTransactionSending;
 
@@ -100,6 +104,10 @@ export function messageExecutorProgram(config: { programAddress?: Address | HasA
                                 programAddress: instructionConfig?.programAddress ?? config.programAddress,
                             }),
                         ),
+                },
+                pdas: {
+                    transitionSigner: pdaConfig =>
+                        findTransitionSignerPda({ programAddress: pdaConfig?.programAddress ?? config.programAddress }),
                 },
                 identifyInstruction: identifyMessageExecutorInstruction,
                 parseInstruction: parseMessageExecutorInstruction,

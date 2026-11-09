@@ -22,7 +22,7 @@ workspace = true
 
 [dependencies]
 codama-macros = { workspace = true, optional = true }
-solana-address = { workspace = true, features = ["decode"] }
+solana-address = { workspace = true, features = ["decode", "sha2"] }
 solana-hash = { workspace = true }
 solana-message = { workspace = true, features = ["wincode"] }
 solana-program-error = { workspace = true }
@@ -30,4 +30,5 @@ solana-sha256-hasher = { workspace = true, features = ["sha2"] }
 wincode = { workspace = true, features = ["derive"] }
 
 [dev-dependencies]
+solana-address = { workspace = true, features = ["curve25519"] }
 solana-hash = { workspace = true, features = ["decode"] }

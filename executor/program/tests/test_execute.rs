@@ -19,6 +19,7 @@ use {
     spl_message_executor_interface::{
         error::Error as MessageExecutorError,
         instruction::{Instruction as MessageExecutorInstruction, derive_transition_commitment},
+        pda::TransitionSigner,
     },
     spl_nonce_client::instruction::advance,
     spl_nonce_interface::{error::Error as NonceError, state::Nonce},
@@ -31,6 +32,14 @@ pub mod helpers;
 fn execute_rejects_missing_fixed_accounts() {
     ExecuteBuilder::default()
         .mutate_execute_ix(|ix| ix.accounts.truncate(2))
+        .check_err(ProgramError::NotEnoughAccountKeys)
+        .execute();
+}
+
+#[test]
+fn execute_requires_transition_signer_account() {
+    ExecuteBuilder::default()
+        .mutate_execute_ix(|ix| ix.accounts.truncate(3))
         .check_err(ProgramError::NotEnoughAccountKeys)
         .execute();
 }
@@ -64,6 +73,41 @@ fn execute_rejects_malformed_nonce_account() {
     ExecuteBuilder::default()
         .nonce_account(nonce_address, nonce_account)
         .check_err(MessageExecutorError::InvalidNonceAccount)
+        .execute();
+}
+
+#[test]
+fn execute_cannot_manufacture_approval_when_authority_is_transition_signer() {
+    let nonce_address = Address::new_unique();
+    let transition_signer = TransitionSigner::ADDRESS;
+    let nonce = Nonce {
+        nonce: Hash::new_from_array([7; 32]),
+        authority: transition_signer,
+        initialize_slot: 0.into(),
+    };
+    let (_, nonce_account) = NonceAccountBuilder::new()
+        .address(nonce_address)
+        .data(wincode::serialize(&nonce).unwrap())
+        .build();
+
+    ExecuteBuilder::default()
+        .authority(transition_signer)
+        .payer(Address::new_unique())
+        .nonce_account(nonce_address, nonce_account)
+        .mutate_execute_ix(|ix| ix.accounts[0].is_signer = false)
+        .check_err(ProgramError::MissingRequiredSignature)
+        .execute();
+}
+
+#[test]
+fn execute_rejects_wrong_transition_signer() {
+    let authority = Address::new_unique();
+    ExecuteBuilder::default()
+        .authority(authority)
+        .mutate_execute_ix(move |ix| {
+            ix.accounts[3] = AccountMeta::new_readonly(authority, true);
+        })
+        .check_err(MessageExecutorError::InvalidTransitionSigner)
         .execute();
 }
 
@@ -122,6 +166,54 @@ fn execute_rejects_recent_blockhash_mismatch() {
 }
 
 #[test]
+fn nonce_authority_cannot_unlock_successor_without_executing_predecessor() {
+    let mollusk = init_mollusk();
+    let (nonce_address, nonce_account) = initialize_nonce_account(&mollusk, &DEFAULT_AUTHORITY);
+    let initial_state = decode_state(&nonce_account);
+    let predecessor = v1::Message::try_compile(
+        &DEFAULT_AUTHORITY,
+        &[transfer(&DEFAULT_AUTHORITY, &Address::new_unique(), 1)],
+        initial_state.nonce,
+    )
+    .unwrap();
+    let commitment = derive_transition_commitment(&VersionedMessage::V1(predecessor));
+    let expected_successor = initial_state.derive_next_nonce(
+        &spl_nonce_interface::id(),
+        &nonce_address,
+        &TransitionSigner::ADDRESS,
+        &commitment,
+    );
+    let forged_step = advance(
+        &DEFAULT_AUTHORITY,
+        &DEFAULT_AUTHORITY,
+        &nonce_address,
+        initial_state.nonce,
+        commitment,
+    );
+    let advanced = mollusk.process_and_validate_instruction(
+        &forged_step,
+        &[
+            (DEFAULT_AUTHORITY, Account::default()),
+            (nonce_address, nonce_account),
+        ],
+        &[Check::success()],
+    );
+    assert_ne!(
+        decode_state(advanced.get_account(&nonce_address).unwrap()).nonce,
+        expected_successor,
+    );
+
+    ExecuteBuilder::new(mollusk)
+        .nonce_account(
+            nonce_address,
+            advanced.get_account(&nonce_address).unwrap().clone(),
+        )
+        .recent_blockhash(expected_successor)
+        .check_err(MessageExecutorError::NonceMismatch)
+        .execute();
+}
+
+#[test]
 fn execute_rejects_message_reuse_after_nonce_advances() {
     let first = ExecuteBuilder::default().execute();
 
@@ -148,7 +240,7 @@ fn execute_supports_precomputed_nonce_chain() {
     let first_nonce = initial_state.derive_next_nonce(
         &spl_nonce_interface::id(),
         &nonce_address,
-        &DEFAULT_AUTHORITY,
+        &TransitionSigner::ADDRESS,
         &derive_transition_commitment(&VersionedMessage::V1(first_message.clone())),
     );
 
@@ -167,7 +259,7 @@ fn execute_supports_precomputed_nonce_chain() {
     .derive_next_nonce(
         &spl_nonce_interface::id(),
         &nonce_address,
-        &DEFAULT_AUTHORITY,
+        &TransitionSigner::ADDRESS,
         &derive_transition_commitment(&VersionedMessage::V1(second_message.clone())),
     );
 
@@ -199,7 +291,7 @@ fn tampered_message_invalidates_precomputed_successor() {
     let planned_successor = initial_state.derive_next_nonce(
         &spl_nonce_interface::id(),
         &nonce_address,
-        &DEFAULT_AUTHORITY,
+        &TransitionSigner::ADDRESS,
         &derive_transition_commitment(&VersionedMessage::V1(planned_message.clone())),
     );
 
@@ -240,7 +332,7 @@ fn execute_rejects_account_count_mismatch() {
 fn execute_rejects_account_order_mismatch() {
     ExecuteBuilder::default()
         .message_instruction(transfer(&DEFAULT_AUTHORITY, &Address::new_unique(), 1))
-        .mutate_execute_ix(|ix| ix.accounts.swap(3, 4))
+        .mutate_execute_ix(|ix| ix.accounts.swap(4, 5))
         .check_err(MessageExecutorError::MessageAccountsMismatch)
         .execute();
 }
@@ -249,7 +341,7 @@ fn execute_rejects_account_order_mismatch() {
 fn execute_rejects_readonly_message_writable_account() {
     ExecuteBuilder::default()
         .message_instruction(transfer(&DEFAULT_AUTHORITY, &Address::new_unique(), 1))
-        .mutate_execute_ix(|ix| ix.accounts[4].is_writable = false)
+        .mutate_execute_ix(|ix| ix.accounts[5].is_writable = false)
         .check(Check::instruction_err(
             InstructionError::PrivilegeEscalation,
         ))
@@ -261,10 +353,10 @@ fn execute_rejects_missing_required_signer_privilege() {
     let payer = Address::new_unique();
 
     ExecuteBuilder::default()
-        // Make it the 4th account (1st in the execution message accounts) and a signer on an instruction
+        // Make it the 5th account (1st in the execution message accounts) and a signer on an instruction
         .payer(payer)
         .message_instruction(transfer(&payer, &Address::new_unique(), 0))
-        .mutate_execute_ix(|ix| ix.accounts[3].is_signer = false)
+        .mutate_execute_ix(|ix| ix.accounts[4].is_signer = false)
         .check(Check::instruction_err(
             InstructionError::PrivilegeEscalation,
         ))
@@ -277,20 +369,59 @@ fn execute_rejects_missing_nonce_authority_signer_privilege() {
         // Keep the message payer distinct so it cannot grant the authority signer privilege.
         .payer(Address::new_unique())
         .mutate_execute_ix(|ix| ix.accounts[0].is_signer = false)
-        .check(Check::instruction_err(
-            InstructionError::PrivilegeEscalation,
-        ))
+        .check_err(ProgramError::MissingRequiredSignature)
         .execute();
 }
 
 #[test]
 fn execute_rejects_wrong_nonce_authority() {
     let wrong_signer = Address::new_unique();
+    let mut mollusk = init_mollusk();
+    mollusk.logger = Some(std::rc::Rc::default());
+    let logger = mollusk.logger.as_ref().unwrap().clone();
 
-    ExecuteBuilder::default()
+    ExecuteBuilder::new(mollusk)
         .mutate_execute_ix(move |ix| ix.accounts[0].pubkey = wrong_signer)
         .check_err(NonceError::AuthorityMismatch)
         .execute();
+
+    // Both Nonce's AuthorityMismatch and Executor's InvalidMessage use `AuthorityMismatch`.
+    // Check the logs so an unrelated Executor failure cannot make this test pass.
+    let logs = logger.borrow();
+    let nonce_program = spl_nonce_interface::ID;
+    assert!(
+        logs.get_recorded_content()
+            .contains(&format!("Program {nonce_program} invoke [2]")),
+    );
+    assert!(logs.get_recorded_content().contains(&format!(
+        "Program {nonce_program} failed: custom program error: 0x1"
+    )));
+}
+
+#[test]
+fn nonce_authority_cannot_forge_executor_transition_signature() {
+    let mollusk = init_mollusk();
+    let (nonce_address, nonce_account) = initialize_nonce_account(&mollusk, &DEFAULT_AUTHORITY);
+    let old_nonce = decode_state(&nonce_account).nonce;
+    let transition_signer = TransitionSigner::ADDRESS;
+    let mut instruction = advance(
+        &DEFAULT_AUTHORITY,
+        &transition_signer,
+        &nonce_address,
+        old_nonce,
+        Hash::default(),
+    );
+    instruction.accounts[1].is_signer = false;
+    let result = mollusk.process_and_validate_instruction(
+        &instruction,
+        &[
+            (DEFAULT_AUTHORITY, Account::default()),
+            (nonce_address, nonce_account.clone()),
+            (transition_signer, Account::default()),
+        ],
+        &[Check::err(ProgramError::MissingRequiredSignature)],
+    );
+    assert_eq!(result.get_account(&nonce_address), Some(&nonce_account));
 }
 
 #[test]
@@ -315,6 +446,36 @@ fn execute_rejects_uninitialized_nonce_account() {
 }
 
 #[test]
+fn execute_never_forwards_transition_signer_signature_to_payload() {
+    let mollusk = init_mollusk();
+    let (nonce_address, nonce_account) = initialize_nonce_account(&mollusk, &DEFAULT_AUTHORITY);
+    let old_nonce = decode_state(&nonce_account).nonce;
+    let transition_signer = TransitionSigner::ADDRESS;
+    let result = ExecuteBuilder::new(mollusk)
+        .nonce_account(nonce_address, nonce_account)
+        .message_instruction(advance(
+            &DEFAULT_AUTHORITY,
+            &transition_signer,
+            &nonce_address,
+            old_nonce,
+            Hash::default(),
+        ))
+        .mutate_execute_ix(move |ix| {
+            // The transaction cannot sign for this PDA. Only the nonce CPI receives its privilege.
+            for account in &mut ix.accounts {
+                if account.pubkey == transition_signer {
+                    account.is_signer = false;
+                }
+            }
+        })
+        .check(Check::instruction_err(
+            InstructionError::PrivilegeEscalation,
+        ))
+        .execute();
+    assert_eq!(decode_state(&result.nonce_account).nonce, old_nonce);
+}
+
+#[test]
 fn execute_downgrades_extra_writable_privilege_for_message_cpi() {
     // Verifies extra writable privilege on the Execute instruction
     // does not leak into the execution message CPI
@@ -327,7 +488,7 @@ fn execute_downgrades_extra_writable_privilege_for_message_cpi() {
             message.header.num_readonly_unsigned_accounts = 2;
         })
         // gives recipient extra writable privilege on the Execute ix
-        .mutate_execute_ix(|ix| ix.accounts[4].is_writable = true)
+        .mutate_execute_ix(|ix| ix.accounts[5].is_writable = true)
         .check(Check::instruction_err(
             InstructionError::ReadonlyLamportChange,
         ))
@@ -348,7 +509,7 @@ fn execute_downgrades_extra_signer_privilege_for_message_cpi() {
             message.header.num_required_signatures = 1;
         })
         // gives source extra signer privilege on the Execute ix
-        .mutate_execute_ix(|ix| ix.accounts[4].is_signer = true)
+        .mutate_execute_ix(|ix| ix.accounts[5].is_signer = true)
         .account(
             source,
             Account::new(1, 0, &solana_system_interface::program::id()),
