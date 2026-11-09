@@ -24,7 +24,8 @@ use {
             default_account_state::DefaultAccountState,
             non_transferable::NonTransferable,
             transfer_fee::{
-                TransferFeeAmount, TransferFeeConfig, instruction::harvest_withheld_tokens_to_mint,
+                TransferFeeAmount, TransferFeeConfig,
+                instruction::{harvest_withheld_tokens_to_mint, transfer_checked_with_fee},
             },
             transfer_hook,
         },
@@ -246,6 +247,7 @@ pub(super) async fn run(
     }
     let mut instructions = vec![];
     let mut funder = None;
+    let mut transfer_fee = None;
     // Mint transfer rules don't apply if we're just closing a zero balance.
     if amount > 0 {
         // A frozen account can't transfer. This check is here because if balance is 0, we can close even if frozen
@@ -285,8 +287,39 @@ pub(super) async fn run(
             ));
             funder = Some(payer);
         }
-        instructions.push(
-            transfer_checked(
+        let transfer = match mint.get_extension::<TransferFeeConfig>() {
+            // Pin the fee for the current epoch, so the transfer fails rather than paying more if
+            // the fee changes before the message executes.
+            Ok(fee_config) => {
+                let epoch = client.clock().await?.epoch;
+                let fee = fee_config
+                    .calculate_epoch_fee(epoch, amount)
+                    .context("failed to calculate the transfer fee")?;
+                // A scheduled fee change makes the transfer fail once it takes effect.
+                let newer_fee = &fee_config.newer_transfer_fee;
+                let newer_epoch = u64::from(newer_fee.epoch);
+                if newer_epoch > epoch && newer_fee.calculate_fee(amount) != Some(fee) {
+                    eprintln!(
+                        "Warning: mint {} changes its transfer fee at epoch {newer_epoch} \
+                         (current epoch {epoch}). The message pins the current fee, so it fails \
+                         if it executes from epoch {newer_epoch} onwards.",
+                        command.mint
+                    );
+                }
+                transfer_fee = Some(fee);
+                transfer_checked_with_fee(
+                    &token_program,
+                    &source,
+                    &command.mint,
+                    &destination,
+                    &owner,
+                    &[],
+                    amount,
+                    decimals,
+                    fee,
+                )
+            }
+            Err(_) => transfer_checked(
                 &token_program,
                 &source,
                 &command.mint,
@@ -295,9 +328,9 @@ pub(super) async fn run(
                 &[],
                 amount,
                 decimals,
-            )
-            .context("failed to build transfer instruction")?,
-        );
+            ),
+        };
+        instructions.push(transfer.context("failed to build transfer instruction")?);
     }
     if close {
         instructions.extend(close_instructions(
@@ -326,7 +359,7 @@ pub(super) async fn run(
         source: source.to_string(),
         destination: destination.to_string(),
         funder: funder.map(|funder| funder.to_string()),
-        transfer_fee: amount > 0 && mint.get_extension::<TransferFeeConfig>().is_ok(),
+        transfer_fee: transfer_fee.map(|fee| real_number_string_trimmed(fee, decimals)),
         rent_recipient: close.then(|| rent_recipient.to_string()),
         new_authority: new_owner_programmatic_signer.to_string(),
         new_authority_signing_pubkey: new_authority_signing_pubkey.to_string(),
@@ -445,9 +478,11 @@ pub struct TokenMigrationOutput {
     /// Pays rent for the destination token account. Set only when the migration creates it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub funder: Option<String>,
-    /// Whether the mint charges a transfer fee, which comes out of the amount.
-    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
-    pub transfer_fee: bool,
+    /// In tokens, the transfer fee the mint charges at the current epoch, which comes out of the
+    /// amount. The transfer fails if the fee is different when the message executes. Set only
+    /// when the mint has a transfer fee, even if it is zero.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub transfer_fee: Option<String>,
     /// Receives the source token account's rent. Set only when the migration closes it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub rent_recipient: Option<String>,
@@ -463,11 +498,11 @@ impl fmt::Display for TokenMigrationOutput {
         writeln!(f, "Mint: {}", self.mint)?;
         writeln!(f, "Token program: {}", self.token_program)?;
         writeln!(f, "Amount: {}", self.amount)?;
-        if self.transfer_fee {
+        if let Some(transfer_fee) = &self.transfer_fee {
             writeln!(
                 f,
-                "The mint charges a transfer fee, so the new authority receives less than this \
-                 amount."
+                "Transfer fee: {transfer_fee}, out of the amount. The transfer fails if the fee \
+                 changes before the message executes."
             )?;
         }
         writeln!(f, "From: {}", self.source)?;

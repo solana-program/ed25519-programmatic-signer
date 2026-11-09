@@ -1,6 +1,9 @@
 use {
     crate::{
-        common::{execute::programmatic_signer, helpers::TestEnv},
+        common::{
+            execute::programmatic_signer,
+            helpers::{TestEnv, run_psigner},
+        },
         migration::{
             assert_signers, authorization, create_nonce, decode_execution_message,
             execute_as_new_owner, migrate, migrate_error, send,
@@ -26,7 +29,8 @@ use {
             cpi_guard::instruction::enable_cpi_guard,
             default_account_state::instruction::initialize_default_account_state,
             transfer_fee::instruction::{
-                harvest_withheld_tokens_to_mint, initialize_transfer_fee_config,
+                harvest_withheld_tokens_to_mint, initialize_transfer_fee_config, set_transfer_fee,
+                transfer_checked_with_fee,
             },
             transfer_hook,
         },
@@ -83,7 +87,7 @@ pub async fn create_mint(
                 ExtensionType::TransferFeeConfig => initialize_transfer_fee_config(
                     token_program,
                     &mint.pubkey(),
-                    None,
+                    Some(&payer),
                     None,
                     100, // transfer fee basis points
                     u64::MAX,
@@ -247,7 +251,7 @@ async fn migrates_tokens(env: &TestEnv, token_program: &Address) {
     assert_eq!(migration.source, source.to_string());
     assert_eq!(migration.destination, destination.to_string());
     assert_eq!(migration.funder, Some(owner_arg.clone()));
-    assert!(!migration.transfer_fee);
+    assert_eq!(migration.transfer_fee, None);
     // Tokens are left behind, so the source stays open.
     assert_eq!(migration.rent_recipient, None);
     assert_eq!(
@@ -1169,7 +1173,8 @@ pub async fn migrates_tokens_with_transfer_fee(env: &TestEnv) {
         &["--owner", &owner.pubkey().to_string()],
     );
     assert_eq!(migration.amount, "9.9");
-    assert!(migration.transfer_fee);
+    // 1% of 990, rounded up.
+    assert_eq!(migration.transfer_fee, Some("0.1".to_string()));
     assert_eq!(
         migration.rent_recipient,
         Some(new_owner.pubkey().to_string())
@@ -1191,7 +1196,7 @@ pub async fn migrates_tokens_with_transfer_fee(env: &TestEnv) {
     assert_eq!(
         data,
         [
-            transfer_checked(
+            transfer_checked_with_fee(
                 &token_program,
                 &source,
                 &mint,
@@ -1199,7 +1204,8 @@ pub async fn migrates_tokens_with_transfer_fee(env: &TestEnv) {
                 &owner.pubkey(),
                 &[],
                 990,
-                DECIMALS
+                DECIMALS,
+                10
             )
             .unwrap()
             .data,
@@ -1229,6 +1235,46 @@ pub async fn migrates_tokens_with_transfer_fee(env: &TestEnv) {
     assert_closed(env, &source).await;
     // The fee is withheld in the new authority's token account.
     assert_eq!(token_balance(env, &destination).await, 980);
+}
+
+/// A scheduled fee change is warned about, but the message pins the current fee.
+pub async fn warns_of_scheduled_token_transfer_fee(env: &TestEnv) {
+    let owner = Keypair::new();
+    let token_program = spl_token_2022_interface::id();
+    fund(env, &owner.pubkey()).await;
+    let mint = create_mint(env, &token_program, &[ExtensionType::TransferFeeConfig]).await;
+    mint_tokens(env, &token_program, &mint, &owner.pubkey(), 1_000).await;
+    let payer = env.payer.pubkey();
+    // Takes effect two epochs from now.
+    send(
+        env,
+        &[set_transfer_fee(&token_program, &mint, &payer, &[], 200, u64::MAX).unwrap()],
+        &[],
+    )
+    .await;
+
+    let owner_arg = owner.pubkey().to_string();
+    let output = run_psigner(&[
+        "-C",
+        &env.config_file_path,
+        "--output",
+        "json",
+        "migrate",
+        "token",
+        &mint.to_string(),
+        "--owner",
+        &owner_arg,
+    ]);
+    let stderr = String::from_utf8(output.stderr).unwrap();
+    assert!(
+        stderr.contains(&format!(
+            "Warning: mint {mint} changes its transfer fee at epoch"
+        )),
+        "{stderr}"
+    );
+    let migration: TokenMigrationOutput = serde_json::from_slice(&output.stdout).unwrap();
+    // 1% of 1,000, not the scheduled 2%.
+    assert_eq!(migration.transfer_fee, Some("0.1".to_string()));
 }
 
 /// An account with a close authority other than its owner needs that authority to close it.
