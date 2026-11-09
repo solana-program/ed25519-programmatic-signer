@@ -76,7 +76,8 @@ pub(super) async fn run(
                 nonce_account: nonce_account.to_string(),
                 current_nonce: previous.nonce.to_string(),
                 authorization_message: BASE64_STANDARD.encode(authorization_message.serialize()),
-                next_nonce: next_nonce(&nonce_account, &execution_message).to_string(),
+                next_nonce: next_nonce(&nonce_account, &previous.authority, &execution_message)
+                    .to_string(),
                 signer: authority_address.to_string(),
             });
         }
@@ -107,7 +108,7 @@ pub(super) async fn run(
         signature,
         nonce_account: nonce_account.to_string(),
         previous_nonce: previous.nonce.to_string(),
-        nonce: next_nonce(&nonce_account, &execution_message).to_string(),
+        nonce: next_nonce(&nonce_account, &previous.authority, &execution_message).to_string(),
     })
 }
 

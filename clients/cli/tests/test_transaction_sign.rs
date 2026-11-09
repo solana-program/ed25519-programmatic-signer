@@ -213,6 +213,7 @@ impl SignTestEnv {
         .derive_next_nonce(
             &spl_nonce_interface::id(),
             &self.nonce_account.parse().unwrap(),
+            &self.nonce_authority.parse().unwrap(),
             &derive_transition_commitment(&VersionedMessage::V1(execution_message)),
         )
         .to_string()

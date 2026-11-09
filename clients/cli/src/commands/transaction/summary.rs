@@ -16,7 +16,11 @@ use {
 /// The value the nonce account holds after the executor runs `execution_message`, whose lifetime
 /// specifier is the expected nonce. Each advance commits to the exact execution message, so the
 /// successor is known offline, and a message signed against it can only execute after this one.
-pub(crate) fn next_nonce(nonce_account: &Address, execution_message: &v1::Message) -> Hash {
+pub(crate) fn next_nonce(
+    nonce_account: &Address,
+    nonce_authority: &Address,
+    execution_message: &v1::Message,
+) -> Hash {
     Nonce {
         nonce: execution_message.lifetime_specifier,
         ..Nonce::default()
@@ -24,6 +28,7 @@ pub(crate) fn next_nonce(nonce_account: &Address, execution_message: &v1::Messag
     .derive_next_nonce(
         &spl_nonce_interface::id(),
         nonce_account,
+        nonce_authority,
         &derive_transition_commitment(&VersionedMessage::V1(execution_message.clone())),
     )
 }
@@ -74,7 +79,7 @@ pub(super) fn render_signing_summary(
         VersionedMessage::hash_raw_message(&authorization_message.serialize());
     let execution_message_hash = VersionedMessage::hash_raw_message(&execution_message.serialize());
     let expected_nonce = execution_message.lifetime_specifier;
-    let next_nonce = next_nonce(nonce_account, execution_message);
+    let next_nonce = next_nonce(nonce_account, nonce_authority, execution_message);
     Ok(formatdoc! {"
         === Signing ===
         Authorization message hash: {authorization_message_hash}

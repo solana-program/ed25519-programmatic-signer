@@ -44,6 +44,7 @@ pub fn create_account(
 /// Creates an `Advance` instruction.
 pub fn advance(
     authority: &Address,
+    transition_signer: &Address,
     nonce_account: &Address,
     current_nonce: Hash,
     transition_commitment: Hash,
@@ -56,6 +57,7 @@ pub fn advance(
         },
         vec![
             AccountMeta::new_readonly(*authority, true),
+            AccountMeta::new_readonly(*transition_signer, true),
             AccountMeta::new(*nonce_account, false),
         ],
     )

@@ -50,6 +50,7 @@ export function getAdvanceDiscriminatorBytes(): ReadonlyUint8Array {
 export type AdvanceInstruction<
     TProgram extends string = typeof NONCE_PROGRAM_ADDRESS,
     TAccountAuthority extends string | AccountMeta<string> = string,
+    TAccountTransitionSigner extends string | AccountMeta<string> = string,
     TAccountNonceAccount extends string | AccountMeta<string> = string,
     TRemainingAccounts extends readonly AccountMeta<string>[] = [],
 > = Instruction<TProgram> &
@@ -59,6 +60,9 @@ export type AdvanceInstruction<
             TAccountAuthority extends string
                 ? ReadonlySignerAccount<TAccountAuthority> & AccountSignerMeta<TAccountAuthority>
                 : TAccountAuthority,
+            TAccountTransitionSigner extends string
+                ? ReadonlySignerAccount<TAccountTransitionSigner> & AccountSignerMeta<TAccountTransitionSigner>
+                : TAccountTransitionSigner,
             TAccountNonceAccount extends string ? WritableAccount<TAccountNonceAccount> : TAccountNonceAccount,
             ...TRemainingAccounts,
         ]
@@ -96,10 +100,13 @@ export function getAdvanceInstructionDataCodec(): FixedSizeCodec<AdvanceInstruct
 
 export type AdvanceInput<
     TAccountAuthority extends InstructionSignerInput = InstructionSignerInput,
+    TAccountTransitionSigner extends InstructionSignerInput = InstructionSignerInput,
     TAccountNonceAccount extends InstructionAccountInput = InstructionAccountInput,
 > = {
     /** Authority stored in the nonce account */
     authority: TAccountAuthority;
+    /** Signer identity bound into the successor nonce */
+    transitionSigner: TAccountTransitionSigner;
     /** Nonce account to advance */
     nonceAccount: TAccountNonceAccount;
     currentNonce: AdvanceInstructionDataArgs['currentNonce'];
@@ -108,14 +115,16 @@ export type AdvanceInput<
 
 export function getAdvanceInstruction<
     TAccountAuthority extends InstructionSignerInput,
+    TAccountTransitionSigner extends InstructionSignerInput,
     TAccountNonceAccount extends InstructionAccountInput,
     TProgramAddress extends Address = typeof NONCE_PROGRAM_ADDRESS,
 >(
-    input: AdvanceInput<TAccountAuthority, TAccountNonceAccount>,
+    input: AdvanceInput<TAccountAuthority, TAccountTransitionSigner, TAccountNonceAccount>,
     config?: { programAddress?: TProgramAddress | { readonly address: TProgramAddress } },
 ): AdvanceInstruction<
     TProgramAddress,
     ResolvedInstructionAccountMeta<TAccountAuthority, InstructionAccountInputAddress<TAccountAuthority>>,
+    ResolvedInstructionAccountMeta<TAccountTransitionSigner, InstructionAccountInputAddress<TAccountTransitionSigner>>,
     ResolvedInstructionAccountMeta<TAccountNonceAccount, InstructionAccountInputAddress<TAccountNonceAccount>>
 > {
     // Program address.
@@ -128,6 +137,7 @@ export function getAdvanceInstruction<
     // Original accounts.
     const originalAccounts = {
         authority: { value: input.authority ?? null, isSigner: true, isWritable: false },
+        transitionSigner: { value: input.transitionSigner ?? null, isSigner: true, isWritable: false },
         nonceAccount: { value: input.nonceAccount ?? null, isSigner: false, isWritable: true },
     };
     const accounts = originalAccounts as Record<keyof typeof originalAccounts, ResolvedInstructionAccount>;
@@ -138,6 +148,7 @@ export function getAdvanceInstruction<
     return Object.freeze({
         accounts: [
             getAccountMeta('authority', accounts.authority),
+            getAccountMeta('transitionSigner', accounts.transitionSigner),
             getAccountMeta('nonceAccount', accounts.nonceAccount),
         ],
         data: getAdvanceInstructionDataEncoder().encode(args as AdvanceInstructionDataArgs),
@@ -145,6 +156,10 @@ export function getAdvanceInstruction<
     } as AdvanceInstruction<
         TProgramAddress,
         ResolvedInstructionAccountMeta<TAccountAuthority, InstructionAccountInputAddress<TAccountAuthority>>,
+        ResolvedInstructionAccountMeta<
+            TAccountTransitionSigner,
+            InstructionAccountInputAddress<TAccountTransitionSigner>
+        >,
         ResolvedInstructionAccountMeta<TAccountNonceAccount, InstructionAccountInputAddress<TAccountNonceAccount>>
     >);
 }
@@ -157,8 +172,10 @@ export type ParsedAdvanceInstruction<
     accounts: {
         /** Authority stored in the nonce account */
         authority: TAccountMetas[0];
+        /** Signer identity bound into the successor nonce */
+        transitionSigner: TAccountMetas[1];
         /** Nonce account to advance */
-        nonceAccount: TAccountMetas[1];
+        nonceAccount: TAccountMetas[2];
     };
     data: AdvanceInstructionData;
 };
@@ -168,10 +185,10 @@ export function parseAdvanceInstruction<TProgram extends string, TAccountMetas e
         InstructionWithAccounts<TAccountMetas> &
         InstructionWithData<ReadonlyUint8Array>,
 ): ParsedAdvanceInstruction<TProgram, TAccountMetas> {
-    if (instruction.accounts.length < 2) {
+    if (instruction.accounts.length < 3) {
         throw new SolanaError(SOLANA_ERROR__PROGRAM_CLIENTS__INSUFFICIENT_ACCOUNT_METAS, {
             actualAccountMetas: instruction.accounts.length,
-            expectedAccountMetas: 2,
+            expectedAccountMetas: 3,
         });
     }
     let accountIndex = 0;
@@ -182,7 +199,7 @@ export function parseAdvanceInstruction<TProgram extends string, TAccountMetas e
     };
     return {
         programAddress: instruction.programAddress,
-        accounts: { authority: getNextAccount(), nonceAccount: getNextAccount() },
+        accounts: { authority: getNextAccount(), transitionSigner: getNextAccount(), nonceAccount: getNextAccount() },
         data: getAdvanceInstructionDataDecoder().decode(instruction.data),
     };
 }

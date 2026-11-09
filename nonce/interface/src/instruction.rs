@@ -65,24 +65,25 @@ pub enum Instruction {
     /// nonce cannot be consumed twice within one transaction.
     ///
     /// By convention, `transition_commitment` is a hash of whatever action the advancement
-    /// authorizes. The program does not validate it or mix in entropy of its own, so an authority
-    /// that fixes its commitments in advance knows every future nonce value. This allows signing
-    /// an ordered batch of transactions up front, where each becomes valid only after its
-    /// predecessor executes. Advancing with a different commitment at any step yields a different
-    /// successor and invalidates everything signed against the abandoned branch.
+    /// authorizes. Successors are deterministic, allowing later transactions to be signed in advance.
+    /// The program does not verify execution. To enforce ordering, use a transition signer
+    /// that signs only when the committed message executes, such as an executor PDA.
+    /// Advancing with a different signer or commitment abandons the chain, preventing
+    /// transactions signed for the original successor from executing.
     ///
     /// Instruction data is the discriminator followed by `current_nonce` and
     /// `transition_commitment`.
     ///
     /// On success, the program:
-    /// 1. Verifies the stored authority matches the authority account, which must carry
-    ///    runtime signer privilege.
+    /// 1. Verifies the stored authority matches the authority account. Both the authority and
+    ///    transition signer must carry runtime signer privilege.
     /// 2. Verifies the stored nonce equals `current_nonce`.
     /// 3. Stores the next nonce by hashing the advancement tag, program id, nonce account
-    ///    address, old nonce, and transition commitment.
+    ///    address, old nonce, transition signer address, and transition commitment.
     ///
     /// Required accounts.
     /// - `[signer]` Authority stored in the nonce account
+    /// - `[signer]` Transition signer (identity bound to the successor nonce)
     /// - `[writable]` Nonce account
     #[cfg_attr(
         feature = "codama",
@@ -97,6 +98,12 @@ pub enum Instruction {
             signer,
             docs = "Authority stored in the nonce account",
             display(label = "Nonce authority")
+        )),
+        codama(account(
+            name = "transition_signer",
+            signer,
+            docs = "Signer identity bound into the successor nonce",
+            display(label = "Transition signer")
         )),
         codama(account(name = "nonce_account", writable, docs = "Nonce account to advance"))
     )]
