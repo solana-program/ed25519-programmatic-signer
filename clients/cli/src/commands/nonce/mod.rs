@@ -7,7 +7,8 @@ use {
     crate::{
         client::Client,
         commands::transaction::v1_transaction::{
-            compile_message, try_partial_sign, unsigned_transaction, with_simulated_limits,
+            ComputeBudget, compile_message, try_partial_sign, unsigned_transaction,
+            with_simulated_limits,
         },
         output::OutputFormat,
     },
@@ -91,11 +92,12 @@ impl NonceAuthority {
     }
 }
 
-/// Sign `instruction` with the fee payer and `signer`, and send it.
+/// Sign `instruction` with the fee payer and `signer`, and send it with `budget`.
 async fn send_relay_transaction(
     client: &Client,
     instruction: Instruction,
     signer: Option<&dyn Signer>,
+    budget: ComputeBudget,
 ) -> Result<String> {
     let fee_payer = client.fee_payer()?;
     let fee_payer_address = fee_payer
@@ -109,8 +111,8 @@ async fn send_relay_transaction(
     }
 
     let blockhash = client.latest_blockhash().await?;
-    let message = compile_message(&fee_payer_address, &[instruction], blockhash)?;
-    let message = with_simulated_limits(client, message, false).await?;
+    let message = compile_message(&fee_payer_address, &[instruction], blockhash, budget)?;
+    let message = with_simulated_limits(client, message, budget, false).await?;
     let mut transaction = unsigned_transaction(message);
     let message_data = transaction.message.serialize();
     try_partial_sign(&mut transaction, &signers, &message_data)

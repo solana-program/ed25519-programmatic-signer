@@ -155,6 +155,21 @@ impl SubmitTestEnv {
     /// output after checking its relay message hash and limits. The RPC endpoint is unreachable, so this
     /// also checks no RPC calls are made.
     fn sign_only(&self, extra: &[&str]) -> CliSignOnlyData {
+        // Without a simulation, the relay transaction requests the maximum limits.
+        self.sign_only_with_config(
+            extra,
+            v1::TransactionConfig::empty()
+                .with_compute_unit_limit(1_400_000)
+                .with_loaded_accounts_data_size_limit(64 * 1024 * 1024),
+        )
+    }
+
+    /// Like [`Self::sign_only`], checking the relay message has `config`.
+    fn sign_only_with_config(
+        &self,
+        extra: &[&str],
+        config: v1::TransactionConfig,
+    ) -> CliSignOnlyData {
         let authority_entry = self.authority_entry();
         let durable_nonce = self.durable_nonce.to_string();
         let durable_nonce_value = self.durable_nonce_value.to_string();
@@ -192,12 +207,7 @@ impl SubmitTestEnv {
         else {
             panic!("expected a v1 relay message");
         };
-        assert_eq!(
-            message.config,
-            v1::TransactionConfig::empty()
-                .with_compute_unit_limit(1_400_000)
-                .with_loaded_accounts_data_size_limit(64 * 1024 * 1024)
-        );
+        assert_eq!(message.config, config);
         data
     }
 
@@ -775,6 +785,75 @@ fn sign_only_runs_sign_the_same_relay_message() {
         assert_eq!(absent, expected_absent);
         assert!(run.bad_sig.is_empty());
     }
+}
+
+/// A --sign-only run cannot simulate, so it requests the maximum limits unless they are fixed. The
+/// priority fee is paid as given, whatever the limits.
+#[test_case(&["--with-compute-unit-limit", "200000"], Some(200_000), None, None; "compute unit limit")]
+#[test_case(
+    &["--with-loaded-accounts-data-size-limit", "100000"],
+    None,
+    Some(100_000),
+    None;
+    "loaded accounts data size limit"
+)]
+#[test_case(&["--with-priority-fee", "1400"], None, None, Some(1_400); "priority fee")]
+#[test_case(
+    &[
+        "--with-compute-unit-limit",
+        "200000",
+        "--with-loaded-accounts-data-size-limit",
+        "100000",
+        "--with-priority-fee",
+        "300",
+    ],
+    Some(200_000),
+    Some(100_000),
+    Some(300);
+    "all"
+)]
+fn sign_only_uses_compute_budget_flags(
+    extra: &[&str],
+    unit_limit: Option<u32>,
+    loaded_accounts_data_size_limit: Option<u32>,
+    priority_fee: Option<u64>,
+) {
+    let env = SubmitTestEnv::new();
+    let config = v1::TransactionConfig::empty()
+        .with_compute_unit_limit(unit_limit.unwrap_or(1_400_000))
+        .with_loaded_accounts_data_size_limit(
+            loaded_accounts_data_size_limit.unwrap_or(64 * 1024 * 1024),
+        );
+    let config = match priority_fee {
+        Some(fee) => config.with_priority_fee(fee),
+        None => config,
+    };
+    env.sign_only_with_config(extra, config);
+}
+
+#[test_case("--with-compute-unit-limit", "0", "0 is not in 1..=1400000"; "zero compute unit limit")]
+#[test_case(
+    "--with-compute-unit-limit",
+    "1400001",
+    "1400001 is not in 1..=1400000";
+    "compute unit limit over maximum"
+)]
+#[test_case(
+    "--with-loaded-accounts-data-size-limit",
+    "0",
+    "0 is not in 1..=67108864";
+    "zero loaded accounts data size limit"
+)]
+#[test_case(
+    "--with-loaded-accounts-data-size-limit",
+    "67108865",
+    "67108865 is not in 1..=67108864";
+    "loaded accounts data size limit over maximum"
+)]
+fn rejects_limit_out_of_range(flag: &str, limit: &str, expected: &str) {
+    let env = SubmitTestEnv::new();
+    let output = env.submit_message(&[flag, limit]);
+    assert_failure(&output, expected);
 }
 
 #[test]

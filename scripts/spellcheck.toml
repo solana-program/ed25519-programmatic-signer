@@ -1,5 +1,5 @@
 [Hunspell]
 use_builtin = true
-skip_os_lookups = false
+skip_os_lookups = true
 search_dirs = ["."]
 extra_dictionaries = ["solana.dic"]

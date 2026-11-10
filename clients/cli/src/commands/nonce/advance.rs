@@ -1,7 +1,9 @@
 use {
     super::{NonceAuthority, send_relay_transaction},
     crate::{
-        cli::keypair_source_parser, client::Client, commands::transaction::summary::next_nonce,
+        cli::keypair_source_parser,
+        client::Client,
+        commands::transaction::{summary::next_nonce, v1_transaction::ComputeBudget},
         output::OutputFormat,
     },
     anyhow::{Context, Result, bail},
@@ -34,6 +36,9 @@ pub(crate) struct AdvanceCommand {
     /// next nonce value. Defaults to a random address, so the next nonce value can't be predicted.
     #[clap(long, value_name = "ADDRESS")]
     salt: Option<Address>,
+
+    #[clap(flatten)]
+    compute_budget: ComputeBudget,
 }
 
 pub(super) async fn run(
@@ -72,6 +77,10 @@ pub(super) async fn run(
         .context("invalid authorization message")?;
 
         if !authority.can_sign {
+            command.compute_budget.ensure_unset(
+                "an authority given as an address only prints the authorization message. Pass \
+                 them to `transaction submit`, which sends the relay transaction",
+            )?;
             return output.render(&NonceAdvanceAuthorizationOutput {
                 nonce_account: nonce_account.to_string(),
                 current_nonce: previous.nonce.to_string(),
@@ -100,8 +109,13 @@ pub(super) async fn run(
         );
     };
 
-    let signature =
-        send_relay_transaction(client, relay_instruction, authority_signer.as_deref()).await?;
+    let signature = send_relay_transaction(
+        client,
+        relay_instruction,
+        authority_signer.as_deref(),
+        command.compute_budget,
+    )
+    .await?;
 
     output.render(&NonceAdvanceOutput {
         signature,
