@@ -107,3 +107,17 @@ check-no-std-alloc-%:
 		--manifest-path $(call make-path,$*)/Cargo.toml \
 		-Zbuild-std=alloc,core \
 		$(ARGS)
+
+# Helpers for publishing
+# Preserve the full path because interface/client/program directory names repeat.
+tag-name = $(subst /,-,$(call make-path,$1))
+crate-version = $(subst ",,$(shell toml get $(call make-path,$1)/Cargo.toml package.version))
+
+git-tag-rust-%:
+	@echo "$(call tag-name,$*)@v$(call crate-version,$*)"
+
+publish-rust-dry-run-%:
+	cd "$(call make-path,$*)" && cargo release $(LEVEL) --tag-name "$(call tag-name,$*)@v{{version}}"
+
+publish-rust-%:
+	cd "$(call make-path,$*)" && cargo release $(LEVEL) --tag-name "$(call tag-name,$*)@v{{version}}" --execute --no-confirm --dependent-version fix

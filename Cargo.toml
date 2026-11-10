@@ -15,10 +15,15 @@ members = [
 
 [workspace.package]
 authors = ["Anza Maintainers <maintainers@anza.xyz>"]
-repository = "https://github.com/solana-program/nonce"
+repository = "https://github.com/solana-program/ed25519-programmatic-signer"
 homepage = "https://anza.xyz/"
 license = "Apache-2.0"
 edition = "2021"
+
+[workspace.metadata.release]
+pre-release-commit-message = "Publish {{crate_name}} v{{version}}"
+tag-message = "Publish {{crate_name}} v{{version}}"
+consolidate-commits = false
 
 [workspace.dependencies]
 anyhow = "1.0.104"
@@ -78,12 +83,12 @@ tempfile = "3.27.0"
 tokio = "1.53.1"
 wincode = { version = "0.5.5", default-features = false }
 
-spl-ed25519-signer-client = { path = "signer/client" }
-spl-ed25519-signer-interface = { path = "signer/interface" }
-spl-message-executor-client = { path = "executor/client" }
-spl-message-executor-interface = { path = "executor/interface" }
-spl-nonce-client = { path = "nonce/client" }
-spl-nonce-interface = { path = "nonce/interface" }
+spl-ed25519-signer-client = { version = "0.1.0", path = "signer/client" }
+spl-ed25519-signer-interface = { version = "0.1.0", path = "signer/interface" }
+spl-message-executor-client = { version = "0.1.0", path = "executor/client" }
+spl-message-executor-interface = { version = "0.1.0", path = "executor/interface" }
+spl-nonce-client = { version = "0.1.0", path = "nonce/client" }
+spl-nonce-interface = { version = "0.1.0", path = "nonce/interface" }
 
 [workspace.lints.rust.unexpected_cfgs]
 level = "warn"
