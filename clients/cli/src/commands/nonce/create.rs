@@ -1,5 +1,9 @@
 use {
-    crate::{cli::keypair_source_parser, client::Client, output::OutputFormat},
+    super::send_transaction_with_fee_payer,
+    crate::{
+        cli::keypair_source_parser, client::Client,
+        commands::transaction::v1_transaction::ComputeBudget, output::OutputFormat,
+    },
     anyhow::{Context, Result, bail},
     clap::Args,
     serde::{Deserialize, Serialize},
@@ -8,7 +12,6 @@ use {
     solana_keypair::Keypair,
     solana_native_token::Sol,
     solana_signer::Signer,
-    solana_transaction::Transaction,
     spl_ed25519_signer_client::ProgrammaticSigner,
     spl_nonce_interface::state::Nonce,
     std::fmt,
@@ -34,6 +37,9 @@ pub(crate) struct CreateCommand {
     /// If omitted, generates a temporary keypair used only for account creation.
     #[clap(long, value_parser = keypair_source_parser())]
     pub(crate) nonce_keypair: Option<SignerSource>,
+
+    #[clap(flatten)]
+    pub(crate) compute_budget: ComputeBudget,
 }
 
 pub(super) async fn run(
@@ -68,23 +74,20 @@ pub(super) async fn run(
         .minimum_balance_for_rent_exemption(Nonce::LEN)
         .await?;
 
-    let recent_blockhash = client.latest_blockhash().await?;
-
-    let [create, initialize] = spl_nonce_client::instruction::create_account(
+    let instructions = spl_nonce_client::instruction::create_account(
         &fee_payer_address,
         &nonce_account,
         &nonce_authority,
         rent_lamports,
     );
-    let mut transaction =
-        Transaction::new_with_payer(&[create, initialize], Some(&fee_payer_address));
-    let signers: [&dyn Signer; 2] = [fee_payer.as_ref(), nonce_keypair.as_ref()];
-    transaction
-        .try_sign(signers.as_slice(), recent_blockhash)
-        .context("failed to sign nonce-account creation")?;
-    let signature = client
-        .send_and_confirm_transaction(&transaction.into())
-        .await?;
+    let signature = send_transaction_with_fee_payer(
+        client,
+        fee_payer.as_ref(),
+        &instructions,
+        Some(nonce_keypair.as_ref()),
+        command.compute_budget,
+    )
+    .await?;
 
     let account = client
         .nonce_account(&nonce_account)

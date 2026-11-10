@@ -1,5 +1,5 @@
 use {
-    super::{NonceAuthority, send_relay_transaction},
+    super::{NonceAuthority, send_transaction},
     crate::{
         cli::keypair_source_parser,
         client::Client,
@@ -109,9 +109,9 @@ pub(super) async fn run(
         );
     };
 
-    let signature = send_relay_transaction(
+    let signature = send_transaction(
         client,
-        relay_instruction,
+        &[relay_instruction],
         authority_signer.as_deref(),
         command.compute_budget,
     )

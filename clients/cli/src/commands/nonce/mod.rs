@@ -92,18 +92,31 @@ impl NonceAuthority {
     }
 }
 
-/// Sign `instruction` with the fee payer and `signer`, and send it with `budget`.
-async fn send_relay_transaction(
+/// Sign a v1 transaction for `instructions` with the fee payer and `signer`, and send it with
+/// `budget`.
+async fn send_transaction(
     client: &Client,
-    instruction: Instruction,
+    instructions: &[Instruction],
     signer: Option<&dyn Signer>,
     budget: ComputeBudget,
 ) -> Result<String> {
     let fee_payer = client.fee_payer()?;
+    send_transaction_with_fee_payer(client, fee_payer.as_ref(), instructions, signer, budget).await
+}
+
+/// Like [`send_transaction`], with a fee payer the caller already loaded, so a signer that
+/// prompts is not loaded twice.
+async fn send_transaction_with_fee_payer(
+    client: &Client,
+    fee_payer: &dyn Signer,
+    instructions: &[Instruction],
+    signer: Option<&dyn Signer>,
+    budget: ComputeBudget,
+) -> Result<String> {
     let fee_payer_address = fee_payer
         .try_pubkey()
         .context("failed to read fee payer pubkey")?;
-    let mut signers = vec![fee_payer.as_ref()];
+    let mut signers = vec![fee_payer];
     if let Some(signer) = signer {
         if signer.try_pubkey()? != fee_payer_address {
             signers.push(signer);
@@ -111,14 +124,14 @@ async fn send_relay_transaction(
     }
 
     let blockhash = client.latest_blockhash().await?;
-    let message = compile_message(&fee_payer_address, &[instruction], blockhash, budget)?;
+    let message = compile_message(&fee_payer_address, instructions, blockhash, budget)?;
     let message = with_simulated_limits(client, message, budget, false).await?;
     let mut transaction = unsigned_transaction(message);
     let message_data = transaction.message.serialize();
     try_partial_sign(&mut transaction, &signers, &message_data)
-        .context("failed to sign relay transaction")?;
+        .context("failed to sign transaction")?;
     client
         .send_and_confirm_transaction(&transaction)
         .await
-        .with_context(|| format!("relay transaction {}", transaction.signatures[0]))
+        .with_context(|| format!("transaction {}", transaction.signatures[0]))
 }

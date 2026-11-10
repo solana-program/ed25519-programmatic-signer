@@ -1,5 +1,5 @@
 use {
-    super::{NonceAuthority, send_relay_transaction},
+    super::{NonceAuthority, send_transaction},
     crate::{
         cli::keypair_source_parser,
         client::Client,
@@ -111,9 +111,9 @@ pub(super) async fn run(
             &destination,
             lamports,
         );
-        let signature = send_relay_transaction(
+        let signature = send_transaction(
             client,
-            withdraw,
+            &[withdraw],
             Some(authority.signer.as_ref()),
             command.compute_budget,
         )
@@ -152,9 +152,9 @@ pub(super) async fn run(
             &destination,
             lamports,
         );
-        let signature = send_relay_transaction(
+        let signature = send_transaction(
             client,
-            withdraw,
+            &[withdraw],
             Some(authority.signer.as_ref()),
             command.compute_budget,
         )
@@ -208,7 +208,7 @@ pub(super) async fn run(
             VersionedMessage::V1(authorization_message),
         );
         (
-            send_relay_transaction(client, submit, None, command.compute_budget).await?,
+            send_transaction(client, &[submit], None, command.compute_budget).await?,
             next_nonce,
         )
     } else {
