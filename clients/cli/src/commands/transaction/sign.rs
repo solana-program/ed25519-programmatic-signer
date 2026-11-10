@@ -5,7 +5,7 @@ use {
             SummarySigners, confirm_signing, next_nonce, render_signing_summary,
             sign_authorization_message,
         },
-        v1_transaction::{ensure_transaction_size, relay_transaction},
+        v1_transaction::{ensure_transaction_size, relay_message},
     },
     crate::{cli::keypair_source_parser, client::Client, output::OutputFormat},
     anyhow::{Context, Result, ensure},
@@ -327,7 +327,7 @@ fn ensure_relay_transaction_fits(
     let fee_payer = forwarded_signers
         .first()
         .unwrap_or(&authorization_signers[0]);
-    let transaction = relay_transaction(
+    let message = relay_message(
         authorization_message,
         signatures,
         forwarded_signers,
@@ -337,6 +337,6 @@ fn ensure_relay_transaction_fits(
     )?;
     ensure_transaction_size(
         "the smallest relay transaction for this authorization message",
-        &transaction,
+        &message,
     )
 }

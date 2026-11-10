@@ -4,6 +4,7 @@ use {
     solana_cli_config::Config as SolanaConfig,
     solana_commitment_config::CommitmentConfig,
     solana_keypair::{Keypair, write_keypair_file},
+    solana_rpc::rpc::JsonRpcConfig,
     solana_rpc_client::nonblocking::rpc_client::RpcClient,
     solana_signer::Signer,
     solana_test_validator::{TestValidator, TestValidatorGenesis, UpgradeableProgramInfo},
@@ -28,6 +29,11 @@ pub struct TestEnv {
 
 pub async fn setup_test_env() -> TestEnv {
     let mut genesis = TestValidatorGenesis::default_for_tests();
+    // Tests fetch landed transactions.
+    genesis.rpc_config(JsonRpcConfig {
+        enable_rpc_transaction_history: true,
+        ..JsonRpcConfig::default_for_test()
+    });
     genesis.add_program("spl_nonce_program", spl_nonce_interface::id());
     genesis.add_program(
         "spl_ed25519_signer_program",
