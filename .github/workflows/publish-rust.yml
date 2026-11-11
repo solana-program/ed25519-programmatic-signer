@@ -93,4 +93,5 @@ jobs:
       version: ${{ inputs.version }}
       create-release: ${{ inputs.create-release }}
       dry-run: ${{ inputs.dry-run }}
+      pnpm: true
     secrets: inherit
