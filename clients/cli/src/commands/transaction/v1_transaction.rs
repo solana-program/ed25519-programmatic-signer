@@ -1,7 +1,7 @@
 //! v1 transaction helpers for simulating `Execute` and relaying `Submit`.
 
 use {
-    crate::client::Client,
+    crate::client::{Client, SimulateConfig},
     anyhow::{Context, Result, ensure},
     base64::{Engine, prelude::BASE64_STANDARD},
     solana_address::Address,
@@ -57,8 +57,10 @@ pub(crate) async fn with_simulated_limits(
     let result = client
         .simulate_transaction(
             &unsigned_transaction(message.clone()),
-            None,
-            replace_recent_blockhash,
+            &SimulateConfig {
+                replace_recent_blockhash,
+                ..SimulateConfig::default()
+            },
         )
         .await?;
     if result.err.is_some() {

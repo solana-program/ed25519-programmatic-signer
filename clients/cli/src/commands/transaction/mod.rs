@@ -1,6 +1,7 @@
 mod decode;
 mod sign;
 mod simulate;
+mod state_changes;
 mod submit;
 pub(crate) mod summary;
 pub(crate) mod v1_transaction;
