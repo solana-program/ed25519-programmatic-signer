@@ -59,6 +59,7 @@ solana-program-error = "3.0.1"
 solana-program-pack = "3.1.0"
 solana-remote-wallet = "4.2.1"
 solana-rent = "4.2.0"
+solana-rpc = { version = "4.2.1", features = ["agave-unstable-api"] }
 solana-rpc-client = { version = "4.2.1", default-features = false }
 solana-rpc-client-types = "4.2.1"
 solana-sanitize = "3.0.1"

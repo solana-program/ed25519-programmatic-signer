@@ -1,7 +1,7 @@
 use {
     super::{
         decode::read_execution_message,
-        v1_transaction::{compile_message, ensure_transaction_size},
+        v1_transaction::{compile_message, ensure_transaction_size, unsigned_transaction},
     },
     crate::{client::Client, output::OutputFormat},
     anyhow::{Context, Result, bail, ensure},
@@ -14,8 +14,6 @@ use {
     solana_message::{VersionedMessage, v1},
     solana_native_token::Sol,
     solana_rpc_client_types::response::{RpcSimulateTransactionResult, UiTokenAmount},
-    solana_signature::Signature,
-    solana_transaction::versioned::VersionedTransaction,
     solana_transaction_status::UiTransactionTokenBalance,
     spl_ed25519_signer_client::{
         ProgrammaticSigner, instruction::submit, message::authorization_message,
@@ -119,12 +117,9 @@ pub(super) async fn run(
     }
     // Simulate replaces the blockhash.
     let message = compile_message(&fee_payer, &[instruction], Hash::default())?;
+    ensure_transaction_size("simulated transaction", &message)?;
     // Signatures are not verified.
-    let transaction = VersionedTransaction {
-        signatures: vec![Signature::default(); usize::from(message.header.num_required_signatures)],
-        message: VersionedMessage::V1(message.clone()),
-    };
-    ensure_transaction_size("simulated transaction", &transaction)?;
+    let transaction = unsigned_transaction(message.clone());
 
     let verbose_accounts = command.verbose.then(|| writable_accounts(&message));
     let result = client

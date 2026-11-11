@@ -7,14 +7,16 @@ use {
     base64::{Engine, prelude::BASE64_STANDARD},
     solana_address::Address,
     solana_cli_output::CliSignOnlyData,
+    solana_commitment_config::CommitmentConfig,
     solana_hash::Hash,
     solana_keypair::{Keypair, write_keypair_file},
     solana_message::{VersionedMessage, v1},
     solana_nonce::{state::State, versions::Versions},
-    solana_rpc_client_types::config::RpcSimulateTransactionConfig,
+    solana_rpc_client_types::config::{RpcSimulateTransactionConfig, RpcTransactionConfig},
     solana_signer::Signer,
     solana_system_interface::instruction::{create_nonce_account, transfer},
     solana_transaction::{InstructionError, Transaction, TransactionError},
+    solana_transaction_status::UiTransactionEncoding,
     spl_ed25519_signer_client::{
         instruction::submit as submit_instruction, message::authorization_message,
     },
@@ -29,6 +31,7 @@ use {
     std::{
         collections::{BTreeMap, BTreeSet},
         process::Output,
+        time::Duration,
     },
     tempfile::NamedTempFile,
 };
@@ -190,6 +193,53 @@ fn assert_submitted(output: &Output, summary: Option<Summary>) {
         .unwrap();
 }
 
+/// A relay transaction sent without separate relay signatures requests its simulated compute units
+/// and loaded accounts data size, rather than the maximum.
+async fn assert_simulated_limits(env: &TestEnv, output: &Output) {
+    let signature = String::from_utf8(output.stdout.clone())
+        .unwrap()
+        .trim()
+        .parse::<solana_signature::Signature>()
+        .unwrap();
+    // The CLI confirms at processed commitment, and transaction history starts at confirmed. A
+    // confirmed signature status is not enough, since transaction history is written separately
+    // and can lag behind it, so poll for the transaction itself.
+    let config = RpcTransactionConfig {
+        encoding: Some(UiTransactionEncoding::Base64),
+        commitment: Some(CommitmentConfig::confirmed()),
+        max_supported_transaction_version: Some(1),
+    };
+    let mut attempts = 0..300;
+    let transaction = loop {
+        match env
+            .rpc
+            .get_transaction_with_config(&signature, config)
+            .await
+        {
+            Ok(transaction) => break transaction,
+            Err(_) if attempts.next().is_some() => {
+                tokio::time::sleep(Duration::from_millis(100)).await;
+            }
+            Err(error) => panic!("{error}"),
+        }
+    };
+    let meta = transaction.transaction.meta.unwrap();
+    let units: u64 = Option::from(meta.compute_units_consumed).unwrap();
+    let VersionedMessage::V1(message) = transaction
+        .transaction
+        .transaction
+        .decode()
+        .unwrap()
+        .message
+    else {
+        panic!("expected a v1 relay transaction");
+    };
+    let limit = u64::from(message.config.compute_unit_limit.unwrap());
+    assert!(units <= limit && limit < 1_400_000, "{units} of {limit}");
+    let size = message.config.loaded_accounts_data_size_limit.unwrap();
+    assert!(size < 64 * 1024 * 1024, "{size}");
+}
+
 fn assert_summary(stderr: &str, summary: &Summary) {
     assert!(stderr.starts_with("=== Signing ==="), "{stderr}");
     let authorities = summary
@@ -264,11 +314,10 @@ pub async fn submits_authority_signed_transfer_and_rejects_replay(env: &TestEnv)
     );
     let authority_entry = signature_entry(&authority, &message);
 
-    assert_submitted(
-        &submit(env, &message, &["--signer", &authority_entry], ""),
-        None,
-    );
+    let output = submit(env, &message, &["--signer", &authority_entry], "");
+    assert_submitted(&output, None);
     test.assert_received(env, 1).await;
+    assert_simulated_limits(env, &output).await;
 
     // The nonce has advanced, so the same signatures cannot be submitted again.
     let replay = submit(env, &message, &["--signer", &authority_entry], "");

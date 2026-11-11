@@ -10362,6 +10362,7 @@ dependencies = [
  "solana-nonce",
  "solana-program-pack",
  "solana-remote-wallet",
+ "solana-rpc",
  "solana-rpc-client",
  "solana-rpc-client-types",
  "solana-sdk-ids",

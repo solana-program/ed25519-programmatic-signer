@@ -6,7 +6,9 @@ pub(crate) mod withdraw;
 use {
     crate::{
         client::Client,
-        commands::transaction::v1_transaction::{compile_message, try_partial_sign},
+        commands::transaction::v1_transaction::{
+            compile_message, try_partial_sign, unsigned_transaction, with_simulated_limits,
+        },
         output::OutputFormat,
     },
     anyhow::{Context, Result, ensure},
@@ -14,10 +16,7 @@ use {
     solana_address::Address,
     solana_clap_v3_utils::input_parsers::signer::{SignerSource, SignerSourceKind},
     solana_instruction::Instruction,
-    solana_message::VersionedMessage,
-    solana_signature::Signature,
     solana_signer::Signer,
-    solana_transaction::versioned::VersionedTransaction,
 };
 
 #[derive(Debug, Args)]
@@ -111,10 +110,8 @@ async fn send_relay_transaction(
 
     let blockhash = client.latest_blockhash().await?;
     let message = compile_message(&fee_payer_address, &[instruction], blockhash)?;
-    let mut transaction = VersionedTransaction {
-        signatures: vec![Signature::default(); usize::from(message.header.num_required_signatures)],
-        message: VersionedMessage::V1(message),
-    };
+    let message = with_simulated_limits(client, message, false).await?;
+    let mut transaction = unsigned_transaction(message);
     let message_data = transaction.message.serialize();
     try_partial_sign(&mut transaction, &signers, &message_data)
         .context("failed to sign relay transaction")?;

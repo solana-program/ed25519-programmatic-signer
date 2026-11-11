@@ -4,8 +4,8 @@ use {
         simulate::{simulation_output, verbose_result, writable_accounts},
         summary::{SummarySigners, confirm_signing, render_signing_summary},
         v1_transaction::{
-            ensure_transaction_size, relay_transaction, return_signers_data, signer_index,
-            try_partial_sign,
+            ensure_transaction_size, relay_message, return_signers_data, signer_index,
+            try_partial_sign, unsigned_transaction, with_simulated_limits,
         },
     },
     crate::{cli::keypair_source_parser, client::Client, output::OutputFormat},
@@ -77,6 +77,9 @@ pub(super) struct SubmitCommand {
     /// Sign the relay transaction without submitting it, and print its message hash and the
     /// signatures of local signers along with any absent signers. Makes no RPC calls. Each run
     /// must use the same arguments, apart from which signers are local. Requires --blockhash.
+    /// This run cannot simulate the relay transaction, so it requests the maximum compute units and
+    /// loaded accounts data size. The run that submits it with --relay-signature keeps these limits,
+    /// so the signatures stay valid.
     #[clap(long, requires = "blockhash")]
     sign_only: bool,
 
@@ -288,7 +291,7 @@ pub(super) async fn run(
         })
         .copied()
         .collect::<Vec<_>>();
-    let mut transaction = relay_transaction(
+    let message = relay_message(
         &authorization_message,
         signatures,
         &submit_signers,
@@ -296,7 +299,17 @@ pub(super) async fn run(
         durable_nonce,
         blockhash,
     )?;
-    ensure_transaction_size("relay transaction", &transaction)?;
+    ensure_transaction_size("relay transaction", &message)?;
+    // A run that sends the relay transaction sizes its limits from a simulation. Relay signatures
+    // from --sign-only runs, which cannot simulate, are over the maximum limits, so keep them. A
+    // dry run simulates the same transaction below. A durable nonce transaction must keep its nonce
+    // value as its blockhash.
+    let message = if !command.sign_only && !command.dry_run && relay_signatures.is_empty() {
+        with_simulated_limits(client, message, durable_nonce.is_none()).await?
+    } else {
+        message
+    };
+    let mut transaction = unsigned_transaction(message.clone());
     // Check relay signatures before asking local signers to sign. Each must be for this exact
     // relay transaction, so a mismatch means its run used different arguments.
     let message_data = transaction.message.serialize();
@@ -318,15 +331,12 @@ pub(super) async fn run(
     // Nothing is signed, so there is no signing summary. The simulation does not verify relay
     // transaction signatures
     if command.dry_run {
-        let VersionedMessage::V1(message) = &transaction.message else {
-            unreachable!("compile_message builds a v1 message");
-        };
         let pda_authorities = required_signers
             .iter()
             .filter(|address| execute.is_pda_authority(address))
             .copied()
             .collect::<Vec<_>>();
-        let verbose_accounts = command.verbose.then(|| writable_accounts(message));
+        let verbose_accounts = command.verbose.then(|| writable_accounts(&message));
         // A durable nonce transaction must keep its nonce value as its blockhash.
         let result = client
             .simulate_transaction(
@@ -340,7 +350,7 @@ pub(super) async fn run(
             eprintln!("Simulation result:\n{result}\n");
         }
         return output.render(&simulation_output(
-            message,
+            &message,
             &result,
             &pda_authorities,
             true,
