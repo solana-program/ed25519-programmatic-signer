@@ -1,6 +1,6 @@
 {
     "name": "@solana-program/ed25519-programmatic-signer",
-    "version": "0.1.0",
+    "version": "1.0.0",
     "description": "JavaScript client for the SPL Ed25519 Programmatic Signer programs",
     "homepage": "https://github.com/solana-program/ed25519-programmatic-signer#readme",
     "bugs": {
