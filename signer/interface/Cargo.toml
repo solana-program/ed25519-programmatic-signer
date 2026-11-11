@@ -14,6 +14,9 @@ crate-type = ["rlib"]
 [features]
 codama = ["dep:codama-macros"]
 
+[package.metadata.release]
+pre-release-hook = ["sh", "-c", '[ "$DRY_RUN" = true ] || make -C "$WORKSPACE_ROOT" generate-idl-workspace']
+
 [package.metadata.solana]
 program-id = "EdSigVfK1DkeMrjFNDMjwfQaJPhPTtX7jW8uPv3oKEgN"
 
