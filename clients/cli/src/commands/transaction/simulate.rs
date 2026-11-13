@@ -2,7 +2,9 @@ use {
     super::{
         decode::read_execution_message,
         state_changes::{AccountChange, AuthorityChange, state_changes},
-        v1_transaction::{compile_message, ensure_transaction_size, unsigned_transaction},
+        v1_transaction::{
+            ComputeBudget, compile_message, ensure_transaction_size, unsigned_transaction,
+        },
     },
     crate::{
         client::{Client, SimulateConfig},
@@ -135,7 +137,12 @@ pub(super) async fn run(
         meta.is_signer = true;
     }
     // Simulate replaces the blockhash.
-    let message = compile_message(&fee_payer, &[instruction], Hash::default())?;
+    let message = compile_message(
+        &fee_payer,
+        &[instruction],
+        Hash::default(),
+        ComputeBudget::default(),
+    )?;
     ensure_transaction_size("simulated transaction", &message)?;
     // Signatures are not verified.
     let transaction = unsigned_transaction(message.clone());

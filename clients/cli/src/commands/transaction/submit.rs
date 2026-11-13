@@ -4,8 +4,8 @@ use {
         simulate::{SimulateOptions, simulate},
         summary::{SummarySigners, confirm_signing, render_signing_summary},
         v1_transaction::{
-            ensure_transaction_size, relay_message, return_signers_data, signer_index,
-            try_partial_sign, unsigned_transaction, with_simulated_limits,
+            ComputeBudget, ensure_transaction_size, relay_message, return_signers_data,
+            signer_index, try_partial_sign, unsigned_transaction, with_simulated_limits,
         },
     },
     crate::{cli::keypair_source_parser, client::Client, output::OutputFormat},
@@ -74,12 +74,16 @@ pub(super) struct SubmitCommand {
     #[clap(long, value_name = "HASH")]
     blockhash: Option<Hash>,
 
+    #[clap(flatten)]
+    compute_budget: ComputeBudget,
+
     /// Sign the relay transaction without submitting it, and print its message hash and the
     /// signatures of local signers along with any absent signers. Makes no RPC calls. Each run
     /// must use the same arguments, apart from which signers are local. Requires --blockhash.
-    /// This run cannot simulate the relay transaction, so it requests the maximum compute units and
-    /// loaded accounts data size. The run that submits it with --relay-signature keeps these limits,
-    /// so the signatures stay valid.
+    /// This run cannot simulate the relay transaction, so it requests the maximum limits, unless
+    /// they are fixed with --with-compute-unit-limit or --with-loaded-accounts-data-size-limit.
+    /// The run that submits it with --relay-signature keeps these limits, so the signatures stay
+    /// valid.
     #[clap(long, requires = "blockhash")]
     sign_only: bool,
 
@@ -93,7 +97,9 @@ pub(super) struct SubmitCommand {
     /// relay signatures. Authority signatures are still required, since Submit checks them, but
     /// signatures on the relay transaction are not verified, so relay signers may be omitted and
     /// the fee payer and durable nonce authority may be given as an address. Without
-    /// --durable-nonce, simulates against the latest blockhash.
+    /// --durable-nonce, simulates against the latest blockhash. Simulates the relay transaction
+    /// this command would send, so without --relay-signature its limits are sized from a
+    /// simulation first.
     #[clap(long, conflicts_with = "sign-only")]
     dry_run: bool,
 
@@ -120,6 +126,7 @@ pub(super) async fn run(
     output: OutputFormat,
 ) -> Result<String> {
     let authorization_message = read_authorization_message(&command.authorization_message)?;
+    let budget = command.compute_budget;
     let execute = ExecuteAccounts::try_new(&authorization_message)?;
     let required_signers = authorization_message.account_keys
         [..usize::from(authorization_message.header.num_required_signatures)]
@@ -298,14 +305,13 @@ pub(super) async fn run(
         &fee_payer_address,
         durable_nonce,
         blockhash,
+        budget,
     )?;
     ensure_transaction_size("relay transaction", &message)?;
-    // A run that sends the relay transaction sizes its limits from a simulation. Relay signatures
-    // from --sign-only runs, which cannot simulate, are over the maximum limits, so keep them. A
-    // dry run simulates the same transaction below. A durable nonce transaction must keep its nonce
-    // value as its blockhash.
-    let message = if !command.sign_only && !command.dry_run && relay_signatures.is_empty() {
-        with_simulated_limits(client, message, durable_nonce.is_none()).await?
+    // Size the limits from a simulation, unless this run must match a --sign-only run, which
+    // can't simulate. Keep a durable nonce transaction's blockhash, which is its nonce value.
+    let message = if !command.sign_only && relay_signatures.is_empty() {
+        with_simulated_limits(client, message, budget, durable_nonce.is_none()).await?
     } else {
         message
     };

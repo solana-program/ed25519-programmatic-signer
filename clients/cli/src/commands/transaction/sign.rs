@@ -5,7 +5,7 @@ use {
             SummarySigners, confirm_signing, next_nonce, render_signing_summary,
             sign_authorization_message,
         },
-        v1_transaction::{ensure_transaction_size, relay_message},
+        v1_transaction::{ComputeBudget, ensure_transaction_size, relay_message},
     },
     crate::{cli::keypair_source_parser, client::Client, output::OutputFormat},
     anyhow::{Context, Result, ensure},
@@ -334,6 +334,7 @@ fn ensure_relay_transaction_fits(
         fee_payer,
         None,
         Hash::default(),
+        ComputeBudget::default(),
     )?;
     ensure_transaction_size(
         "the smallest relay transaction for this authorization message",

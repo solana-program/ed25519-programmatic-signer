@@ -193,14 +193,29 @@ fn assert_submitted(output: &Output, summary: Option<Summary>) {
         .unwrap();
 }
 
-/// A relay transaction sent without separate relay signatures requests its simulated compute units
-/// and loaded accounts data size, rather than the maximum.
-async fn assert_simulated_limits(env: &TestEnv, output: &Output) {
+/// A landed relay transaction from the signature `transaction submit` printed.
+pub(crate) struct LandedRelayTransaction {
+    pub(crate) message: v1::Message,
+    /// Compute units the transaction consumed.
+    pub(crate) units: u64,
+    /// Fee charged to the fee payer, in lamports.
+    pub(crate) fee: u64,
+}
+
+async fn landed_relay_transaction(env: &TestEnv, output: &Output) -> LandedRelayTransaction {
     let signature = String::from_utf8(output.stdout.clone())
         .unwrap()
         .trim()
         .parse::<solana_signature::Signature>()
         .unwrap();
+    landed_transaction(env, &signature).await
+}
+
+/// Fetch the landed v1 transaction with `signature`.
+pub(crate) async fn landed_transaction(
+    env: &TestEnv,
+    signature: &solana_signature::Signature,
+) -> LandedRelayTransaction {
     // The CLI confirms at processed commitment, and transaction history starts at confirmed. A
     // confirmed signature status is not enough, since transaction history is written separately
     // and can lag behind it, so poll for the transaction itself.
@@ -211,11 +226,7 @@ async fn assert_simulated_limits(env: &TestEnv, output: &Output) {
     };
     let mut attempts = 0..300;
     let transaction = loop {
-        match env
-            .rpc
-            .get_transaction_with_config(&signature, config)
-            .await
-        {
+        match env.rpc.get_transaction_with_config(signature, config).await {
             Ok(transaction) => break transaction,
             Err(_) if attempts.next().is_some() => {
                 tokio::time::sleep(Duration::from_millis(100)).await;
@@ -234,10 +245,30 @@ async fn assert_simulated_limits(env: &TestEnv, output: &Output) {
     else {
         panic!("expected a v1 relay transaction");
     };
+    LandedRelayTransaction {
+        message,
+        units,
+        fee: meta.fee,
+    }
+}
+
+/// A relay transaction sent without separate relay signatures requests its simulated compute units
+/// and loaded accounts data size, rather than the maximum.
+async fn assert_simulated_limits(env: &TestEnv, output: &Output) {
+    let LandedRelayTransaction { message, units, .. } = landed_relay_transaction(env, output).await;
     let limit = u64::from(message.config.compute_unit_limit.unwrap());
     assert!(units <= limit && limit < 1_400_000, "{units} of {limit}");
     let size = message.config.loaded_accounts_data_size_limit.unwrap();
     assert!(size < 64 * 1024 * 1024, "{size}");
+}
+
+/// The fee for a landed relay transaction: the base fee for each signature plus its priority fee.
+pub(crate) fn assert_fee(landed: &LandedRelayTransaction, priority_fee: u64) {
+    assert_eq!(landed.message.config.priority_fee, Some(priority_fee));
+    let base_fee = u64::from(landed.message.header.num_required_signatures)
+        .checked_mul(5_000)
+        .unwrap();
+    assert_eq!(landed.fee, base_fee.checked_add(priority_fee).unwrap());
 }
 
 fn assert_summary(stderr: &str, summary: &Summary) {
@@ -1201,6 +1232,10 @@ pub async fn submits_with_offline_relay_signatures(env: &TestEnv) {
             "--blockhash",
             &value,
             "--sign-only",
+            "--with-compute-unit-limit",
+            "300000",
+            "--with-priority-fee",
+            "450",
         ];
         args.extend_from_slice(extra);
         let output = submit(env, &message, &args, "");
@@ -1226,26 +1261,31 @@ pub async fn submits_with_offline_relay_signatures(env: &TestEnv) {
     ]);
 
     // The forwarded signer still shows the signing summary, but no local signer remains to confirm.
+    let output = submit(
+        env,
+        &message,
+        &[
+            "--signer",
+            &authority_entry,
+            "--fee-payer",
+            &fee_payer_address,
+            "--durable-nonce",
+            &durable_nonce,
+            "--blockhash",
+            &value,
+            "--relay-signature",
+            &fee_payer_entry,
+            "--relay-signature",
+            &ordinary_entry,
+            "--with-compute-unit-limit",
+            "300000",
+            "--with-priority-fee",
+            "450",
+        ],
+        "",
+    );
     assert_submitted(
-        &submit(
-            env,
-            &message,
-            &[
-                "--signer",
-                &authority_entry,
-                "--fee-payer",
-                &fee_payer_address,
-                "--durable-nonce",
-                &durable_nonce,
-                "--blockhash",
-                &value,
-                "--relay-signature",
-                &fee_payer_entry,
-                "--relay-signature",
-                &ordinary_entry,
-            ],
-            "",
-        ),
+        &output,
         Some(Summary {
             authorities: &[authority.pubkey()],
             forwarded_signers: &[ordinary.pubkey()],
@@ -1253,6 +1293,15 @@ pub async fn submits_with_offline_relay_signatures(env: &TestEnv) {
         }),
     );
     test.assert_received(env, 2).await;
+    // Every run used the same fixed limits, so the relay signatures match, and the landed relay
+    // transaction keeps them rather than simulating.
+    let landed = landed_relay_transaction(env, &output).await;
+    assert_eq!(landed.message.config.compute_unit_limit, Some(300_000));
+    assert_eq!(
+        landed.message.config.loaded_accounts_data_size_limit,
+        Some(64 * 1024 * 1024)
+    );
+    assert_fee(&landed, 450);
     assert_ne!(
         durable_nonce_value(env, &durable_nonce.parse().unwrap())
             .await
@@ -1703,4 +1752,162 @@ pub async fn dry_run_requires_authority_signatures(env: &TestEnv) {
         &dry_run(env, &message, &[]),
         &format!("missing signature for authority {}", authority.pubkey()),
     );
+}
+
+/// An online run with --with-priority-fee sizes the limits from a simulation and pays the fee as
+/// given.
+pub async fn submits_with_priority_fee(env: &TestEnv) {
+    submit_with_compute_budget_flags(
+        env,
+        BudgetFlags {
+            priority_fee: Some(600),
+            ..BudgetFlags::default()
+        },
+    )
+    .await;
+}
+
+/// A fixed compute unit limit replaces the simulated one, and the loaded accounts data size is
+/// still simulated.
+pub async fn submits_with_compute_unit_limit(env: &TestEnv) {
+    submit_with_compute_budget_flags(
+        env,
+        BudgetFlags {
+            unit_limit: Some(300_000),
+            ..BudgetFlags::default()
+        },
+    )
+    .await;
+}
+
+/// A fixed loaded accounts data size limit replaces the simulated one, and the compute units are
+/// still simulated.
+pub async fn submits_with_loaded_accounts_data_size_limit(env: &TestEnv) {
+    submit_with_compute_budget_flags(
+        env,
+        BudgetFlags {
+            loaded_accounts_data_size_limit: Some(1_000_000),
+            ..BudgetFlags::default()
+        },
+    )
+    .await;
+}
+
+/// With every option, the fixed limits and the fee are all kept.
+pub async fn submits_with_all_compute_budget_flags(env: &TestEnv) {
+    submit_with_compute_budget_flags(
+        env,
+        BudgetFlags {
+            unit_limit: Some(300_000),
+            loaded_accounts_data_size_limit: Some(1_000_000),
+            priority_fee: Some(450),
+        },
+    )
+    .await;
+}
+
+/// The compute budget options for a `transaction submit` run.
+#[derive(Default)]
+struct BudgetFlags {
+    unit_limit: Option<u32>,
+    loaded_accounts_data_size_limit: Option<u32>,
+    priority_fee: Option<u64>,
+}
+
+impl BudgetFlags {
+    fn args(&self) -> Vec<String> {
+        let mut args = vec![];
+        if let Some(limit) = self.unit_limit {
+            args.extend(["--with-compute-unit-limit".to_string(), limit.to_string()]);
+        }
+        if let Some(limit) = self.loaded_accounts_data_size_limit {
+            args.extend([
+                "--with-loaded-accounts-data-size-limit".to_string(),
+                limit.to_string(),
+            ]);
+        }
+        if let Some(fee) = self.priority_fee {
+            args.extend(["--with-priority-fee".to_string(), fee.to_string()]);
+        }
+        args
+    }
+}
+
+/// Submit online with `flags`, and check the landed relay transaction keeps the fixed limits,
+/// sizes the rest from a simulation, and pays the priority fee as given. Each case is a separate
+/// test so they run in parallel, since each waits for transaction history.
+async fn submit_with_compute_budget_flags(env: &TestEnv, flags: BudgetFlags) {
+    let authority = Keypair::new();
+    let signer = programmatic_signer(&authority.pubkey());
+    fund(env, &[signer]).await;
+    let test = SubmitTest::new(env, &signer).await;
+    let message = build_authorization_message(
+        &test.execution_message(&[signer]),
+        &test.nonce_account,
+        &signer,
+        &[authority.pubkey()],
+    );
+    let authority_entry = signature_entry(&authority, &message);
+    let flag_args = flags.args();
+    let mut args = vec!["--signer", authority_entry.as_str()];
+    args.extend(flag_args.iter().map(String::as_str));
+
+    let output = submit(env, &message, &args, "");
+    assert_submitted(&output, None);
+    test.assert_received(env, 1).await;
+    let landed = landed_relay_transaction(env, &output).await;
+    let config = &landed.message.config;
+    let unit_limit = config.compute_unit_limit.unwrap();
+    match flags.unit_limit {
+        Some(limit) => assert_eq!(unit_limit, limit),
+        None => assert!(
+            landed.units <= u64::from(unit_limit) && unit_limit < 1_400_000,
+            "{} of {unit_limit}",
+            landed.units
+        ),
+    }
+    let size = config.loaded_accounts_data_size_limit.unwrap();
+    match flags.loaded_accounts_data_size_limit {
+        Some(limit) => assert_eq!(size, limit),
+        None => assert!(size < 64 * 1024 * 1024, "{size}"),
+    }
+    match flags.priority_fee {
+        Some(fee) => assert_fee(&landed, fee),
+        None => assert_eq!(config.priority_fee, None),
+    }
+}
+
+/// Fixed limits below what the relay transaction uses are kept rather than replaced by the
+/// simulated ones, so the submission fails and the nonce does not advance.
+pub async fn rejects_limits_below_usage(env: &TestEnv) {
+    let authority = Keypair::new();
+    let signer = programmatic_signer(&authority.pubkey());
+    fund(env, &[signer]).await;
+    let test = SubmitTest::new(env, &signer).await;
+    let message = build_authorization_message(
+        &test.execution_message(&[signer]),
+        &test.nonce_account,
+        &signer,
+        &[authority.pubkey()],
+    );
+    let authority_entry = signature_entry(&authority, &message);
+    // Each failure leaves the nonce unchanged, so the same authorization message is reused.
+    for (flag, limit, expected) in [
+        ("--with-compute-unit-limit", "1000", "exceeded CUs meter"),
+        (
+            "--with-loaded-accounts-data-size-limit",
+            "10000",
+            "exceeded max loaded accounts data size cap",
+        ),
+    ] {
+        let output = submit(
+            env,
+            &message,
+            &["--signer", &authority_entry, flag, limit],
+            "",
+        );
+        assert_failure(&output, expected);
+        test.assert_received(env, 0).await;
+        assert_eq!(test.current_nonce(env).await, test.nonce);
+    }
 }

@@ -1,5 +1,8 @@
 use {
-    crate::common::helpers::{TestEnv, run_psigner, run_psigner_with_input},
+    crate::{
+        common::helpers::{TestEnv, run_psigner, run_psigner_with_input},
+        test_transaction_submit::{assert_fee, landed_transaction},
+    },
     base64::{Engine, prelude::BASE64_STANDARD},
     solana_keypair::{Keypair, write_keypair_file},
     solana_signer::Signer,
@@ -186,6 +189,55 @@ pub async fn rejects_unrelated_nonce_authority(env: &TestEnv) {
             "nonce account {} has authority {authority}, but the nonce authority given is {}",
             create.nonce_account, env.payer_address
         )),
+        "{stderr}"
+    );
+}
+
+/// The compute budget options apply to the relay transaction `nonce advance` sends.
+pub async fn advances_nonce_with_compute_budget_flags(env: &TestEnv) {
+    let create = create_nonce(env, "--cold-authority", &env.payer_address);
+    let advance = run_psigner(&advance_args(
+        env,
+        &create.nonce_account,
+        &[
+            "--with-compute-unit-limit",
+            "300000",
+            "--with-priority-fee",
+            "450",
+        ],
+    ));
+    let advance: NonceAdvanceOutput = serde_json::from_slice(&advance.stdout).unwrap();
+    let landed = landed_transaction(env, &advance.signature.parse().unwrap()).await;
+    assert_eq!(landed.message.config.compute_unit_limit, Some(300_000));
+    assert_fee(&landed, 450);
+}
+
+/// An authority given as an address only prints the authorization message, so `nonce advance`
+/// rejects the compute budget options. `transaction submit` sends the relay transaction instead.
+pub async fn rejects_advance_compute_budget_flags_for_address_authority(env: &TestEnv) {
+    let cold_authority = Keypair::new().pubkey().to_string();
+    let create = create_nonce(env, "--cold-authority", &cold_authority);
+    let output = run_psigner_with_input(
+        &advance_args(
+            env,
+            &create.nonce_account,
+            &[
+                "--nonce-authority",
+                &cold_authority,
+                "--with-priority-fee",
+                "1",
+            ],
+        ),
+        "",
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(!output.status.success(), "{stderr}");
+    assert!(
+        stderr.contains(
+            "--with-compute-unit-limit, --with-loaded-accounts-data-size-limit and \
+             --with-priority-fee have no effect here: an authority given as an address only \
+             prints the authorization message"
+        ),
         "{stderr}"
     );
 }

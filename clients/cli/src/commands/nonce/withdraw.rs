@@ -1,7 +1,9 @@
 use {
     super::{NonceAuthority, send_relay_transaction},
     crate::{
-        cli::keypair_source_parser, client::Client, commands::transaction::summary::next_nonce,
+        cli::keypair_source_parser,
+        client::Client,
+        commands::transaction::{summary::next_nonce, v1_transaction::ComputeBudget},
         output::OutputFormat,
     },
     anyhow::{Context, Result, bail, ensure},
@@ -40,6 +42,9 @@ pub(crate) struct WithdrawCommand {
     /// with the wrong size, pass the nonce account's own keypair and withdraw ALL.
     #[clap(long, value_parser = keypair_source_parser())]
     nonce_authority: Option<SignerSource>,
+
+    #[clap(flatten)]
+    compute_budget: ComputeBudget,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -106,8 +111,13 @@ pub(super) async fn run(
             &destination,
             lamports,
         );
-        let signature =
-            send_relay_transaction(client, withdraw, Some(authority.signer.as_ref())).await?;
+        let signature = send_relay_transaction(
+            client,
+            withdraw,
+            Some(authority.signer.as_ref()),
+            command.compute_budget,
+        )
+        .await?;
         return output.render(&NonceWithdrawOutput {
             signature,
             nonce_account: nonce_account.to_string(),
@@ -142,8 +152,13 @@ pub(super) async fn run(
             &destination,
             lamports,
         );
-        let signature =
-            send_relay_transaction(client, withdraw, Some(authority.signer.as_ref())).await?;
+        let signature = send_relay_transaction(
+            client,
+            withdraw,
+            Some(authority.signer.as_ref()),
+            command.compute_budget,
+        )
+        .await?;
         (signature, previous.nonce)
     } else if previous.authority == pda {
         // The authority signs an authorization message, which promotes its PDA to sign the
@@ -164,6 +179,10 @@ pub(super) async fn run(
         .context("invalid authorization message")?;
 
         if !authority.can_sign {
+            command.compute_budget.ensure_unset(
+                "an authority given as an address only prints the authorization message. Pass \
+                 them to `transaction submit`, which sends the relay transaction",
+            )?;
             return output.render(&NonceWithdrawAuthorizationOutput {
                 nonce_account: nonce_account.to_string(),
                 current_nonce: previous.nonce.to_string(),
@@ -189,7 +208,7 @@ pub(super) async fn run(
             VersionedMessage::V1(authorization_message),
         );
         (
-            send_relay_transaction(client, submit, None).await?,
+            send_relay_transaction(client, submit, None, command.compute_budget).await?,
             next_nonce,
         )
     } else {

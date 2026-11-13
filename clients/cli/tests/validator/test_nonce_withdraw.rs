@@ -1,7 +1,7 @@
 use {
     crate::{
         common::helpers::{TestEnv, run_psigner, run_psigner_with_input},
-        test_transaction_submit::fund,
+        test_transaction_submit::{assert_fee, fund, landed_transaction},
     },
     base64::{Engine, prelude::BASE64_STANDARD},
     solana_address::Address,
@@ -454,4 +454,61 @@ fn sol(lamports: u64) -> String {
         lamports / 1_000_000_000,
         lamports % 1_000_000_000
     )
+}
+
+/// The compute budget options apply to the transaction `nonce withdraw` sends: a priority fee
+/// alone is paid as given, and the limits are still simulated.
+pub async fn withdraws_with_compute_budget_flags(env: &TestEnv) {
+    let create = create_funded_nonce(env, "--nonce-authority", &env.payer_address).await;
+    let destination = Keypair::new().pubkey().to_string();
+    let output = run_psigner(&withdraw_args(
+        env,
+        &create.nonce_account,
+        &destination,
+        PARTIAL_SOL,
+        &["--with-priority-fee", "600"],
+    ));
+    let output: NonceWithdrawOutput = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(balance(env, &destination).await, PARTIAL_LAMPORTS);
+    let landed = landed_transaction(env, &output.signature.parse().unwrap()).await;
+    let limit = landed.message.config.compute_unit_limit.unwrap();
+    assert!(
+        landed.units <= u64::from(limit) && limit < 1_400_000,
+        "{} of {limit}",
+        landed.units
+    );
+    assert_fee(&landed, 600);
+}
+
+/// An authority given as an address only prints the authorization message, so `nonce withdraw`
+/// rejects the compute budget options. `transaction submit` sends the relay transaction instead.
+pub async fn rejects_withdraw_compute_budget_flags_for_address_authority(env: &TestEnv) {
+    let destination = Keypair::new().pubkey().to_string();
+    let cold_authority = Keypair::new().pubkey().to_string();
+    let create = create_funded_nonce(env, "--cold-authority", &cold_authority).await;
+    let output = run_psigner_with_input(
+        &withdraw_args(
+            env,
+            &create.nonce_account,
+            &destination,
+            PARTIAL_SOL,
+            &[
+                "--nonce-authority",
+                &cold_authority,
+                "--with-compute-unit-limit",
+                "300000",
+            ],
+        ),
+        "",
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(!output.status.success(), "{stderr}");
+    assert!(
+        stderr.contains(
+            "--with-compute-unit-limit, --with-loaded-accounts-data-size-limit and \
+             --with-priority-fee have no effect here: an authority given as an address only \
+             prints the authorization message"
+        ),
+        "{stderr}"
+    );
 }

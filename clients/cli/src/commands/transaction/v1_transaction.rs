@@ -4,6 +4,7 @@ use {
     crate::client::{Client, SimulateConfig},
     anyhow::{Context, Result, ensure},
     base64::{Engine, prelude::BASE64_STANDARD},
+    clap::Args,
     solana_address::Address,
     solana_cli_output::CliSignOnlyData,
     solana_hash::Hash,
@@ -25,35 +26,96 @@ const MAX_LOADED_ACCOUNTS_DATA_SIZE: u32 = 64 * 1024 * 1024;
 /// and the transaction landing.
 const SIMULATED_LIMIT_MARGIN_PERCENT: u64 = 10;
 
-/// Unset v1 limits are zero rather than the legacy defaults, so a transaction requests the
-/// maximum. Every run must build the same relay message, including `--sign-only` runs that make no
-/// RPC calls, so messages start with these limits. Runs that send the transaction themselves then
-/// size them from a simulation with [`with_simulated_limits`].
-const LIMITS: v1::TransactionConfig = v1::TransactionConfig::empty()
-    .with_compute_unit_limit(MAX_COMPUTE_UNIT_LIMIT)
-    .with_loaded_accounts_data_size_limit(MAX_LOADED_ACCOUNTS_DATA_SIZE);
+/// Compute budget options for a v1 transaction, shared by the commands that send one.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Args)]
+pub(crate) struct ComputeBudget {
+    /// Compute unit limit for the transaction, up to 1,400,000. Defaults to the simulated compute
+    /// units plus a 10% margin, or to the maximum for a transaction signed without a simulation.
+    #[clap(
+        long = "with-compute-unit-limit",
+        value_name = "COMPUTE-UNIT-LIMIT",
+        value_parser = clap::value_parser!(u32).range(1..=1_400_000)
+    )]
+    pub(crate) unit_limit: Option<u32>,
 
-/// Compile and validate a v1 message for `instructions`.
+    /// Loaded accounts data size limit for the transaction, in bytes, up to 64 MiB (67,108,864).
+    /// Defaults to the simulated loaded accounts data size plus a 10% margin, or to the maximum for
+    /// a transaction signed without a simulation.
+    #[clap(
+        long = "with-loaded-accounts-data-size-limit",
+        value_name = "BYTES",
+        value_parser = clap::value_parser!(u32).range(1..=i64::from(MAX_LOADED_ACCOUNTS_DATA_SIZE))
+    )]
+    pub(crate) loaded_accounts_data_size_limit: Option<u32>,
+
+    /// Priority fee for the transaction, in lamports. Paid on top of the base fee, whatever the
+    /// compute unit limit.
+    #[clap(long = "with-priority-fee", value_name = "LAMPORTS")]
+    pub(crate) priority_fee: Option<u64>,
+}
+
+impl ComputeBudget {
+    /// Fail if any compute budget option is set, for a command run that sends no transaction.
+    /// `reason` says why, and where the options apply instead.
+    pub(crate) fn ensure_unset(&self, reason: &str) -> Result<()> {
+        ensure!(
+            *self == Self::default(),
+            "--with-compute-unit-limit, --with-loaded-accounts-data-size-limit and \
+             --with-priority-fee have no effect here: {reason}"
+        );
+        Ok(())
+    }
+
+    /// The transaction config, with the fixed limits from these options, or else
+    /// `compute_unit_limit` and `loaded_accounts_data_size_limit`.
+    fn config(
+        &self,
+        compute_unit_limit: u32,
+        loaded_accounts_data_size_limit: u32,
+    ) -> v1::TransactionConfig {
+        let config = v1::TransactionConfig::empty()
+            .with_compute_unit_limit(self.unit_limit.unwrap_or(compute_unit_limit))
+            .with_loaded_accounts_data_size_limit(
+                self.loaded_accounts_data_size_limit
+                    .unwrap_or(loaded_accounts_data_size_limit),
+            );
+        match self.priority_fee {
+            Some(fee) => config.with_priority_fee(fee),
+            None => config,
+        }
+    }
+}
+
+/// Compile and validate a v1 message for `instructions` with `budget`. Limits it does not fix are
+/// the maximum, since v1 has no default limits.
 pub(crate) fn compile_message(
     fee_payer: &Address,
     instructions: &[Instruction],
     blockhash: Hash,
+    budget: ComputeBudget,
 ) -> Result<v1::Message> {
-    let message = v1::Message::try_compile_with_config(fee_payer, instructions, blockhash, LIMITS)
+    let config = budget.config(MAX_COMPUTE_UNIT_LIMIT, MAX_LOADED_ACCOUNTS_DATA_SIZE);
+    let message = v1::Message::try_compile_with_config(fee_payer, instructions, blockhash, config)
         .context("failed to compile transaction message")?;
     message.validate().context("invalid transaction message")?;
     Ok(message)
 }
 
 /// Return `message` with its maximum limits replaced by its simulated compute units and loaded
-/// accounts data size, plus a margin. With `replace_recent_blockhash`, simulates against the latest
-/// blockhash. If the transaction fails in simulation, `message` is returned unchanged so that
-/// sending it reports the error. Errors if the simulation request itself fails.
+/// accounts data size, plus a margin. Limits fixed by `budget` are kept. With
+/// `replace_recent_blockhash`, simulates against the latest blockhash. If the transaction fails in
+/// simulation, `message` is returned unchanged so that sending it reports the error. Errors if the
+/// simulation request itself fails.
 pub(crate) async fn with_simulated_limits(
     client: &Client,
     mut message: v1::Message,
+    budget: ComputeBudget,
     replace_recent_blockhash: bool,
 ) -> Result<v1::Message> {
+    // Nothing to size when both limits are fixed.
+    if budget.unit_limit.is_some() && budget.loaded_accounts_data_size_limit.is_some() {
+        return Ok(message);
+    }
     let result = client
         .simulate_transaction(
             &unsigned_transaction(message.clone()),
@@ -66,13 +128,17 @@ pub(crate) async fn with_simulated_limits(
     if result.err.is_some() {
         return Ok(message);
     }
-    if let Some(units) = result.units_consumed {
-        message.config.compute_unit_limit = Some(with_margin(units, MAX_COMPUTE_UNIT_LIMIT));
-    }
-    if let Some(size) = result.loaded_accounts_data_size {
-        message.config.loaded_accounts_data_size_limit =
-            Some(with_margin(u64::from(size), MAX_LOADED_ACCOUNTS_DATA_SIZE));
-    }
+    let compute_unit_limit = result
+        .units_consumed
+        .map_or(MAX_COMPUTE_UNIT_LIMIT, |units| {
+            with_margin(units, MAX_COMPUTE_UNIT_LIMIT)
+        });
+    let loaded_accounts_data_size_limit = result
+        .loaded_accounts_data_size
+        .map_or(MAX_LOADED_ACCOUNTS_DATA_SIZE, |size| {
+            with_margin(u64::from(size), MAX_LOADED_ACCOUNTS_DATA_SIZE)
+        });
+    message.config = budget.config(compute_unit_limit, loaded_accounts_data_size_limit);
     Ok(message)
 }
 
@@ -103,6 +169,7 @@ pub(super) fn relay_message(
     fee_payer: &Address,
     durable_nonce: Option<(Address, Address)>,
     blockhash: Hash,
+    budget: ComputeBudget,
 ) -> Result<v1::Message> {
     let mut submit = spl_ed25519_signer_client::instruction::submit(
         signatures,
@@ -116,7 +183,7 @@ pub(super) fn relay_message(
         Some((address, authority)) => vec![advance_nonce_account(&address, &authority), submit],
         None => vec![submit],
     };
-    compile_message(fee_payer, &instructions, blockhash)
+    compile_message(fee_payer, &instructions, blockhash, budget)
 }
 
 /// Check that a transaction for `message`, including its signatures, fits within the v1 transaction
@@ -190,6 +257,42 @@ pub(super) fn return_signers_data(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn config_sets_the_priority_fee() {
+        let budget = ComputeBudget {
+            priority_fee: Some(200),
+            ..ComputeBudget::default()
+        };
+        assert_eq!(
+            budget.config(100, 200),
+            v1::TransactionConfig::empty()
+                .with_compute_unit_limit(100)
+                .with_loaded_accounts_data_size_limit(200)
+                .with_priority_fee(200)
+        );
+        assert_eq!(
+            ComputeBudget::default().config(100, 200),
+            v1::TransactionConfig::empty()
+                .with_compute_unit_limit(100)
+                .with_loaded_accounts_data_size_limit(200)
+        );
+    }
+
+    #[test]
+    fn config_keeps_fixed_limits() {
+        let budget = ComputeBudget {
+            unit_limit: Some(10),
+            loaded_accounts_data_size_limit: Some(20),
+            priority_fee: None,
+        };
+        assert_eq!(
+            budget.config(100, 200),
+            v1::TransactionConfig::empty()
+                .with_compute_unit_limit(10)
+                .with_loaded_accounts_data_size_limit(20)
+        );
+    }
 
     #[test]
     fn with_margin_rounds_up_and_caps() {
