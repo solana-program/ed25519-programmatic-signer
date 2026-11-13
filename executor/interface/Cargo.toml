@@ -1,6 +1,6 @@
 [package]
 name = "spl-message-executor-interface"
-version = "0.1.0"
+version = "1.0.0"
 description = "Interface for the SPL Message Executor program"
 authors = { workspace = true }
 repository = { workspace = true }
