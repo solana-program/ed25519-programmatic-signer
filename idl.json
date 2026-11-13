@@ -6,7 +6,7 @@
     "kind": "programNode",
     "name": "ed25519Signer",
     "publicKey": "EdSigVfK1DkeMrjFNDMjwfQaJPhPTtX7jW8uPv3oKEgN",
-    "version": "0.1.0",
+    "version": "1.0.0",
     "instructions": [
       {
         "kind": "instructionNode",
