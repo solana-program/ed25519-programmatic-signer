@@ -34,7 +34,7 @@ codama-macros = "0.13.1"
 indoc = "2.0.7"
 jiff = { version = "0.2.27", default-features = false, features = ["std"] }
 libtest-mimic = "0.8.2"
-mollusk-svm = "0.15.0"
+mollusk-svm = "0.17.1"
 pinocchio = { version = "0.11.2", default-features = false }
 rand = "0.9.4"
 serde = "1.0.229"
