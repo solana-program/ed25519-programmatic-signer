@@ -52,7 +52,7 @@ solana-hash = "4.7.0"
 solana-instruction = { version = "4.0.0", default-features = false }
 solana-keypair = "4.0.1"
 solana-loader-v3-interface = "9.0.0"
-solana-message = { version = "4.4.1", default-features = false }
+solana-message = { version = "5.1.0", default-features = false }
 solana-native-token = "3.0.0"
 solana-nonce = "3.4.0"
 solana-program-error = "3.0.1"
