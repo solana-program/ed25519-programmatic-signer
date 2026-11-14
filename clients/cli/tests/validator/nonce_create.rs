@@ -1,5 +1,8 @@
 use {
-    crate::common::helpers::{TestEnv, run_psigner},
+    crate::{
+        common::helpers::{TestEnv, run_psigner},
+        test_transaction_submit::{assert_fee, landed_transaction},
+    },
     solana_keypair::{Keypair, write_keypair_file},
     solana_signer::Signer,
     spl_programmatic_signer_cli::{NonceCreateOutput, NonceShowOutput},
@@ -121,4 +124,34 @@ pub async fn creates_nonce_account_with_cold_authority(env: &TestEnv) {
     assert_eq!(create.authority, programmatic_signer.to_string());
     assert_eq!(create.lamports, env.nonce_rent_lamports);
     assert!(create.lamports > 0);
+}
+
+/// `nonce create` sends a v1 transaction like the other commands, with its limits sized from a
+/// simulation and the priority fee paid as given.
+pub async fn creates_nonce_account_with_compute_budget_flags(env: &TestEnv) {
+    let create = run_psigner(&[
+        "-C",
+        &env.config_file_path,
+        "--output",
+        "json-compact",
+        "nonce",
+        "create",
+        "--nonce-authority",
+        &env.payer_address,
+        "--with-priority-fee",
+        "600",
+    ]);
+    let create: NonceCreateOutput = serde_json::from_slice(&create.stdout).unwrap();
+    assert_eq!(create.lamports, env.nonce_rent_lamports);
+    let landed = landed_transaction(env, &create.signature.parse().unwrap()).await;
+    let config = &landed.message.config;
+    let unit_limit = config.compute_unit_limit.unwrap();
+    assert!(
+        landed.units <= u64::from(unit_limit) && unit_limit < 1_400_000,
+        "{} of {unit_limit}",
+        landed.units
+    );
+    let size = config.loaded_accounts_data_size_limit.unwrap();
+    assert!(size < 64 * 1024 * 1024, "{size}");
+    assert_fee(&landed, 600);
 }
