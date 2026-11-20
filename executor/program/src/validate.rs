@@ -28,6 +28,18 @@ pub fn validate_execution_message(
         return Err(Error::UnsupportedTransactionConfig.into());
     }
 
+    // A nested Execute would run another execution message with this message's signers, which
+    // authorities never see when approving it. The runtime rejects reentry through another
+    // program, so this direct self-invocation is the only path back in.
+    if execution_message.instructions.iter().any(|ix| {
+        execution_message
+            .account_keys
+            .get(usize::from(ix.program_id_index))
+            == Some(&spl_message_executor_interface::ID)
+    }) {
+        return Err(Error::ExecutorInvocation.into());
+    }
+
     Ok(execution_message)
 }
 
