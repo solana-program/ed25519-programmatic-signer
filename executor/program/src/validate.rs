@@ -29,8 +29,8 @@ pub fn validate_execution_message(
     }
 
     // A nested Execute would run another execution message with this message's signers, which
-    // authorities never see when approving it. The runtime rejects reentry through another
-    // program, so this direct self-invocation is the only path back in.
+    // is likely an attempt to obfuscate the execution message. The runtime rejects reentry
+    // through another program, so this direct self-invocation is the only path back in.
     if execution_message.instructions.iter().any(|ix| {
         execution_message
             .account_keys
