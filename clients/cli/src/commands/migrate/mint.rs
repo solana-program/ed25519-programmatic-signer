@@ -20,6 +20,9 @@ pub(super) enum AuthorityType {
 }
 
 impl AuthorityType {
+    /// Every authority type, in the order they are listed.
+    const ALL: [Self; 2] = [Self::Mint, Self::Freeze];
+
     pub(super) fn name(self) -> &'static str {
         match self {
             Self::Mint => "mint",
@@ -46,10 +49,10 @@ pub(crate) struct MintCommand {
     #[clap(long)]
     new_authority_signing_pubkey: Option<Address>,
 
-    /// Move only this authority. Moves the mint and freeze authorities when omitted, skipping
-    /// any that are not set.
-    #[clap(long, value_enum)]
-    authority_type: Option<AuthorityType>,
+    /// Move only these authorities. Repeat to move several in one execution message. Moves the
+    /// mint and freeze authorities when omitted, skipping any that are not set.
+    #[clap(long = "authority-type", value_enum)]
+    authority_types: Vec<AuthorityType>,
 }
 
 pub(super) async fn run(
@@ -66,11 +69,16 @@ pub(super) async fn run(
     };
 
     // An unset authority can never be set again, so there is nothing to move.
-    let (roles, unset): (Vec<_>, Vec<_>) = match command.authority_type {
-        None => [AuthorityType::Mint, AuthorityType::Freeze]
+    let (roles, unset): (Vec<_>, Vec<_>) = if command.authority_types.is_empty() {
+        AuthorityType::ALL
             .into_iter()
-            .partition(|role| current_authority(*role).is_some()),
-        Some(role) => (vec![role], vec![]),
+            .partition(|role| current_authority(*role).is_some())
+    } else {
+        let roles = AuthorityType::ALL
+            .into_iter()
+            .filter(|role| command.authority_types.contains(role))
+            .collect();
+        (roles, vec![])
     };
     ensure!(
         !roles.is_empty(),

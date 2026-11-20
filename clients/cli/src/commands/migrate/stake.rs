@@ -3,7 +3,7 @@ use {
         RequiredSigners, default_new_authority, execution_message, new_owner_programmatic_signer,
     },
     crate::{client::Client, output::OutputFormat},
-    anyhow::{Context, Result, ensure},
+    anyhow::{Context, Result, bail, ensure},
     base64::{Engine, prelude::BASE64_STANDARD},
     clap::{Args, ValueEnum},
     serde::{Deserialize, Serialize},
@@ -16,7 +16,7 @@ use {
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, ValueEnum)]
-enum AuthorityType {
+pub(super) enum AuthorityType {
     Staker,
     Withdrawer,
     /// The lockup custodian. Only moves while the lockup is in force; otherwise the withdrawer
@@ -25,15 +25,18 @@ enum AuthorityType {
 }
 
 impl AuthorityType {
-    fn name(self) -> &'static str {
+    /// Every authority type, in the order they are listed.
+    const ALL: [Self; 3] = [Self::Staker, Self::Withdrawer, Self::Custodian];
+
+    pub(super) fn name(self) -> &'static str {
         match self {
-            Self::Staker => role_name(StakeAuthorize::Staker),
-            Self::Withdrawer => role_name(StakeAuthorize::Withdrawer),
+            Self::Staker => "staker",
+            Self::Withdrawer => "withdrawer",
             Self::Custodian => "custodian",
         }
     }
 
-    fn current_authority(self, meta: &Meta) -> Address {
+    pub(super) fn current_authority(self, meta: &Meta) -> Address {
         match self {
             Self::Staker => meta.authorized.staker,
             Self::Withdrawer => meta.authorized.withdrawer,
@@ -53,11 +56,11 @@ pub(crate) struct StakeCommand {
     #[clap(long)]
     new_authority_signing_pubkey: Option<Address>,
 
-    /// Move only this authority type. Moves both the staker and the withdrawer when omitted, and
-    /// the lockup custodian too if a lockup is in force and the custodian is the current staker or
-    /// withdrawer.
-    #[clap(long, value_enum)]
-    authority_type: Option<AuthorityType>,
+    /// Move only these authority types. Repeat to move several in one execution message. Moves
+    /// both the staker and the withdrawer when omitted, and the lockup custodian too if a lockup
+    /// is in force and the custodian is the current staker or withdrawer.
+    #[clap(long = "authority-type", value_enum)]
+    authority_types: Vec<AuthorityType>,
 }
 
 pub(super) async fn run(
@@ -73,7 +76,12 @@ pub(super) async fn run(
     // While a lockup is in force only its custodian can change it, and changing the withdrawer
     // also needs the custodian. Whether a lockup is in force is checked against the current state.
     // Moving only the staker never involves the custodian, so it skips the clock lookup.
-    let lockup_custodian = if matches!(command.authority_type, Some(AuthorityType::Staker)) {
+    let staker_only = !command.authority_types.is_empty()
+        && command
+            .authority_types
+            .iter()
+            .all(|authority_type| *authority_type == AuthorityType::Staker);
+    let lockup_custodian = if staker_only {
         None
     } else {
         let clock = client.clock().await?;
@@ -81,34 +89,33 @@ pub(super) async fn run(
             .is_in_force(&clock, None)
             .then_some(meta.lockup.custodian)
     };
-    let authority_types = match command.authority_type {
-        None => {
-            let mut authority_types = vec![AuthorityType::Staker, AuthorityType::Withdrawer];
-            // A custodian that is an old key moves with it, or that key could keep extending the
-            // lockup. Any other custodian is a third party and stays.
-            if lockup_custodian.is_some_and(|custodian| {
-                authority_types
-                    .iter()
-                    .any(|authority_type| authority_type.current_authority(&meta) == custodian)
-            }) {
-                authority_types.push(AuthorityType::Custodian);
-            }
+    let authority_types = if command.authority_types.is_empty() {
+        let mut authority_types = vec![AuthorityType::Staker, AuthorityType::Withdrawer];
+        // A custodian that is an old key moves with it, or that key could keep extending the
+        // lockup. Any other custodian is a third party and stays.
+        if lockup_custodian.is_some_and(|custodian| {
             authority_types
+                .iter()
+                .any(|authority_type| authority_type.current_authority(&meta) == custodian)
+        }) {
+            authority_types.push(AuthorityType::Custodian);
         }
-        Some(AuthorityType::Custodian) => {
-            ensure!(
-                lockup_custodian.is_some(),
-                "stake account {} has no lockup in force, so its custodian has no authority to \
-                 move",
-                command.stake_account
-            );
-            vec![AuthorityType::Custodian]
-        }
-        Some(authority_type) => vec![authority_type],
+        authority_types
+    } else {
+        let authority_types = AuthorityType::ALL
+            .into_iter()
+            .filter(|authority_type| command.authority_types.contains(authority_type))
+            .collect::<Vec<_>>();
+        ensure!(
+            lockup_custodian.is_some() || !authority_types.contains(&AuthorityType::Custodian),
+            "stake account {} has no lockup in force, so its custodian has no authority to move",
+            command.stake_account
+        );
+        authority_types
     };
     let new_authority_signing_pubkey = match command.new_authority_signing_pubkey {
         Some(new_authority_signing_pubkey) => new_authority_signing_pubkey,
-        None => default_stake_authority(&command.stake_account, &meta, command.authority_type)?,
+        None => default_stake_authority(&command.stake_account, &meta, &authority_types)?,
     };
     let new_owner_programmatic_signer =
         new_owner_programmatic_signer(&new_authority_signing_pubkey)?;
@@ -175,38 +182,32 @@ pub(super) async fn run(
     })
 }
 
-/// The default new authority is the current authority of the type being moved. Moving everything
-/// needs the staker and withdrawer to share one.
+/// The default new authority is the current authority of the types being moved, so they must
+/// share one.
 fn default_stake_authority(
     stake_account: &Address,
     meta: &Meta,
-    authority_type: Option<AuthorityType>,
+    authority_types: &[AuthorityType],
 ) -> Result<Address> {
-    let current = match authority_type {
-        Some(authority_type) => authority_type.current_authority(meta),
-        None => {
-            ensure!(
-                meta.authorized.staker == meta.authorized.withdrawer,
-                "the staker {} and withdrawer {} of stake account {stake_account} differ, so \
-                 neither can be the default new authority signing pubkey. Pass \
-                 --new-authority-signing-pubkey, or move one with --authority-type",
-                meta.authorized.staker,
-                meta.authorized.withdrawer
-            );
-            meta.authorized.staker
-        }
-    };
+    let first = authority_types[0];
+    let current = first.current_authority(meta);
+    if let Some(other) = authority_types
+        .iter()
+        .find(|authority_type| authority_type.current_authority(meta) != current)
+    {
+        bail!(
+            "the {} {current} and {} {} of stake account {stake_account} differ, so neither can \
+             be the default new authority signing pubkey. Pass --new-authority-signing-pubkey, or \
+             move them separately with --authority-type",
+            first.name(),
+            other.name(),
+            other.current_authority(meta)
+        );
+    }
     default_new_authority(
         format_args!("the current authority of stake account {stake_account}"),
         current,
     )
-}
-
-pub(super) fn role_name(role: StakeAuthorize) -> &'static str {
-    match role {
-        StakeAuthorize::Staker => "staker",
-        StakeAuthorize::Withdrawer => "withdrawer",
-    }
 }
 
 #[derive(Debug, Deserialize, Serialize)]
