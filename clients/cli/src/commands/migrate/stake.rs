@@ -165,7 +165,7 @@ pub(super) async fn run(
             .collect(),
         new_authority: new_owner_programmatic_signer.to_string(),
         new_authority_signing_pubkey: new_authority_signing_pubkey.to_string(),
-        custodian: custodian.as_ref().map(ToString::to_string),
+        current_custodian: custodian.as_ref().map(ToString::to_string),
         required_signers: RequiredSigners::new(&execution_message, &[new_authority_signing_pubkey]),
         execution_message: BASE64_STANDARD.encode(execution_message.serialize()),
     })
@@ -212,8 +212,10 @@ pub struct StakeMigrationOutput {
     pub authority_types: Vec<String>,
     pub new_authority: String,
     pub new_authority_signing_pubkey: String,
+    /// The lockup custodian before the migration, which co-signs it. Set when the withdrawer or
+    /// custodian moves while a lockup is in force.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub custodian: Option<String>,
+    pub current_custodian: Option<String>,
     #[serde(flatten)]
     pub required_signers: RequiredSigners,
     pub execution_message: String,
@@ -228,8 +230,8 @@ impl fmt::Display for StakeMigrationOutput {
             "New authority: {} (signing pubkey: {})",
             self.new_authority, self.new_authority_signing_pubkey
         )?;
-        if let Some(custodian) = &self.custodian {
-            writeln!(f, "Lockup custodian: {custodian}")?;
+        if let Some(custodian) = &self.current_custodian {
+            writeln!(f, "Current lockup custodian: {custodian}")?;
         }
         writeln!(f)?;
         writeln!(f, "{}", self.required_signers)?;

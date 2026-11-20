@@ -123,7 +123,7 @@ pub async fn migrates_stake_to_new_owner(env: &TestEnv) {
         migration.new_authority_signing_pubkey,
         new_owner.pubkey().to_string()
     );
-    assert_eq!(migration.custodian, None);
+    assert_eq!(migration.current_custodian, None);
     assert_signers(
         &migration.required_signers,
         &[authorization(&new_owner.pubkey())],
@@ -371,10 +371,13 @@ pub async fn migrates_stake_with_lockup_custodian(env: &TestEnv) {
         Some(&new_owner.pubkey()),
         &["--authority-type", "staker"],
     );
-    assert_eq!(staker_only.custodian, None);
+    assert_eq!(staker_only.current_custodian, None);
 
     let migration = migrate_stake(env, &stake, Some(&new_owner.pubkey()), &[]);
-    assert_eq!(migration.custodian, Some(custodian.pubkey().to_string()));
+    assert_eq!(
+        migration.current_custodian,
+        Some(custodian.pubkey().to_string())
+    );
     // The custodian is a third party, so it co-signs but is unchanged.
     assert_eq!(migration.authority_types, ["staker", "withdrawer"]);
     assert_signers(
@@ -420,7 +423,10 @@ pub async fn migrates_stake_lockup_custodian_of_old_key(env: &TestEnv) {
         migration.authority_types,
         ["staker", "withdrawer", "custodian"]
     );
-    assert_eq!(migration.custodian, Some(owner.pubkey().to_string()));
+    assert_eq!(
+        migration.current_custodian,
+        Some(owner.pubkey().to_string())
+    );
     assert_signers(
         &migration.required_signers,
         &[authorization(&owner.pubkey())],
@@ -453,7 +459,7 @@ pub async fn migrates_stake_lockup_custodian_of_old_key(env: &TestEnv) {
     );
     let migration = migrate_stake(env, &stake, None, &[]);
     assert_eq!(migration.authority_types, ["staker", "withdrawer"]);
-    assert_eq!(migration.custodian, None);
+    assert_eq!(migration.current_custodian, None);
     execute_migration(env, &migration, &nonce_account, &owner, &[], &[&owner]).await;
     assert_eq!(
         stake_authorized(env, &stake).await,
@@ -477,13 +483,16 @@ pub async fn migrates_stake_lockup_custodian_on_its_own(env: &TestEnv) {
     // Moving only the staker leaves the custodian.
     let staker = migrate_stake(env, &stake, None, &["--authority-type", "staker"]);
     assert_eq!(staker.authority_types, ["staker"]);
-    assert_eq!(staker.custodian, None);
+    assert_eq!(staker.current_custodian, None);
     execute_migration(env, &staker, &nonce_account, &owner, &[], &[&owner]).await;
     assert_eq!(stake_lockup(env, &stake).await, locked);
 
     let custodian = migrate_stake(env, &stake, None, &["--authority-type", "custodian"]);
     assert_eq!(custodian.authority_types, ["custodian"]);
-    assert_eq!(custodian.custodian, Some(owner.pubkey().to_string()));
+    assert_eq!(
+        custodian.current_custodian,
+        Some(owner.pubkey().to_string())
+    );
     assert_signers(
         &custodian.required_signers,
         &[authorization(&owner.pubkey())],
@@ -515,7 +524,7 @@ pub async fn migrates_stake_lockup_custodian_on_its_own(env: &TestEnv) {
     // change as the execution message's fee payer.
     let withdrawer = migrate_stake(env, &stake, None, &["--authority-type", "withdrawer"]);
     assert_eq!(withdrawer.authority_types, ["withdrawer"]);
-    assert_eq!(withdrawer.custodian, Some(owner_signer.to_string()));
+    assert_eq!(withdrawer.current_custodian, Some(owner_signer.to_string()));
     assert_signers(
         &withdrawer.required_signers,
         &[authorization(&owner.pubkey())],
