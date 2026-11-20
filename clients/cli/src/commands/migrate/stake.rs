@@ -72,11 +72,15 @@ pub(super) async fn run(
         .with_context(|| format!("stake account {} is not initialized", command.stake_account))?;
     // While a lockup is in force only its custodian can change it, and changing the withdrawer
     // also needs the custodian. Whether a lockup is in force is checked against the current state.
-    let clock = client.clock().await?;
-    let lockup_custodian = meta
-        .lockup
-        .is_in_force(&clock, None)
-        .then_some(meta.lockup.custodian);
+    // Moving only the staker never involves the custodian, so it skips the clock lookup.
+    let lockup_custodian = if matches!(command.authority_type, Some(AuthorityType::Staker)) {
+        None
+    } else {
+        let clock = client.clock().await?;
+        meta.lockup
+            .is_in_force(&clock, None)
+            .then_some(meta.lockup.custodian)
+    };
     let authority_types = match command.authority_type {
         None => {
             let mut authority_types = vec![AuthorityType::Staker, AuthorityType::Withdrawer];
