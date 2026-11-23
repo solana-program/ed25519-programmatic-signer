@@ -580,16 +580,15 @@ pub async fn migrates_several_stake_authority_types(env: &TestEnv) {
         "{stderr}"
     );
 
-    // Listed in a fixed order, whatever order they're named in, and repeats are ignored.
+    // Named with commas or by repeating the flag. Listed in a fixed order, whatever order they're
+    // named in, and repeats are ignored.
     let migration = migrate_stake(
         env,
         &stake,
         None,
         &[
             "--authority-type",
-            "custodian",
-            "--authority-type",
-            "staker",
+            "custodian,staker",
             "--authority-type",
             "custodian",
         ],

@@ -15,6 +15,10 @@ use {
     std::fmt,
 };
 
+/// Declared in the order the execution message moves them: `run` takes the types in
+/// `value_variants` order, whatever order `--authority-type` names them in. The custodian must
+/// move after the withdrawer: changing the withdrawer during a lockup is co-signed by the current
+/// custodian, which would no longer be the custodian once it moves.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, ValueEnum)]
 pub(super) enum AuthorityType {
     Staker,
@@ -25,9 +29,6 @@ pub(super) enum AuthorityType {
 }
 
 impl AuthorityType {
-    /// Every authority type, in the order they are listed.
-    const ALL: [Self; 3] = [Self::Staker, Self::Withdrawer, Self::Custodian];
-
     pub(super) fn name(self) -> &'static str {
         match self {
             Self::Staker => "staker",
@@ -56,10 +57,15 @@ pub(crate) struct StakeCommand {
     #[clap(long)]
     new_authority_signing_pubkey: Option<Address>,
 
-    /// Move only these authority types. Repeat to move several in one execution message. Moves
-    /// both the staker and the withdrawer when omitted, and the lockup custodian too if a lockup
-    /// is in force and the custodian is the current staker or withdrawer.
-    #[clap(long = "authority-type", value_enum)]
+    /// Move only these authority types. Repeat, or separate with commas, to move several in one
+    /// execution message. Moves both the staker and the withdrawer when omitted, and the lockup
+    /// custodian too if a lockup is in force and the custodian is the current staker or withdrawer.
+    #[clap(
+        long = "authority-type",
+        value_name = "AUTHORITY_TYPE",
+        value_enum,
+        value_delimiter = ','
+    )]
     authority_types: Vec<AuthorityType>,
 }
 
@@ -73,15 +79,16 @@ pub(super) async fn run(
         .await?
         .meta()
         .with_context(|| format!("stake account {} is not initialized", command.stake_account))?;
+    // Each requested type once, in instruction order.
+    let requested = AuthorityType::value_variants()
+        .iter()
+        .copied()
+        .filter(|authority_type| command.authority_types.contains(authority_type))
+        .collect::<Vec<_>>();
     // While a lockup is in force only its custodian can change it, and changing the withdrawer
     // also needs the custodian. Whether a lockup is in force is checked against the current state.
     // Moving only the staker never involves the custodian, so it skips the clock lookup.
-    let staker_only = !command.authority_types.is_empty()
-        && command
-            .authority_types
-            .iter()
-            .all(|authority_type| *authority_type == AuthorityType::Staker);
-    let lockup_custodian = if staker_only {
+    let lockup_custodian = if requested == [AuthorityType::Staker] {
         None
     } else {
         let clock = client.clock().await?;
@@ -89,7 +96,7 @@ pub(super) async fn run(
             .is_in_force(&clock, None)
             .then_some(meta.lockup.custodian)
     };
-    let authority_types = if command.authority_types.is_empty() {
+    let authority_types = if requested.is_empty() {
         let mut authority_types = vec![AuthorityType::Staker, AuthorityType::Withdrawer];
         // A custodian that is an old key moves with it, or that key could keep extending the
         // lockup. Any other custodian is a third party and stays.
@@ -102,16 +109,12 @@ pub(super) async fn run(
         }
         authority_types
     } else {
-        let authority_types = AuthorityType::ALL
-            .into_iter()
-            .filter(|authority_type| command.authority_types.contains(authority_type))
-            .collect::<Vec<_>>();
         ensure!(
-            lockup_custodian.is_some() || !authority_types.contains(&AuthorityType::Custodian),
+            lockup_custodian.is_some() || !requested.contains(&AuthorityType::Custodian),
             "stake account {} has no lockup in force, so its custodian has no authority to move",
             command.stake_account
         );
-        authority_types
+        requested
     };
     let new_authority_signing_pubkey = match command.new_authority_signing_pubkey {
         Some(new_authority_signing_pubkey) => new_authority_signing_pubkey,
