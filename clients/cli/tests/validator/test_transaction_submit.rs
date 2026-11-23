@@ -116,7 +116,7 @@ pub(crate) async fn fund(env: &TestEnv, addresses: &[Address]) {
 }
 
 /// Create a System Program nonce account for the relay transaction's durable nonce.
-async fn create_durable_nonce(env: &TestEnv, authority: &Address) -> Address {
+pub async fn create_durable_nonce(env: &TestEnv, authority: &Address) -> Address {
     let nonce = Keypair::new();
     let lamports = env
         .rpc

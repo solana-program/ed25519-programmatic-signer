@@ -10,6 +10,7 @@ use {
     solana_address::Address,
     solana_clock::Epoch,
     solana_loader_v3_interface::state::UpgradeableLoaderState,
+    solana_nonce::{state::State as NonceState, versions::Versions as NonceVersions},
     solana_stake_interface::state::StakeStateV2,
     solana_vote_interface::state::VoteStateVersions,
     spl_token_2022_interface::{
@@ -131,6 +132,8 @@ pub(super) enum AccountKind {
     ProgramData,
     /// An upgradeable loader buffer account.
     Buffer,
+    /// A System Program durable nonce account.
+    DurableNonce,
 }
 
 /// The role of an authority of a parsed account. Changes are listed in this order.
@@ -154,7 +157,8 @@ pub(super) enum AuthorityRole {
     MintAuthority,
     FreezeAuthority,
     UpgradeAuthority,
-    /// A buffer account's authority, which may write to it, deploy it or close it.
+    /// A buffer account's authority, which may write to it, deploy it or close it, or a durable
+    /// nonce account's authority, which may advance it, withdraw from it or authorize another.
     Authority,
 }
 
@@ -274,6 +278,8 @@ fn parse_account(
         parse_token(account, token_data)
     } else if account.owner == solana_sdk_ids::bpf_loader_upgradeable::id() {
         parse_upgradeable_loader(account)
+    } else if account.owner == solana_system_interface::program::id() {
+        parse_durable_nonce(account)
     } else {
         None
     }
@@ -392,6 +398,24 @@ fn parse_upgradeable_loader(account: &Account) -> Option<ParsedAccount> {
     Some(ParsedAccount { kind, authorities })
 }
 
+/// Parse a durable nonce account. Other System Program accounts, such as wallets, have no
+/// authorities.
+fn parse_durable_nonce(account: &Account) -> Option<ParsedAccount> {
+    // Like the System Program, ignore any data after the nonce state, since a nonce account may be
+    // larger than it.
+    let versions = wincode::deserialize::<NonceVersions>(&account.data).ok()?;
+    let NonceState::Initialized(data) = versions.state() else {
+        return None;
+    };
+    Some(ParsedAccount {
+        kind: AccountKind::DurableNonce,
+        authorities: BTreeMap::from([(
+            AuthorityRole::Authority,
+            ParsedAuthority::new(data.authority),
+        )]),
+    })
+}
+
 /// Parse the base state of a token account or mint, ignoring any Token-2022 extensions.
 fn parse_token(
     account: &Account,
@@ -507,6 +531,7 @@ impl fmt::Display for AccountKind {
             Self::Mint => "mint",
             Self::ProgramData => "program data",
             Self::Buffer => "buffer",
+            Self::DurableNonce => "durable nonce",
         })
     }
 }
@@ -558,6 +583,8 @@ impl fmt::Display for AuthorityValue {
 mod tests {
     use {
         super::*,
+        solana_hash::Hash,
+        solana_nonce::state::{Data as NonceData, DurableNonce},
         solana_program_pack::Pack,
         spl_token_2022_interface::{
             extension::scaled_ui_amount::ScaledUiAmountConfig, state::AccountState,
@@ -625,6 +652,46 @@ mod tests {
             [format!(
                 "{address}  token account delegate: {delegate} (delegated {before}) -> {delegate} \
                  (delegated {after})"
+            )]
+        );
+    }
+
+    /// A nonce account larger than the nonce state is still a durable nonce, as for the System
+    /// Program.
+    #[test]
+    fn reports_authority_change_of_larger_nonce_account() {
+        let address = Address::new_from_array([1; 32]);
+        let nonce_account = |authority: Address| {
+            let state = NonceVersions::new(NonceState::Initialized(NonceData::new(
+                authority,
+                DurableNonce::from_blockhash(&Hash::default()),
+                5_000,
+            )));
+            let mut data = wincode::serialize(&state).unwrap();
+            data.resize(NonceState::size() + 10, 0);
+            Some(Account {
+                lamports: 1,
+                data,
+                owner: solana_sdk_ids::system_program::id(),
+                ..Account::default()
+            })
+        };
+        let (before, after) = (
+            Address::new_from_array([2; 32]),
+            Address::new_from_array([3; 32]),
+        );
+        let (_, changes) = state_changes(
+            &[address],
+            &[nonce_account(before)],
+            &[nonce_account(after)],
+            &BTreeMap::new(),
+            &BTreeMap::new(),
+        );
+        let changes = changes.iter().map(ToString::to_string).collect::<Vec<_>>();
+        assert_eq!(
+            changes,
+            [format!(
+                "{address}  durable nonce authority: {before} -> {after}"
             )]
         );
     }
