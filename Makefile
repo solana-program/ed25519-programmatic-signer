@@ -1,5 +1,5 @@
 RUST_TOOLCHAIN_NIGHTLY = nightly-2026-11-14
-SOLANA_CLI_VERSION = 3.1.8
+SOLANA_CLI_VERSION = 4.4.1
 CODAMA_CLI_VERSION = 1.0.0
 CODAMA_IDL_PACKAGES = executor-interface nonce-interface signer-interface
 

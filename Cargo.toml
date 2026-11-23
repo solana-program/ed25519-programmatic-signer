@@ -20,6 +20,9 @@ homepage = "https://anza.xyz/"
 license = "Apache-2.0"
 edition = "2021"
 
+[workspace.metadata.solana]
+tools-version = "v1.58"
+
 [workspace.metadata.release]
 pre-release-commit-message = "Publish {{crate_name}} v{{version}}"
 tag-message = "Publish {{crate_name}} v{{version}}"
@@ -100,6 +103,7 @@ rocksdb = { git = "https://github.com/anza-xyz/rust-rocksdb", rev = "4dba80dfe94
 level = "warn"
 check-cfg = [
     'cfg(target_os, values("solana"))',
+    'cfg(target_feature, values("static-syscalls"))',
     'cfg(feature, values("custom-alloc", "custom-heap", "custom-panic", "frozen-abi", "no-entrypoint"))',
 ]
 
