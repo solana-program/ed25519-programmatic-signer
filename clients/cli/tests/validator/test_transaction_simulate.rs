@@ -5,6 +5,7 @@ use {
             helpers::{TestEnv, run_psigner, run_psigner_with_input},
         },
         migration::send,
+        test_migrate_program::{PROGRAM, deploy_program, write_buffer},
         test_migrate_token::{self as token, create_mint, mint_to_new_account, mint_tokens},
         test_transaction_submit::{SubmitTest, TRANSFER_AMOUNT, fund},
     },
@@ -12,6 +13,10 @@ use {
     solana_address::Address,
     solana_hash::Hash,
     solana_keypair::Keypair,
+    solana_loader_v3_interface::{
+        get_program_data_address,
+        instruction::{set_buffer_authority, set_upgrade_authority},
+    },
     solana_message::v1,
     solana_program_pack::Pack,
     solana_signer::Signer,
@@ -803,4 +808,72 @@ pub async fn simulates_token_authority_changes_token(env: &TestEnv) {
 
 pub async fn simulates_token_authority_changes_token_2022(env: &TestEnv) {
     simulates_token_authority_changes(env, &spl_token_2022_interface::id()).await;
+}
+
+/// Upgradeable loader authority changes: making a program immutable, which removes its upgrade
+/// authority, and moving a buffer's authority.
+pub async fn simulates_upgradeable_loader_authority_changes(env: &TestEnv) {
+    let authority = Keypair::new();
+    let signer = programmatic_signer(&authority.pubkey());
+    let deployer = Keypair::new();
+    let new_buffer_authority = Keypair::new().pubkey();
+    let program = deploy_program(env, &deployer).await;
+    let buffer = write_buffer(env, PROGRAM, &deployer).await;
+    send(
+        env,
+        &[
+            set_upgrade_authority(&program, &deployer.pubkey(), Some(&signer)),
+            set_buffer_authority(&buffer, &deployer.pubkey(), &signer),
+        ],
+        &[&deployer],
+    )
+    .await;
+    let test = SubmitTest::new(env, &signer).await;
+    let execution_message = v1::Message::try_compile_with_config(
+        &signer,
+        &[
+            set_upgrade_authority(&program, &signer, None),
+            set_buffer_authority(&buffer, &signer, &new_buffer_authority),
+        ],
+        test.nonce,
+        v1::TransactionConfig::empty(),
+    )
+    .unwrap();
+
+    let for_authority = authority.pubkey().to_string();
+    let output = simulate(
+        env,
+        &test,
+        &execution_message,
+        &["--signing-pubkey", &for_authority],
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(output.status.success(), "{stderr}");
+    let value: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(value["accountChanges"], serde_json::json!([]));
+    let mut changes = value["authorityChanges"].as_array().unwrap().clone();
+    changes.sort_by_key(|change| change["account"].as_str().unwrap().to_owned());
+    let signer_value = serde_json::json!({
+        "address": signer.to_string(),
+        "signingPubkey": for_authority,
+    });
+    let program_data = get_program_data_address(&program);
+    let mut expected = vec![
+        serde_json::json!({
+            "account": program_data.to_string(),
+            "kind": "programData",
+            "role": "upgradeAuthority",
+            "before": signer_value,
+            "after": null,
+        }),
+        serde_json::json!({
+            "account": buffer.to_string(),
+            "kind": "buffer",
+            "role": "authority",
+            "before": signer_value,
+            "after": { "address": new_buffer_authority.to_string() },
+        }),
+    ];
+    expected.sort_by_key(|change| change["account"].as_str().unwrap().to_owned());
+    assert_eq!(changes, expected);
 }
