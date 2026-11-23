@@ -937,10 +937,9 @@ fn nonce_only_approval_includes_ordinary_execution_signers() {
 #[test_case(true; "non signer PDA")]
 fn rejects_authority_without_signer_role(pda_is_account: bool) {
     let mut env = SignTestEnv::new();
-    let pda = env.pda;
     env.nonce_authority = Address::new_unique().to_string();
     let recipient = if pda_is_account {
-        pda
+        env.pda
     } else {
         Address::new_unique()
     };
