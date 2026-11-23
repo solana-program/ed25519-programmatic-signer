@@ -135,8 +135,8 @@ fn data_size(size: usize) -> RpcFilterType {
     RpcFilterType::DataSize(size as u64)
 }
 
-/// Scans stake accounts by staker and withdrawer, and separately by custodian. Returns the stake accounts and the result
-/// of the custodian scan.
+/// Scans stake accounts by staker and withdrawer, and separately by custodian. Returns the stake
+/// accounts and the result of the custodian scan.
 async fn scan_stake(
     client: &Client,
     owner: &Address,
@@ -162,7 +162,6 @@ async fn scan_stake(
             anyhow::Ok(accounts)
         },
         async {
-            let clock = client.clock().await?;
             let accounts = stake_accounts_with_authority(
                 client,
                 owner,
@@ -170,7 +169,12 @@ async fn scan_stake(
                 CUSTODIAN_OFFSET,
             )
             .await?;
+            // Usually there are none, so skip the clock lookup.
+            if accounts.is_empty() {
+                return anyhow::Ok(vec![]);
+            }
             // A custodian only has authority while the lockup is in force.
+            let clock = client.clock().await?;
             anyhow::Ok(
                 accounts
                     .into_iter()
