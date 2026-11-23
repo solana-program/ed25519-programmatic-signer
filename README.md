@@ -14,7 +14,7 @@ other accounts.
 
 - **Ed25519 Signer:** `EdSigVfK1DkeMrjFNDMjwfQaJPhPTtX7jW8uPv3oKEgN`
 - **Message Executor:** `ExecxgyHYsAXB4c5dZodV1zJZ9hqfsDCYkRDRATrpkFR`
-- **Nonce:** `Noncediea1fH12usShuQAz28UhgAeuE5Maf32LsMUQB`
+- **Nonce:** `Nonce8z7LeGkpQ2bCXtSLdZqREMbuDHGhmf4ELcUU91`
 
 ## Documentation
 
