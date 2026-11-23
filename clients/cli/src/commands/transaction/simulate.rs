@@ -196,9 +196,9 @@ pub(super) async fn simulate(
         )
         .await?;
     let post_accounts = post_accounts(&result, &addresses)?;
+    let token_data =
+        token_additional_data(client, message, &result, &addresses, &post_accounts).await?;
     if options.verbose {
-        let token_data =
-            token_additional_data(client, message, &result, &addresses, &post_accounts).await?;
         let result = verbose_result(&result, &addresses, &post_accounts, &token_data)?;
         eprintln!("Simulation result:\n{result}\n");
     }
@@ -215,8 +215,13 @@ pub(super) async fn simulate(
     // authority that moves to its own programmatic signer.
     let signing_pubkeys =
         pda_signing_pubkeys(message.account_keys.iter().chain(options.signing_pubkeys));
-    let (account_changes, authority_changes) =
-        state_changes(&addresses, &pre_accounts, &post_accounts, &signing_pubkeys);
+    let (account_changes, authority_changes) = state_changes(
+        &addresses,
+        &pre_accounts,
+        &post_accounts,
+        &signing_pubkeys,
+        &token_data,
+    );
     Ok(SimulateOutput {
         units_consumed: result.units_consumed,
         fee: options.relay.then_some(fee),
@@ -335,7 +340,7 @@ fn verbose_result(
 /// The data needed to parse each token account in `message`, as the RPC node would: its mint's
 /// decimals, from the simulated token balances, and for Token-2022, the mint's configs that
 /// adjust the displayed amount, with the clock's timestamp. If fetching those fails, warns and
-/// leaves them out, so the simulation result still prints.
+/// leaves them out, so the simulation is still summarized.
 async fn token_additional_data(
     client: &Client,
     message: &v1::Message,
@@ -522,8 +527,8 @@ fn token_balance_changes(
         if change == 0 {
             continue;
         }
-        // Infallible: one side is present for every entry.
-        // Note: currently doesn't handle these fields changing between pre/post balances.
+        // Infallible: one side is present for every entry. A changed owner is reported in the
+        // authority changes.
         let UiTransactionTokenBalance {
             mint,
             owner,
