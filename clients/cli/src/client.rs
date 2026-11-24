@@ -244,13 +244,6 @@ impl Client {
         decode_upgradeable_loader_account(address, &account)
     }
 
-    /// Fetch a Token or Token-2022 mint's base mint data, along with the token program that owns
-    /// the mint.
-    pub(crate) async fn mint(&self, address: &Address) -> Result<(Address, Mint)> {
-        let account = self.token_program_account(address, "mint").await?;
-        decode_mint(address, &account)
-    }
-
     /// Fetch a System Program account with no data, which the System Program can transfer
     /// lamports from.
     pub(crate) async fn system_account(&self, address: &Address) -> Result<Account> {

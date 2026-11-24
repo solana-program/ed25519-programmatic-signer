@@ -8,9 +8,11 @@ use {
         },
         test_migrate_mint::{
             migrates_mint_authorities_between_programmatic_signers,
-            migrates_mint_without_freeze_authority, migrates_token_2022_mint_authorities,
+            migrates_mint_without_freeze_authority, migrates_some_token_2022_extension_authorities,
+            migrates_token_2022_extension_authorities, migrates_token_2022_mint_authorities,
             migrates_token_2022_mint_authorities_one_at_a_time, migrates_token_mint_authorities,
             migrates_token_mint_authorities_one_at_a_time, rejects_invalid_mint_migrations,
+            rejects_missing_extension_authorities,
         },
         test_migrate_program::{
             migrates_program_upgrade_authority_between_programmatic_signers,
@@ -335,6 +337,17 @@ fn main() -> ExitCode {
         ),
         async_trial!(migrates_mint_without_freeze_authority, env, runtime_handle),
         async_trial!(rejects_invalid_mint_migrations, env, runtime_handle),
+        async_trial!(
+            migrates_token_2022_extension_authorities,
+            env,
+            runtime_handle
+        ),
+        async_trial!(
+            migrates_some_token_2022_extension_authorities,
+            env,
+            runtime_handle
+        ),
+        async_trial!(rejects_missing_extension_authorities, env, runtime_handle),
         async_trial!(migrates_token_balance, env, runtime_handle),
         async_trial!(migrates_token_2022_balance, env, runtime_handle),
         async_trial!(migrates_token_balance_from_source, env, runtime_handle),

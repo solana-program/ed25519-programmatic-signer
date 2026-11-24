@@ -61,6 +61,8 @@ spl-message-executor-interface = { workspace = true }
 spl-nonce-client = { workspace = true }
 spl-nonce-interface = { workspace = true }
 spl-token-2022-interface = { workspace = true }
+spl-token-group-interface = { workspace = true }
+spl-token-metadata-interface = { workspace = true }
 tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
 wincode = { workspace = true }
 

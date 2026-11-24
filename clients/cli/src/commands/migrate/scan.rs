@@ -1,13 +1,11 @@
 use {
-    super::{
-        mint::AuthorityType, new_owner_programmatic_signer, stake, token_account,
-        vote::authorized_withdrawer,
-    },
+    super::{new_owner_programmatic_signer, stake, token_account, vote::authorized_withdrawer},
     crate::{
         client::{
             Client, decode_mint, decode_stake_account, decode_upgradeable_loader_account,
             decode_vote_account,
         },
+        mint_authority::AuthorityType,
         output::OutputFormat,
     },
     anyhow::{Context, Result, ensure},
@@ -387,6 +385,7 @@ async fn scan_mint(
             let authority: Option<Address> = match role {
                 AuthorityType::Mint => mint.mint_authority.into(),
                 AuthorityType::Freeze => mint.freeze_authority.into(),
+                _ => unreachable!("only the mint and freeze authorities are scanned"),
             };
             if authority == Some(*owner) {
                 mints
@@ -404,10 +403,14 @@ async fn scan_mint(
             let address = address.to_string();
             let mut args = vec!["mint", &address];
             args.extend(new_authority_args);
-            // only include --authority-type if there is one role
-            if let [role] = roles.as_slice() {
-                args.extend(["--authority-type", role.name()]);
-            }
+            // `migrate mint` also moves Token-2022 extension authorities by default, which the
+            // scan doesn't check, so name each authority type the owner holds.
+            let authority_types = roles
+                .iter()
+                .map(|role| role.name())
+                .collect::<Vec<_>>()
+                .join(",");
+            args.extend(["--authority-type", &authority_types]);
             MintScanItem {
                 command: migrate_command(&args),
                 token_program: token_program.to_string(),

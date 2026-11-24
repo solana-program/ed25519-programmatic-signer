@@ -28,8 +28,8 @@ pub(crate) struct MigrateCommand {
 
 #[derive(Debug, Subcommand)]
 enum MigrateSubcommand {
-    /// Build an execution message moving a Token or Token-2022 mint's mint and freeze
-    /// authorities to a programmatic signer.
+    /// Build an execution message moving a Token or Token-2022 mint's authorities, including
+    /// Token-2022 extension authorities, to a programmatic signer.
     Mint(mint::MintCommand),
     /// Build an execution message moving a program's upgrade authority to a programmatic signer.
     Program(program::ProgramCommand),

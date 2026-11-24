@@ -2,38 +2,23 @@ use {
     super::{
         RequiredSigners, default_new_authority, execution_message, new_owner_programmatic_signer,
     },
-    crate::{client::Client, output::OutputFormat},
-    anyhow::{Context, Result, ensure},
+    crate::{
+        client::Client,
+        mint_authority::{AuthorityType, authorities},
+        output::OutputFormat,
+    },
+    anyhow::{Context, Result, bail, ensure},
     base64::{Engine, prelude::BASE64_STANDARD},
     clap::{Args, ValueEnum},
     serde::{Deserialize, Serialize},
     solana_address::Address,
+    solana_instruction::Instruction,
     spl_memo_interface::instruction::build_memo,
-    spl_token_2022_interface::instruction::{AuthorityType as TokenAuthorityType, set_authority},
+    spl_token_2022_interface::instruction::set_authority,
+    spl_token_group_interface::instruction::update_group_authority,
+    spl_token_metadata_interface::instruction::update_authority,
     std::fmt,
 };
-
-#[derive(Clone, Copy, Debug, PartialEq, ValueEnum)]
-pub(super) enum AuthorityType {
-    Mint,
-    Freeze,
-}
-
-impl AuthorityType {
-    pub(super) fn name(self) -> &'static str {
-        match self {
-            Self::Mint => "mint",
-            Self::Freeze => "freeze",
-        }
-    }
-
-    fn token_authority_type(self) -> TokenAuthorityType {
-        match self {
-            Self::Mint => TokenAuthorityType::MintTokens,
-            Self::Freeze => TokenAuthorityType::FreezeAccount,
-        }
-    }
-}
 
 #[derive(Debug, Args)]
 pub(crate) struct MintCommand {
@@ -46,8 +31,9 @@ pub(crate) struct MintCommand {
     #[clap(long)]
     new_authority_signing_pubkey: Option<Address>,
 
-    /// Move only these authorities. Repeat, or separate with commas, to move several in one execution message. Moves the
-    /// mint and freeze authorities when omitted, skipping any that are not set.
+    /// Move only these authorities. Repeat, or separate with commas, to move several in one
+    /// execution message. All but mint and freeze belong to Token-2022 extensions. Moves every
+    /// authority the mint has when omitted, skipping any that are not set.
     #[clap(
         long = "authority-type",
         value_name = "AUTHORITY_TYPE",
@@ -62,20 +48,17 @@ pub(super) async fn run(
     client: &Client,
     output: OutputFormat,
 ) -> Result<String> {
-    let (token_program, mint) = client.mint(&command.mint).await?;
-    let current_authority = |role| -> Option<Address> {
-        match role {
-            AuthorityType::Mint => mint.mint_authority.into(),
-            AuthorityType::Freeze => mint.freeze_authority.into(),
-        }
-    };
+    let account = client.token_program_account(&command.mint, "mint").await?;
+    let token_program = account.owner;
+    let authorities = authorities(&account.data)
+        .with_context(|| format!("account {} is not a mint", command.mint))?;
 
     // An unset authority can never be set again, so there is nothing to move.
     let (roles, unset): (Vec<_>, Vec<_>) = if command.authority_types.is_empty() {
-        AuthorityType::value_variants()
-            .iter()
+        authorities
+            .keys()
             .copied()
-            .partition(|role| current_authority(*role).is_some())
+            .partition(|role| authorities[role].is_some())
     } else {
         let roles = AuthorityType::value_variants()
             .iter()
@@ -86,14 +69,31 @@ pub(super) async fn run(
     };
     ensure!(
         !roles.is_empty(),
-        "mint {} has no mint or freeze authority",
+        "mint {} has no authorities set",
         command.mint
     );
     let current_authorities = roles
         .iter()
-        .map(|role| {
-            current_authority(*role)
-                .with_context(|| format!("mint {} has no {} authority", command.mint, role.name()))
+        .map(|role| match authorities.get(role) {
+            Some(authority) => authority
+                .with_context(|| format!("mint {} has no {} authority", command.mint, role.name())),
+            None => {
+                // Only the mint and freeze authorities are always present.
+                let extension = role.extension().unwrap();
+                if token_program == spl_token_2022_interface::id() {
+                    bail!(
+                        "mint {} has no {extension:?} extension, so it has no {} authority",
+                        command.mint,
+                        role.name()
+                    )
+                } else {
+                    bail!(
+                        "mint {} is not a Token-2022 mint, so it has no {} authority",
+                        command.mint,
+                        role.name()
+                    )
+                }
+            }
         })
         .collect::<Result<Vec<_>>>()?;
 
@@ -102,16 +102,20 @@ pub(super) async fn run(
         None => {
             // The authorities being moved must share one to default to it.
             let current = current_authorities[0];
-            ensure!(
-                current_authorities
-                    .iter()
-                    .all(|authority| *authority == current),
-                "the mint authority {current} and freeze authority {} of mint {} differ, so \
-                 neither can be the default new authority signing pubkey. Pass \
-                 --new-authority-signing-pubkey, or move one with --authority-type",
-                current_authorities[1],
-                command.mint
-            );
+            if let Some((role, other)) = roles
+                .iter()
+                .zip(&current_authorities)
+                .find(|(_, authority)| **authority != current)
+            {
+                bail!(
+                    "the {} authority {current} and {} authority {other} of mint {} differ, so \
+                     neither can be the default new authority signing pubkey. Pass \
+                     --new-authority-signing-pubkey, or move one with --authority-type",
+                    roles[0].name(),
+                    role.name(),
+                    command.mint
+                );
+            }
             default_new_authority(
                 format_args!("the current authority of mint {}", command.mint),
                 current,
@@ -131,19 +135,17 @@ pub(super) async fn run(
                 role.name(),
                 command.mint
             );
-            set_authority(
+            move_authority(
                 &token_program,
                 &command.mint,
-                Some(&new_owner_programmatic_signer),
-                role.token_authority_type(),
+                *role,
                 current,
-                &[],
+                &new_owner_programmatic_signer,
             )
-            .context("failed to build set authority instruction")
         })
         .collect::<Result<Vec<_>>>()?;
     // We add a memo instruction with the new programmatic signer as a signer
-    // `SetAuthority` doesn't require the new authority as a signer
+    // None of these instructions require the new authority as a signer
     // We want to ensure that the user of the CLI can sign for the new authority
     instructions.push(build_memo(
         &spl_memo_interface::v4::id(),
@@ -164,14 +166,41 @@ pub(super) async fn run(
     })
 }
 
-/// Text of the memo the new authority's programmatic signer signs, such as "migrate mint and freeze
-/// authorities to <address>".
-///
+/// Instruction moving the mint's `role` authority from `current` to `new`. Token-2022 processes
+/// the metadata and group instructions too, since they are stored in the mint.
+fn move_authority(
+    token_program: &Address,
+    mint: &Address,
+    role: AuthorityType,
+    current: &Address,
+    new: &Address,
+) -> Result<Instruction> {
+    Ok(match role {
+        AuthorityType::MetadataUpdate => {
+            update_authority(token_program, mint, current, (*new).into())
+        }
+        AuthorityType::GroupUpdate => {
+            update_group_authority(token_program, mint, current, Some(*new))
+        }
+        _ => set_authority(
+            token_program,
+            mint,
+            Some(new),
+            role.token_authority_type().unwrap(),
+            current,
+            &[],
+        )
+        .context("failed to build set authority instruction")?,
+    })
+}
+
+/// Text of the memo the new authority's programmatic signer signs, such as "migrate mint, freeze
+/// authority to <address>".
 fn memo(roles: &[AuthorityType], new_owner_programmatic_signer: &Address) -> String {
     let names = roles.iter().map(|role| role.name()).collect::<Vec<_>>();
     format!(
         "migrate {} authority to {new_owner_programmatic_signer}",
-        names.join(" and ")
+        names.join(", ")
     )
 }
 

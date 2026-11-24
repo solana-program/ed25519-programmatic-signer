@@ -13,12 +13,22 @@ use {
     solana_system_interface::instruction::create_account,
     spl_programmatic_signer_cli::{Authorization, MintMigrationOutput},
     spl_token_2022_interface::{
-        extension::{ExtensionType, StateWithExtensions},
+        extension::{
+            BaseStateWithExtensions, ExtensionType, StateWithExtensions,
+            group_pointer::{self, GroupPointer},
+            metadata_pointer::{self, MetadataPointer},
+            pausable::{self, PausableConfig},
+            permanent_delegate::PermanentDelegate,
+            transfer_fee::{self, TransferFeeConfig},
+        },
         instruction::{
-            AuthorityType, initialize_mint2, initialize_non_transferable_mint, set_authority,
+            AuthorityType, initialize_mint_close_authority, initialize_mint2,
+            initialize_non_transferable_mint, initialize_permanent_delegate, set_authority,
         },
         state::Mint,
     },
+    spl_token_group_interface::{instruction::initialize_group, state::TokenGroup},
+    spl_token_metadata_interface::{instruction::initialize, state::TokenMetadata},
 };
 
 /// Create a mint. Token-2022 mints get an extension, so decoding has to handle the extended
@@ -148,7 +158,7 @@ async fn migrates_mint_authorities(env: &TestEnv, token_program: &Address) {
     assert_eq!(memo.accounts, [0]);
     assert_eq!(
         memo.data,
-        format!("migrate mint and freeze authority to {new_owner_programmatic_signer}").as_bytes()
+        format!("migrate mint, freeze authority to {new_owner_programmatic_signer}").as_bytes()
     );
 
     execute_as_new_owner(
@@ -427,7 +437,300 @@ pub async fn rejects_invalid_mint_migrations(env: &TestEnv) {
     .await;
     let stderr = migrate_error(env, "mint", &mint, Some(&owner.pubkey()), &[]);
     assert!(
-        stderr.contains(&format!("mint {mint} has no mint or freeze authority")),
+        stderr.contains(&format!("mint {mint} has no authorities set")),
+        "{stderr}"
+    );
+}
+
+/// Create a Token-2022 mint whose extension authorities are all `authority`, with metadata and a
+/// group stored in the mint. It has no freeze or close authority.
+async fn create_extension_mint(
+    env: &TestEnv,
+    mint_authority: &Keypair,
+    authority: &Address,
+) -> Address {
+    let token_program = spl_token_2022_interface::id();
+    let mint = Keypair::new();
+    let space = ExtensionType::try_calculate_account_len::<Mint>(&[
+        ExtensionType::TransferFeeConfig,
+        ExtensionType::MintCloseAuthority,
+        ExtensionType::PermanentDelegate,
+        ExtensionType::Pausable,
+        ExtensionType::MetadataPointer,
+        ExtensionType::GroupPointer,
+    ])
+    .unwrap();
+    // Initializing the metadata and group grows the mint, so fund the space they take too.
+    let lamports = env
+        .rpc
+        .get_minimum_balance_for_rent_exemption(space.checked_add(1_000).unwrap())
+        .await
+        .unwrap();
+    let instructions = [
+        create_account(
+            &env.payer.pubkey(),
+            &mint.pubkey(),
+            lamports,
+            space.try_into().unwrap(),
+            &token_program,
+        ),
+        transfer_fee::instruction::initialize_transfer_fee_config(
+            &token_program,
+            &mint.pubkey(),
+            Some(authority),
+            Some(authority),
+            10,
+            100,
+        )
+        .unwrap(),
+        initialize_mint_close_authority(&token_program, &mint.pubkey(), None).unwrap(),
+        initialize_permanent_delegate(&token_program, &mint.pubkey(), authority).unwrap(),
+        pausable::instruction::initialize(&token_program, &mint.pubkey(), authority).unwrap(),
+        metadata_pointer::instruction::initialize(
+            &token_program,
+            &mint.pubkey(),
+            Some(*authority),
+            Some(mint.pubkey()),
+        )
+        .unwrap(),
+        group_pointer::instruction::initialize(
+            &token_program,
+            &mint.pubkey(),
+            Some(*authority),
+            Some(mint.pubkey()),
+        )
+        .unwrap(),
+        initialize_mint2(
+            &token_program,
+            &mint.pubkey(),
+            &mint_authority.pubkey(),
+            None,
+            0,
+        )
+        .unwrap(),
+        initialize(
+            &token_program,
+            &mint.pubkey(),
+            authority,
+            &mint.pubkey(),
+            &mint_authority.pubkey(),
+            "Name".to_string(),
+            "SYM".to_string(),
+            "https://example.com".to_string(),
+        ),
+        initialize_group(
+            &token_program,
+            &mint.pubkey(),
+            &mint.pubkey(),
+            &mint_authority.pubkey(),
+            Some(*authority),
+            10,
+        ),
+    ];
+    send(env, &instructions, &[&mint, mint_authority]).await;
+    mint.pubkey()
+}
+
+/// The extension authorities `create_extension_mint` sets, in the order `migrate mint` lists them.
+async fn extension_authorities(env: &TestEnv, mint: &Address) -> Vec<Option<Address>> {
+    let data = env.rpc.get_account_data(mint).await.unwrap();
+    let state = StateWithExtensions::<Mint>::unpack(&data).unwrap();
+    let transfer_fee = state.get_extension::<TransferFeeConfig>().unwrap();
+    vec![
+        transfer_fee.transfer_fee_config_authority.into(),
+        transfer_fee.withdraw_withheld_authority.into(),
+        state
+            .get_extension::<PermanentDelegate>()
+            .unwrap()
+            .delegate
+            .into(),
+        state
+            .get_extension::<MetadataPointer>()
+            .unwrap()
+            .authority
+            .into(),
+        state
+            .get_extension::<GroupPointer>()
+            .unwrap()
+            .authority
+            .into(),
+        state
+            .get_extension::<PausableConfig>()
+            .unwrap()
+            .authority
+            .into(),
+        state
+            .get_variable_len_extension::<TokenMetadata>()
+            .unwrap()
+            .update_authority
+            .into(),
+        state
+            .get_extension::<TokenGroup>()
+            .unwrap()
+            .update_authority
+            .into(),
+    ]
+}
+
+pub async fn migrates_token_2022_extension_authorities(env: &TestEnv) {
+    let owner = Keypair::new();
+    let owner_signer = programmatic_signer(&owner.pubkey());
+    let mint = create_extension_mint(env, &owner, &owner.pubkey()).await;
+    let nonce_account = create_nonce(env, &owner.pubkey());
+
+    // Every set authority moves by default, to the programmatic signer of the shared authority.
+    let migration: MintMigrationOutput = migrate(env, "mint", &mint, None, &[]);
+    assert_eq!(
+        migration.authority_types,
+        [
+            "mint",
+            "transfer-fee-config",
+            "withheld-withdraw",
+            "permanent-delegate",
+            "metadata-pointer",
+            "group-pointer",
+            "pause",
+            "metadata-update",
+            "group-update",
+        ]
+    );
+    assert_eq!(migration.unset_authority_types, ["freeze", "close-mint"]);
+    assert_signers(
+        &migration.required_signers,
+        &[authorization(&owner.pubkey())],
+        &[owner.pubkey()],
+    );
+    let message = decode_execution_message(&migration.execution_message);
+    assert_eq!(
+        message.instructions.last().unwrap().data,
+        format!(
+            "migrate mint, transfer-fee-config, withheld-withdraw, permanent-delegate, \
+             metadata-pointer, group-pointer, pause, metadata-update, group-update authority to \
+             {owner_signer}"
+        )
+        .as_bytes()
+    );
+
+    // An unset authority can't be named.
+    let stderr = migrate_error(
+        env,
+        "mint",
+        &mint,
+        None,
+        &["--authority-type", "close-mint"],
+    );
+    assert!(
+        stderr.contains(&format!("mint {mint} has no close-mint authority")),
+        "{stderr}"
+    );
+
+    execute_as_new_owner(
+        env,
+        &migration.execution_message,
+        &nonce_account,
+        &owner,
+        &[],
+        &[&owner],
+    )
+    .await;
+    assert_eq!(
+        mint_authorities(env, &mint).await,
+        (Some(owner_signer), None)
+    );
+    assert_eq!(
+        extension_authorities(env, &mint).await,
+        vec![Some(owner_signer); 8]
+    );
+}
+
+pub async fn migrates_some_token_2022_extension_authorities(env: &TestEnv) {
+    let mint_authority = Keypair::new();
+    let owner = Keypair::new();
+    let new_owner = Keypair::new();
+    let new_owner_signer = programmatic_signer(&new_owner.pubkey());
+    let mint = create_extension_mint(env, &mint_authority, &owner.pubkey()).await;
+    let nonce_account = create_nonce(env, &new_owner.pubkey());
+
+    // The mint authority differs from the extension authorities, so neither is the default.
+    let stderr = migrate_error(env, "mint", &mint, None, &[]);
+    assert!(
+        stderr.contains(&format!(
+            "the mint authority {} and transfer-fee-config authority {} of mint {mint} differ",
+            mint_authority.pubkey(),
+            owner.pubkey()
+        )),
+        "{stderr}"
+    );
+
+    let migration: MintMigrationOutput = migrate(
+        env,
+        "mint",
+        &mint,
+        Some(&new_owner.pubkey()),
+        &[
+            "--authority-type",
+            "pause,permanent-delegate,metadata-update",
+        ],
+    );
+    assert_eq!(
+        migration.authority_types,
+        ["permanent-delegate", "pause", "metadata-update"]
+    );
+    execute_as_new_owner(
+        env,
+        &migration.execution_message,
+        &nonce_account,
+        &new_owner,
+        &[],
+        &[&owner],
+    )
+    .await;
+    let owner = Some(owner.pubkey());
+    let new = Some(new_owner_signer);
+    assert_eq!(
+        extension_authorities(env, &mint).await,
+        [owner, owner, new, owner, owner, new, new, owner]
+    );
+}
+
+pub async fn rejects_missing_extension_authorities(env: &TestEnv) {
+    let authority = Keypair::new();
+    let new_owner = Keypair::new();
+
+    let token_mint = create_mint(env, &spl_token_interface::id(), &authority.pubkey(), None).await;
+    let stderr = migrate_error(
+        env,
+        "mint",
+        &token_mint,
+        Some(&new_owner.pubkey()),
+        &["--authority-type", "pause"],
+    );
+    assert!(
+        stderr.contains(&format!(
+            "mint {token_mint} is not a Token-2022 mint, so it has no pause authority"
+        )),
+        "{stderr}"
+    );
+
+    // Only has the `NonTransferable` extension.
+    let token_2022_mint = create_mint(
+        env,
+        &spl_token_2022_interface::id(),
+        &authority.pubkey(),
+        None,
+    )
+    .await;
+    let stderr = migrate_error(
+        env,
+        "mint",
+        &token_2022_mint,
+        Some(&new_owner.pubkey()),
+        &["--authority-type", "mint,pause"],
+    );
+    assert!(
+        stderr.contains(&format!(
+            "mint {token_2022_mint} has no Pausable extension, so it has no pause authority"
+        )),
         "{stderr}"
     );
 }
