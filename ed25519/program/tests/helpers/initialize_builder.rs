@@ -6,7 +6,8 @@ use {
     },
     solana_account::Account,
     solana_address::Address,
-    spl_nonce_client::instruction::initialize,
+    spl_ed25519_programmatic_signer_interface::id,
+    spl_programmatic_signer_core::instruction::initialize_nonce,
 };
 
 pub struct InitializeBuilder<'a> {
@@ -64,7 +65,7 @@ impl<'a> InitializeBuilder<'a> {
             .unwrap_or_else(|| Address::from([2; 32]));
         let slot_hashes = self.mollusk.sysvars.keyed_account_for_slot_hashes_sysvar();
 
-        let mut instruction = initialize(&nonce_account.0, &authority_address);
+        let mut instruction = initialize_nonce(&id(), &nonce_account.0, &authority_address);
         if let Some(instruction_data) = self.instruction_data {
             instruction.data = instruction_data;
         }

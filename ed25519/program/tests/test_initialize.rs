@@ -8,10 +8,15 @@ use {
     solana_account::Account,
     solana_address::Address,
     solana_instruction::AccountMeta,
+    solana_instruction_error::InstructionError,
     solana_program_error::ProgramError,
     solana_rent::Rent,
-    spl_nonce_client::instruction::{create_account, initialize},
-    spl_nonce_interface::state::{NONCE_INIT_TAG, Nonce},
+    solana_system_interface::instruction::create_account,
+    spl_ed25519_programmatic_signer_interface::id,
+    spl_programmatic_signer_core::{
+        instruction::initialize_nonce,
+        state::{NONCE_INIT_TAG, Nonce},
+    },
 };
 
 pub mod helpers;
@@ -28,7 +33,7 @@ fn initialize_rejects_unknown_instruction_discriminator() {
 #[test]
 fn initialize_rejects_trailing_instruction_data() {
     let mut data_with_trailing_byte =
-        initialize(&Address::new_unique(), &Address::new_unique()).data;
+        initialize_nonce(&id(), &Address::new_unique(), &Address::new_unique()).data;
     data_with_trailing_byte.push(0);
 
     InitializeBuilder::default()
@@ -41,7 +46,7 @@ fn initialize_rejects_trailing_instruction_data() {
 fn initialize_rejects_missing_accounts() {
     let nonce_account = NonceAccountBuilder::new().build();
     let authority = (Address::new_unique(), Account::default());
-    let mut instruction = initialize(&nonce_account.0, &authority.0);
+    let mut instruction = initialize_nonce(&id(), &nonce_account.0, &authority.0);
     instruction.accounts.pop(); // drop the SlotHashes account meta
 
     init_mollusk().process_and_validate_instruction(
@@ -66,7 +71,7 @@ fn initialize_rejects_wrong_slot_hashes_account() {
     let authority = (Address::new_unique(), Account::default());
     let wrong_slot_hashes = (Address::new_unique(), Account::default());
 
-    let mut instruction = initialize(&nonce_account.0, &authority.0);
+    let mut instruction = initialize_nonce(&id(), &nonce_account.0, &authority.0);
     instruction.accounts.pop(); // drop the real SlotHashes meta
     instruction
         .accounts
@@ -144,7 +149,7 @@ fn initialize_writes_expected_state() {
     let state = decode_state(result.get_account(&nonce_account_address).unwrap());
 
     let slot_hash = init_mollusk().sysvars.slot_hashes.first().unwrap().hash;
-    let program_id = spl_nonce_interface::id().to_bytes();
+    let program_id = id().to_bytes();
     let nonce_account_address = nonce_account_address.to_bytes();
     let slot_hash = slot_hash.to_bytes();
     assert_eq!(
@@ -179,12 +184,16 @@ fn create_account_creates_and_initializes_nonce_account() {
         .1;
 
     mollusk.process_and_validate_transaction_instructions(
-        &create_account(
-            &payer_address,
-            &nonce_account_address,
-            &authority_address,
-            rent_lamports,
-        ),
+        &[
+            create_account(
+                &payer_address,
+                &nonce_account_address,
+                rent_lamports,
+                Nonce::LEN as u64,
+                &id(),
+            ),
+            initialize_nonce(&id(), &nonce_account_address, &authority_address),
+        ],
         &[
             (
                 payer_address,
@@ -235,4 +244,72 @@ fn initialize_nonce_is_unique_per_nonce_account() {
 
     assert_eq!(first_state.authority, second_state.authority);
     assert_ne!(first_state.nonce, second_state.nonce);
+}
+
+#[test]
+fn initialize_rejects_readonly_nonce_account() {
+    let mollusk = init_mollusk();
+    let authority = Address::new_unique();
+    let (nonce_address, nonce_account) = NonceAccountBuilder::new().build();
+
+    let mut ix = initialize_nonce(&id(), &nonce_address, &authority);
+    ix.accounts[0] = AccountMeta::new_readonly(nonce_address, false);
+
+    mollusk.process_and_validate_instruction(
+        &ix,
+        &[
+            (nonce_address, nonce_account),
+            (authority, Account::default()),
+            mollusk.sysvars.keyed_account_for_slot_hashes_sysvar(),
+        ],
+        &[Check::instruction_err(
+            InstructionError::ReadonlyDataModified,
+        )],
+    );
+}
+
+#[test]
+fn initialize_rejects_empty_slot_hashes_sysvar() {
+    let mollusk = init_mollusk();
+    let authority = Address::new_unique();
+    let (nonce_address, nonce_account) = NonceAccountBuilder::new().build();
+    let (slot_hashes_id, mut slot_hashes_account) =
+        mollusk.sysvars.keyed_account_for_slot_hashes_sysvar();
+    slot_hashes_account.data = vec![0; 8];
+
+    let ix = initialize_nonce(&id(), &nonce_address, &authority);
+    mollusk.process_and_validate_instruction(
+        &ix,
+        &[
+            (nonce_address, nonce_account),
+            (authority, Account::default()),
+            (slot_hashes_id, slot_hashes_account),
+        ],
+        &[Check::err(ProgramError::InvalidArgument)],
+    );
+}
+
+#[test]
+fn initialize_accepts_extra_accounts() {
+    let mollusk = init_mollusk();
+    let authority = Address::new_unique();
+    let extra = Address::new_unique();
+    let (nonce_address, nonce_account) = NonceAccountBuilder::new().build();
+
+    let mut ix = initialize_nonce(&id(), &nonce_address, &authority);
+    ix.accounts.push(AccountMeta::new_readonly(extra, false));
+
+    let result = mollusk.process_and_validate_instruction(
+        &ix,
+        &[
+            (nonce_address, nonce_account),
+            (authority, Account::default()),
+            mollusk.sysvars.keyed_account_for_slot_hashes_sysvar(),
+            (extra, Account::default()),
+        ],
+        &[Check::success()],
+    );
+
+    let state = decode_state(result.get_account(&nonce_address).unwrap());
+    assert_eq!(state.authority, authority);
 }

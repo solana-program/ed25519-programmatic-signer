@@ -1,11 +1,14 @@
 use {
-    crate::helpers::nonce_account_builder::NonceAccountBuilder, mollusk_svm::Mollusk,
-    solana_account::Account, solana_address::Address, spl_nonce_client::instruction::initialize,
-    spl_nonce_interface::state::Nonce,
+    crate::helpers::nonce_account_builder::NonceAccountBuilder,
+    mollusk_svm::Mollusk,
+    solana_account::Account,
+    solana_address::Address,
+    spl_ed25519_programmatic_signer_interface::id,
+    spl_programmatic_signer_core::{instruction::initialize_nonce, state::Nonce},
 };
 
 pub fn init_mollusk() -> Mollusk {
-    Mollusk::new(&spl_nonce_interface::id(), "spl_nonce_program")
+    Mollusk::new(&id(), "spl_ed25519_programmatic_signer_program")
 }
 
 pub fn decode_state(account: &Account) -> Nonce {
@@ -23,7 +26,7 @@ pub fn initialize_nonce_account_at(
 ) -> (Address, Account) {
     let (nonce_account_address, nonce_account) =
         NonceAccountBuilder::new().key(nonce_address).build();
-    let instruction = initialize(&nonce_account_address, authority);
+    let instruction = initialize_nonce(&id(), &nonce_account_address, authority);
     let result = mollusk.process_and_validate_instruction(
         &instruction,
         &[

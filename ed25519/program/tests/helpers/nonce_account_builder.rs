@@ -1,6 +1,6 @@
 use {
     solana_account::Account, solana_address::Address, solana_hash::Hash, solana_rent::Rent,
-    spl_nonce_interface::state::Nonce,
+    spl_ed25519_programmatic_signer_interface::id, spl_programmatic_signer_core::state::Nonce,
 };
 
 pub struct NonceAccountBuilder {
@@ -14,7 +14,7 @@ impl Default for NonceAccountBuilder {
     fn default() -> Self {
         Self {
             key: Address::from([1; 32]),
-            owner: spl_nonce_interface::id(),
+            owner: id(),
             lamports: None,
             data: None,
         }
@@ -53,11 +53,7 @@ impl NonceAccountBuilder {
         initialize_slot: u64,
     ) -> Self {
         let state = Nonce {
-            nonce: Nonce::derive_initial_nonce(
-                &spl_nonce_interface::id(),
-                &self.key,
-                recent_slot_hash,
-            ),
+            nonce: Nonce::derive_initial_nonce(&id(), &self.key, recent_slot_hash),
             authority,
             initialize_slot: initialize_slot.into(),
         };
