@@ -18,8 +18,9 @@ use {
     solana_account_decoder::{
         encode_ui_account,
         parse_account_data::{AccountAdditionalDataV3, SplTokenAdditionalDataV2},
+        parse_token::token_amount_to_ui_amount_v3,
     },
-    solana_account_decoder_client_types::{UiAccountEncoding, token::real_number_string_trimmed},
+    solana_account_decoder_client_types::UiAccountEncoding,
     solana_address::Address,
     solana_clock::{Clock, UnixTimestamp},
     solana_hash::Hash,
@@ -231,7 +232,12 @@ pub(super) async fn simulate(
             if options.relay { 0 } else { fee },
             &signing_pubkeys,
         )?,
-        token_balance_changes: token_balance_changes(message, &result, &signing_pubkeys)?,
+        token_balance_changes: token_balance_changes(
+            message,
+            &result,
+            &signing_pubkeys,
+            &token_data,
+        )?,
         account_changes,
         authority_changes,
     })
@@ -494,11 +500,13 @@ fn sol_balance_changes(
 
 /// Token amount changes per token account. An account missing on one side was created or
 /// closed, so its amount there is zero. `signing_pubkeys` maps programmatic signers to their
-/// signing pubkeys, matched against the token account owner.
+/// signing pubkeys, matched against the token account owner, and `token_data` maps token accounts
+/// to their mint's decimals and display configs.
 fn token_balance_changes(
     message: &v1::Message,
     result: &RpcSimulateTransactionResult,
     signing_pubkeys: &BTreeMap<String, String>,
+    token_data: &BTreeMap<Address, SplTokenAdditionalDataV2>,
 ) -> Result<Vec<TokenBalanceChange>> {
     let (Some(pre), Some(post)) = (&result.pre_token_balances, &result.post_token_balances) else {
         bail!("the RPC node did not return simulated token balances");
@@ -551,6 +559,16 @@ fn token_balance_changes(
             program_id: Option::from(program_id.clone()),
             amount: change,
             decimals: *decimals,
+            ui_amount: ui_amount_change(
+                change,
+                &token_data
+                    .get(account)
+                    .copied()
+                    .unwrap_or(SplTokenAdditionalDataV2 {
+                        decimals: *decimals,
+                        ..SplTokenAdditionalDataV2::default()
+                    }),
+            ),
         });
     }
     Ok(changes)
@@ -591,6 +609,10 @@ struct TokenBalanceChange {
     /// Raw amount change, in base units.
     amount: i128,
     decimals: u8,
+    /// The amount change in tokens, as a wallet displays it: with the mint's decimals, and adjusted
+    /// for an interest-bearing or scaled UI amount mint. Omitted if it can't be converted.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    ui_amount: Option<String>,
     /// Signing pubkey whose programmatic signer owns this token account, if known. Omitted
     /// otherwise.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -663,13 +685,13 @@ impl fmt::Display for SolBalanceChange {
 
 impl fmt::Display for TokenBalanceChange {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(
-            f,
-            "{}  {}  mint {}",
-            self.account,
-            format_token_amount(self.amount, self.decimals),
-            self.mint
-        )?;
+        write!(f, "{}  ", self.account)?;
+        match &self.ui_amount {
+            Some(ui_amount) if self.amount >= 0 => write!(f, "+{ui_amount}")?,
+            Some(ui_amount) => write!(f, "{ui_amount}")?,
+            None => write!(f, "{:+} base units", self.amount)?,
+        }
+        write!(f, "  mint {}", self.mint)?;
         if let Some(owner) = &self.owner {
             write!(f, "  owner {owner}")?;
         }
@@ -680,24 +702,41 @@ impl fmt::Display for TokenBalanceChange {
     }
 }
 
-/// Format a signed raw token amount with its decimals, e.g. `-1.5`.
-fn format_token_amount(amount: i128, decimals: u8) -> String {
-    let sign = if amount < 0 { '-' } else { '+' };
+/// The UI amount of a signed raw token amount change, e.g. `-1.5`, as `token_data` displays it.
+/// `None` if the mint's config can't convert it.
+fn ui_amount_change(amount: i128, token_data: &SplTokenAdditionalDataV2) -> Option<String> {
     // Infallible: the change of one u64 amount fits in a u64.
-    let amount = u64::try_from(amount.unsigned_abs()).unwrap();
-    format!("{sign}{}", real_number_string_trimmed(amount, decimals))
+    let magnitude = u64::try_from(amount.unsigned_abs()).unwrap();
+    let ui_amount = token_amount_to_ui_amount_v3(magnitude, token_data).ui_amount_string;
+    let sign = if amount < 0 { "-" } else { "" };
+    (!ui_amount.is_empty()).then(|| format!("{sign}{ui_amount}"))
 }
 
 #[cfg(test)]
 mod tests {
-    use {super::format_token_amount, test_case::test_case};
+    use {
+        super::*, spl_token_2022_interface::extension::scaled_ui_amount::ScaledUiAmountConfig,
+        test_case::test_case,
+    };
 
-    #[test_case(0, 0 => "+0")]
-    #[test_case(-5, 0 => "-5")]
-    #[test_case(1_500_000, 6 => "+1.5")]
-    #[test_case(-1, 6 => "-0.000001")]
-    #[test_case(2_000_000, 6 => "+2")]
-    fn formats_token_amounts(amount: i128, decimals: u8) -> String {
-        format_token_amount(amount, decimals)
+    #[test_case(0, 0, None => "0")]
+    #[test_case(-5, 0, None => "-5")]
+    #[test_case(1_500_000, 6, None => "1.5")]
+    #[test_case(-1, 6, None => "-0.000001")]
+    #[test_case(2_000_000, 6, None => "2")]
+    #[test_case(1_500_000, 6, Some(2.0) => "3")]
+    #[test_case(-1_500_000, 6, Some(0.5) => "-0.75")]
+    fn formats_ui_amount_changes(amount: i128, decimals: u8, multiplier: Option<f64>) -> String {
+        // In effect from timestamp 0.
+        let config = multiplier.map(|multiplier| ScaledUiAmountConfig {
+            new_multiplier: multiplier.into(),
+            ..ScaledUiAmountConfig::default()
+        });
+        let token_data = SplTokenAdditionalDataV2 {
+            decimals,
+            scaled_ui_amount_config: config.map(|config| (config, 0)),
+            ..SplTokenAdditionalDataV2::default()
+        };
+        ui_amount_change(amount, &token_data).unwrap()
     }
 }

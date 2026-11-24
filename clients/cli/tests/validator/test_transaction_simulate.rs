@@ -442,6 +442,21 @@ pub async fn parses_scaled_ui_amount_token_accounts(env: &TestEnv) {
     let amount = &parsed["info"]["tokenAmount"];
     assert_eq!(amount["amount"], "100", "{parsed}");
     assert_eq!(amount["uiAmountString"], "2", "{parsed}");
+
+    // The token balance changes are also doubled.
+    let value: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    let ui_amounts = value["tokenBalanceChanges"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|change| (change["account"].clone(), change["uiAmount"].clone()))
+        .collect::<Vec<_>>();
+    for (account, ui_amount) in [(&source, "-2"), (&destination, "2")] {
+        assert!(
+            ui_amounts.contains(&(account.to_string().into(), ui_amount.into())),
+            "{value}"
+        );
+    }
 }
 
 pub async fn simulates_token_transfer(env: &TestEnv) {
@@ -478,7 +493,7 @@ pub async fn simulates_token_transfer(env: &TestEnv) {
     let amount = i64::try_from(amount).unwrap();
     let mut changes = value["tokenBalanceChanges"].as_array().unwrap().clone();
     changes.sort_by_key(|change| change["account"].as_str().unwrap().to_owned());
-    let token_change = |account: &Address, owner: &Address, amount: i64| {
+    let token_change = |account: &Address, owner: &Address, amount: i64, ui_amount: &str| {
         serde_json::json!({
             "account": account.to_string(),
             "mint": mint.to_string(),
@@ -486,11 +501,12 @@ pub async fn simulates_token_transfer(env: &TestEnv) {
             "programId": spl_token_interface::id().to_string(),
             "amount": amount,
             "decimals": DECIMALS,
+            "uiAmount": ui_amount,
         })
     };
     let mut expected = vec![
-        token_change(&source, &signer, amount.checked_neg().unwrap()),
-        token_change(&destination, &recipient, amount),
+        token_change(&source, &signer, amount.checked_neg().unwrap(), "-1.5"),
+        token_change(&destination, &recipient, amount, "1.5"),
     ];
     expected.sort_by_key(|change| change["account"].as_str().unwrap().to_owned());
     assert_eq!(changes, expected);
