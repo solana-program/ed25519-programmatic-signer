@@ -4,10 +4,18 @@
 use {
     serde::Serialize,
     solana_account::Account,
+    solana_account_decoder::{
+        parse_account_data::SplTokenAdditionalDataV2, parse_token::token_amount_to_ui_amount_v3,
+    },
     solana_address::Address,
     solana_clock::Epoch,
     solana_stake_interface::state::StakeStateV2,
     solana_vote_interface::state::VoteStateVersions,
+    spl_token_2022_interface::{
+        check_spl_token_program_account,
+        extension::StateWithExtensions,
+        state::{Account as TokenAccount, Mint},
+    },
     std::{
         collections::{BTreeMap, BTreeSet},
         fmt,
@@ -61,13 +69,51 @@ pub(super) struct AuthorityChange {
 #[serde(rename_all = "camelCase")]
 struct AuthorityValue {
     address: String,
-    /// First epoch the authority applies to, for authorities that change at an epoch boundary.
-    /// Omitted for other authorities.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    effective_epoch: Option<Epoch>,
+    /// Serialized as its variant's field, e.g. `effectiveEpoch`. Omitted for an authority with no
+    /// relevant limit.
+    #[serde(flatten)]
+    limit: Option<AuthorityLimit>,
     /// Signing pubkey whose programmatic signer is this address, if known. Omitted otherwise.
     #[serde(skip_serializing_if = "Option::is_none")]
     signing_pubkey: Option<String>,
+}
+
+/// A limit on when or how much an authority may act, for authorities that have one.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+enum AuthorityLimit {
+    /// First epoch a vote account's voter applies to, since a new voter takes effect at a later
+    /// epoch.
+    EffectiveEpoch(Epoch),
+    /// Amount a token account's delegate may transfer.
+    DelegatedAmount(TokenAmount),
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct TokenAmount {
+    /// Raw amount, in base units.
+    amount: u64,
+    /// The mint's decimals, if known. Omitted otherwise.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    decimals: Option<u8>,
+    /// The amount in tokens, as a wallet displays it: with the mint's decimals, and adjusted for
+    /// an interest-bearing or scaled UI amount mint. Omitted if the mint's decimals are unknown.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    ui_amount: Option<String>,
+}
+
+impl TokenAmount {
+    fn new(amount: u64, token_data: Option<&SplTokenAdditionalDataV2>) -> Self {
+        Self {
+            amount,
+            decimals: token_data.map(|token_data| token_data.decimals),
+            ui_amount: token_data
+                .map(|token_data| token_amount_to_ui_amount_v3(amount, token_data).ui_amount_string)
+                // Empty if the mint's config can't convert the amount.
+                .filter(|ui_amount| !ui_amount.is_empty()),
+        }
+    }
 }
 
 /// The kind of a parsed account.
@@ -76,6 +122,10 @@ struct AuthorityValue {
 pub(super) enum AccountKind {
     Stake,
     Vote,
+    /// A Token or Token-2022 account. Extensions are not parsed.
+    TokenAccount,
+    /// A Token or Token-2022 mint. Extensions are not parsed.
+    Mint,
 }
 
 /// The role of an authority of a parsed account. Changes are listed in this order.
@@ -91,20 +141,27 @@ pub(super) enum AuthorityRole {
     Voter,
     InflationRewardsCollector,
     BlockRevenueCollector,
+    /// A token account's owner.
+    Owner,
+    /// A token account's delegate, which may transfer up to its delegated amount.
+    Delegate,
+    CloseAuthority,
+    MintAuthority,
+    FreezeAuthority,
 }
 
 /// An authority, as parsed from account data.
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 struct ParsedAuthority {
     address: Address,
-    effective_epoch: Option<Epoch>,
+    limit: Option<AuthorityLimit>,
 }
 
 impl ParsedAuthority {
     fn new(address: Address) -> Self {
         Self {
             address,
-            effective_epoch: None,
+            limit: None,
         }
     }
 }
@@ -117,12 +174,14 @@ struct ParsedAccount {
 
 /// Compare the state of `addresses` before and after the simulation. A missing or zero-lamport
 /// account does not exist. `pda_signing_pubkeys` maps programmatic signers to their signing
-/// pubkeys, to label authority changes.
+/// pubkeys, and `token_data` maps token accounts to their mint's decimals and display configs, to
+/// label authority changes.
 pub(super) fn state_changes<'a>(
     addresses: &[Address],
     pre: &'a [Option<Account>],
     post: &'a [Option<Account>],
     pda_signing_pubkeys: &BTreeMap<String, String>,
+    token_data: &BTreeMap<Address, SplTokenAdditionalDataV2>,
 ) -> (Vec<AccountChange>, Vec<AuthorityChange>) {
     let mut account_changes = Vec::new();
     let mut authority_changes = Vec::new();
@@ -131,10 +190,11 @@ pub(super) fn state_changes<'a>(
             |account: &'a Option<Account>| account.as_ref().filter(|account| account.lamports > 0);
         let (pre, post) = (exists(pre), exists(post));
         account_changes.extend(account_change(address, pre, post));
+        let parse = |account: &Account| parse_account(account, token_data.get(address));
         authority_changes.extend(authority_changes_for(
             address,
-            pre.and_then(parse_account),
-            post.and_then(parse_account),
+            pre.and_then(parse),
+            post.and_then(parse),
             pda_signing_pubkeys,
         ));
     }
@@ -172,7 +232,7 @@ fn authority_changes_for(
             AuthorityValue {
                 signing_pubkey: pda_signing_pubkeys.get(&address).cloned(),
                 address,
-                effective_epoch: authority.effective_epoch,
+                limit: authority.limit.clone(),
             }
         })
     };
@@ -192,12 +252,18 @@ fn authority_changes_for(
 }
 
 /// Parse the authorities of an account owned by a known program. `None` if the program is
-/// unknown or the data is invalid.
-fn parse_account(account: &Account) -> Option<ParsedAccount> {
+/// unknown or the data is invalid. `token_data` is a token account's mint decimals and display
+/// configs, if known.
+fn parse_account(
+    account: &Account,
+    token_data: Option<&SplTokenAdditionalDataV2>,
+) -> Option<ParsedAccount> {
     if account.owner == solana_stake_interface::program::id() {
         parse_stake(account)
     } else if account.owner == solana_sdk_ids::vote::id() {
         parse_vote(account)
+    } else if check_spl_token_program_account(&account.owner).is_ok() {
+        parse_token(account, token_data)
     } else {
         None
     }
@@ -274,13 +340,76 @@ fn parse_vote(account: &Account) -> Option<ParsedAccount> {
             AuthorityRole::Voter,
             ParsedAuthority {
                 address: *voter,
-                effective_epoch: Some(*epoch),
+                limit: Some(AuthorityLimit::EffectiveEpoch(*epoch)),
             },
         );
     }
     Some(ParsedAccount {
         kind: AccountKind::Vote,
         authorities,
+    })
+}
+
+/// Parse the base state of a token account or mint, ignoring any Token-2022 extensions.
+fn parse_token(
+    account: &Account,
+    token_data: Option<&SplTokenAdditionalDataV2>,
+) -> Option<ParsedAccount> {
+    let (kind, authorities) =
+        if let Ok(state) = StateWithExtensions::<TokenAccount>::unpack(&account.data) {
+            let TokenAccount {
+                owner,
+                delegate,
+                delegated_amount,
+                close_authority,
+                ..
+            } = state.base;
+            let delegate = Option::from(delegate).map(|address| ParsedAuthority {
+                address,
+                limit: Some(AuthorityLimit::DelegatedAmount(TokenAmount::new(
+                    delegated_amount,
+                    token_data,
+                ))),
+            });
+            (
+                AccountKind::TokenAccount,
+                vec![
+                    (AuthorityRole::Owner, Some(ParsedAuthority::new(owner))),
+                    (AuthorityRole::Delegate, delegate),
+                    (
+                        AuthorityRole::CloseAuthority,
+                        Option::from(close_authority).map(ParsedAuthority::new),
+                    ),
+                ],
+            )
+        } else {
+            let Mint {
+                mint_authority,
+                freeze_authority,
+                ..
+            } = StateWithExtensions::<Mint>::unpack(&account.data)
+                .ok()?
+                .base;
+            (
+                AccountKind::Mint,
+                vec![
+                    (
+                        AuthorityRole::MintAuthority,
+                        Option::from(mint_authority).map(ParsedAuthority::new),
+                    ),
+                    (
+                        AuthorityRole::FreezeAuthority,
+                        Option::from(freeze_authority).map(ParsedAuthority::new),
+                    ),
+                ],
+            )
+        };
+    Some(ParsedAccount {
+        kind,
+        authorities: authorities
+            .into_iter()
+            .filter_map(|(role, authority)| Some((role, authority?)))
+            .collect(),
     })
 }
 
@@ -332,6 +461,8 @@ impl fmt::Display for AccountKind {
         f.write_str(match self {
             Self::Stake => "stake",
             Self::Vote => "vote",
+            Self::TokenAccount => "token account",
+            Self::Mint => "mint",
         })
     }
 }
@@ -346,6 +477,11 @@ impl fmt::Display for AuthorityRole {
             Self::Voter => "voter",
             Self::InflationRewardsCollector => "inflation rewards collector",
             Self::BlockRevenueCollector => "block revenue collector",
+            Self::Owner => "owner",
+            Self::Delegate => "delegate",
+            Self::CloseAuthority => "close authority",
+            Self::MintAuthority => "mint authority",
+            Self::FreezeAuthority => "freeze authority",
         })
     }
 }
@@ -356,9 +492,94 @@ impl fmt::Display for AuthorityValue {
         if let Some(signing_pubkey) = &self.signing_pubkey {
             write!(f, " (PDA of {signing_pubkey})")?;
         }
-        if let Some(epoch) = self.effective_epoch {
-            write!(f, " (from epoch {epoch})")?;
+        match &self.limit {
+            Some(AuthorityLimit::EffectiveEpoch(epoch)) => write!(f, " (from epoch {epoch})"),
+            Some(AuthorityLimit::DelegatedAmount(TokenAmount {
+                ui_amount: Some(ui_amount),
+                ..
+            })) => write!(f, " (delegated {ui_amount})"),
+            Some(AuthorityLimit::DelegatedAmount(TokenAmount {
+                amount,
+                ui_amount: None,
+                ..
+            })) => write!(f, " (delegated {amount} base units)"),
+            None => Ok(()),
         }
-        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use {
+        super::*,
+        solana_program_pack::Pack,
+        spl_token_2022_interface::{
+            extension::scaled_ui_amount::ScaledUiAmountConfig, state::AccountState,
+        },
+        test_case::test_case,
+    };
+
+    fn token_account(delegate: Address, delegated_amount: u64) -> Option<Account> {
+        let state = TokenAccount {
+            mint: Address::new_from_array([1; 32]),
+            owner: Address::new_from_array([2; 32]),
+            delegate: Some(delegate).into(),
+            state: AccountState::Initialized,
+            delegated_amount,
+            ..TokenAccount::default()
+        };
+        let mut data = vec![0; TokenAccount::LEN];
+        state.pack_into_slice(&mut data);
+        Some(Account {
+            lamports: 1,
+            data,
+            owner: spl_token_2022_interface::id(),
+            ..Account::default()
+        })
+    }
+
+    /// A change to only the delegated amount, such as the delegate transferring some of it, is a
+    /// delegate change.
+    #[test_case(Some(2), None, "1.5", "0.5"; "with decimals")]
+    #[test_case(Some(2), Some(2.0), "3", "1"; "with a scaled UI amount")]
+    #[test_case(None, None, "150 base units", "50 base units"; "without decimals")]
+    fn reports_delegated_amount_change(
+        decimals: Option<u8>,
+        multiplier: Option<f64>,
+        before: &str,
+        after: &str,
+    ) {
+        let address = Address::new_from_array([3; 32]);
+        let delegate = Address::new_from_array([4; 32]);
+        let (_, changes) = state_changes(
+            &[address],
+            &[token_account(delegate, 150)],
+            &[token_account(delegate, 50)],
+            &BTreeMap::new(),
+            &decimals
+                .map(|decimals| {
+                    // In effect from timestamp 0.
+                    let config = multiplier.map(|multiplier| ScaledUiAmountConfig {
+                        new_multiplier: multiplier.into(),
+                        ..ScaledUiAmountConfig::default()
+                    });
+                    let token_data = SplTokenAdditionalDataV2 {
+                        decimals,
+                        scaled_ui_amount_config: config.map(|config| (config, 0)),
+                        ..SplTokenAdditionalDataV2::default()
+                    };
+                    (address, token_data)
+                })
+                .into_iter()
+                .collect(),
+        );
+        let changes = changes.iter().map(ToString::to_string).collect::<Vec<_>>();
+        assert_eq!(
+            changes,
+            [format!(
+                "{address}  token account delegate: {delegate} (delegated {before}) -> {delegate} \
+                 (delegated {after})"
+            )]
+        );
     }
 }

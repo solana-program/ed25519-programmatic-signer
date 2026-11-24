@@ -4,7 +4,8 @@ use {
             execute::programmatic_signer,
             helpers::{TestEnv, run_psigner, run_psigner_with_input},
         },
-        test_migrate_token::{self as token, create_mint, mint_tokens},
+        migration::send,
+        test_migrate_token::{self as token, create_mint, mint_to_new_account, mint_tokens},
         test_transaction_submit::{SubmitTest, TRANSFER_AMOUNT, fund},
     },
     base64::{Engine, prelude::BASE64_STANDARD},
@@ -16,7 +17,10 @@ use {
     solana_signer::Signer,
     solana_system_interface::instruction::{create_account, transfer},
     solana_transaction::Transaction,
-    spl_token_2022_interface::extension::ExtensionType,
+    spl_token_2022_interface::{
+        extension::ExtensionType,
+        instruction::{AuthorityType, approve_checked, set_authority},
+    },
     spl_token_interface::{
         instruction::{initialize_account3, initialize_mint2, mint_to, transfer_checked},
         state::{Account as TokenAccount, Mint},
@@ -584,4 +588,219 @@ pub async fn simulates_at_relay_cpi_depth(env: &TestEnv) {
             ),
         ]
     );
+}
+
+/// Token authority changes, including a delegate with its delegated amount and a removed mint
+/// authority, are parsed from the base state of Token and Token-2022 accounts.
+async fn simulates_token_authority_changes(env: &TestEnv, token_program: &Address) {
+    let authority = Keypair::new();
+    let signer = programmatic_signer(&authority.pubkey());
+    let new_freeze_authority = Keypair::new().pubkey();
+    let new_freeze_signer = programmatic_signer(&new_freeze_authority);
+    let [delegate, close_authority, new_owner] = [(); 3].map(|()| Keypair::new().pubkey());
+    // A Token-2022 mint with an extension, which is not parsed, but whose multiplier doubles the
+    // displayed delegated amount.
+    let (extensions, ui_amount) = if *token_program == spl_token_2022_interface::id() {
+        (&[ExtensionType::ScaledUiAmount][..], "3")
+    } else {
+        (&[][..], "1.5")
+    };
+    let mint = create_mint(env, token_program, extensions).await;
+    // Not an associated token account, so its owner can change.
+    let account = mint_to_new_account(env, token_program, &mint, &signer, 1_000).await;
+    let payer = env.payer.pubkey();
+    send(
+        env,
+        &[AuthorityType::MintTokens, AuthorityType::FreezeAccount].map(|authority_type| {
+            set_authority(
+                token_program,
+                &mint,
+                Some(&signer),
+                authority_type,
+                &payer,
+                &[],
+            )
+            .unwrap()
+        }),
+        &[],
+    )
+    .await;
+    let test = SubmitTest::new(env, &signer).await;
+    let execution_message = v1::Message::try_compile_with_config(
+        &signer,
+        &[
+            approve_checked(
+                token_program,
+                &account,
+                &mint,
+                &delegate,
+                &signer,
+                &[],
+                150,
+                token::DECIMALS,
+            )
+            .unwrap(),
+            set_authority(
+                token_program,
+                &account,
+                Some(&close_authority),
+                AuthorityType::CloseAccount,
+                &signer,
+                &[],
+            )
+            .unwrap(),
+            set_authority(
+                token_program,
+                &mint,
+                None,
+                AuthorityType::MintTokens,
+                &signer,
+                &[],
+            )
+            .unwrap(),
+            set_authority(
+                token_program,
+                &mint,
+                Some(&new_freeze_signer),
+                AuthorityType::FreezeAccount,
+                &signer,
+                &[],
+            )
+            .unwrap(),
+        ],
+        test.nonce,
+        v1::TransactionConfig::empty(),
+    )
+    .unwrap();
+
+    let new_freeze_authority = new_freeze_authority.to_string();
+    let for_authority = authority.pubkey().to_string();
+    let signing_pubkeys = [
+        "--signing-pubkey",
+        &for_authority,
+        "--signing-pubkey",
+        &new_freeze_authority,
+    ];
+    let output = simulate(env, &test, &execution_message, &signing_pubkeys);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(output.status.success(), "{stderr}");
+    let value: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(value["accountChanges"], serde_json::json!([]));
+    let mut changes = value["authorityChanges"].as_array().unwrap().clone();
+    // Stable, so each account's changes stay in role order.
+    changes.sort_by_key(|change| change["account"].as_str().unwrap().to_owned());
+    let signer_value = serde_json::json!({
+        "address": signer.to_string(),
+        "signingPubkey": authority.pubkey().to_string(),
+    });
+    let mut expected = vec![
+        serde_json::json!({
+            "account": account.to_string(),
+            "kind": "tokenAccount",
+            "role": "delegate",
+            "before": null,
+            "after": {
+                "address": delegate.to_string(),
+                "delegatedAmount": {
+                    "amount": 150,
+                    "decimals": token::DECIMALS,
+                    "uiAmount": ui_amount,
+                },
+            },
+        }),
+        serde_json::json!({
+            "account": account.to_string(),
+            "kind": "tokenAccount",
+            "role": "closeAuthority",
+            "before": null,
+            "after": { "address": close_authority.to_string() },
+        }),
+        serde_json::json!({
+            "account": mint.to_string(),
+            "kind": "mint",
+            "role": "mintAuthority",
+            "before": signer_value,
+            "after": null,
+        }),
+        serde_json::json!({
+            "account": mint.to_string(),
+            "kind": "mint",
+            "role": "freezeAuthority",
+            "before": signer_value,
+            "after": {
+                "address": new_freeze_signer.to_string(),
+                "signingPubkey": new_freeze_authority,
+            },
+        }),
+    ];
+    expected.sort_by_key(|change| change["account"].as_str().unwrap().to_owned());
+    assert_eq!(changes, expected);
+
+    // The display output shows the delegated amount as a wallet would, and a removed authority as
+    // none.
+    let encoded = BASE64_STANDARD.encode(execution_message.serialize());
+    let nonce_account = test.nonce_account.to_string();
+    let display = run_psigner(
+        &[
+            &[
+                "-C",
+                &env.config_file_path,
+                "transaction",
+                "simulate",
+                &encoded,
+                &nonce_account,
+            ][..],
+            &signing_pubkeys,
+        ]
+        .concat(),
+    );
+    let display = String::from_utf8(display.stdout).unwrap();
+    for line in [
+        format!("  {account}  token account delegate: none -> {delegate} (delegated {ui_amount})"),
+        format!(
+            "  {mint}  mint mint authority: {signer} (PDA of {}) -> none",
+            authority.pubkey()
+        ),
+    ] {
+        assert!(display.contains(&line), "{display}");
+    }
+
+    // A new owner of the token account.
+    let execution_message = v1::Message::try_compile_with_config(
+        &signer,
+        &[set_authority(
+            token_program,
+            &account,
+            Some(&new_owner),
+            AuthorityType::AccountOwner,
+            &signer,
+            &[],
+        )
+        .unwrap()],
+        test.nonce,
+        v1::TransactionConfig::empty(),
+    )
+    .unwrap();
+    let output = simulate(env, &test, &execution_message, &signing_pubkeys);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(output.status.success(), "{stderr}");
+    let value: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(
+        value["authorityChanges"],
+        serde_json::json!([{
+            "account": account.to_string(),
+            "kind": "tokenAccount",
+            "role": "owner",
+            "before": signer_value,
+            "after": { "address": new_owner.to_string() },
+        }])
+    );
+}
+
+pub async fn simulates_token_authority_changes_token(env: &TestEnv) {
+    simulates_token_authority_changes(env, &spl_token_interface::id()).await;
+}
+
+pub async fn simulates_token_authority_changes_token_2022(env: &TestEnv) {
+    simulates_token_authority_changes(env, &spl_token_2022_interface::id()).await;
 }

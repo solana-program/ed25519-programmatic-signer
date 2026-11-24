@@ -68,6 +68,7 @@ use {
             rejects_stale_nonce_hash, rejects_transaction_over_transaction_size,
             reports_created_and_closed_accounts, reports_failed_simulation_logs,
             simulates_at_relay_cpi_depth, simulates_promoted_and_forwarded_signers,
+            simulates_token_authority_changes_token, simulates_token_authority_changes_token_2022,
             simulates_token_transfer,
         },
         test_transaction_submit::{
@@ -236,6 +237,12 @@ fn main() -> ExitCode {
             runtime_handle
         ),
         async_trial!(simulates_token_transfer, env, runtime_handle),
+        async_trial!(simulates_token_authority_changes_token, env, runtime_handle),
+        async_trial!(
+            simulates_token_authority_changes_token_2022,
+            env,
+            runtime_handle
+        ),
         async_trial!(reports_created_and_closed_accounts, env, runtime_handle),
         async_trial!(parses_scaled_ui_amount_token_accounts, env, runtime_handle),
         async_trial!(simulates_at_relay_cpi_depth, env, runtime_handle),
