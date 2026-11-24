@@ -40,6 +40,10 @@ enum MigrateSubcommand {
     /// which many RPC providers restrict. Mints often can't be scanned, since providers tend to
     /// reject these queries for the token programs. Categories that fail are listed as not
     /// scanned, and the rest are still reported.
+    ///
+    /// Mints are found by their mint or freeze authority, and list any Token-2022 extension
+    /// authorities the address also holds. A mint where it holds only extension authorities is
+    /// not found.
     Scan(scan::ScanCommand),
     /// Build an execution message moving SOL to a programmatic signer.
     Sol(sol::SolCommand),
