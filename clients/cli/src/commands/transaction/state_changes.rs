@@ -9,6 +9,7 @@ use {
     },
     solana_address::Address,
     solana_clock::Epoch,
+    solana_loader_v3_interface::state::UpgradeableLoaderState,
     solana_stake_interface::state::StakeStateV2,
     solana_vote_interface::state::VoteStateVersions,
     spl_token_2022_interface::{
@@ -126,6 +127,10 @@ pub(super) enum AccountKind {
     TokenAccount,
     /// A Token or Token-2022 mint. Extensions are not parsed.
     Mint,
+    /// An upgradeable loader program data account, which holds its program's upgrade authority.
+    ProgramData,
+    /// An upgradeable loader buffer account.
+    Buffer,
 }
 
 /// The role of an authority of a parsed account. Changes are listed in this order.
@@ -148,6 +153,9 @@ pub(super) enum AuthorityRole {
     CloseAuthority,
     MintAuthority,
     FreezeAuthority,
+    UpgradeAuthority,
+    /// A buffer account's authority, which may write to it, deploy it or close it.
+    Authority,
 }
 
 /// An authority, as parsed from account data.
@@ -264,6 +272,8 @@ fn parse_account(
         parse_vote(account)
     } else if check_spl_token_program_account(&account.owner).is_ok() {
         parse_token(account, token_data)
+    } else if account.owner == solana_sdk_ids::bpf_loader_upgradeable::id() {
+        parse_upgradeable_loader(account)
     } else {
         None
     }
@@ -348,6 +358,38 @@ fn parse_vote(account: &Account) -> Option<ParsedAccount> {
         kind: AccountKind::Vote,
         authorities,
     })
+}
+
+/// Parse a program data or buffer account. A program account only points to its program data, so
+/// it has no authorities.
+fn parse_upgradeable_loader(account: &Account) -> Option<ParsedAccount> {
+    // Program data and buffer accounts store the program's bytes after this state, which
+    // `deserialize` ignores.
+    let (kind, role, authority) = match wincode::deserialize(&account.data).ok()? {
+        UpgradeableLoaderState::ProgramData {
+            upgrade_authority_address,
+            ..
+        } => (
+            AccountKind::ProgramData,
+            AuthorityRole::UpgradeAuthority,
+            upgrade_authority_address,
+        ),
+        UpgradeableLoaderState::Buffer { authority_address } => (
+            AccountKind::Buffer,
+            AuthorityRole::Authority,
+            authority_address,
+        ),
+        UpgradeableLoaderState::Uninitialized | UpgradeableLoaderState::Program { .. } => {
+            return None;
+        }
+    };
+    // At most one authority. None means the program is immutable, or the buffer can no longer
+    // change.
+    let authorities = authority
+        .map(|authority| (role, ParsedAuthority::new(authority)))
+        .into_iter()
+        .collect();
+    Some(ParsedAccount { kind, authorities })
 }
 
 /// Parse the base state of a token account or mint, ignoring any Token-2022 extensions.
@@ -463,6 +505,8 @@ impl fmt::Display for AccountKind {
             Self::Vote => "vote",
             Self::TokenAccount => "token account",
             Self::Mint => "mint",
+            Self::ProgramData => "program data",
+            Self::Buffer => "buffer",
         })
     }
 }
@@ -482,6 +526,8 @@ impl fmt::Display for AuthorityRole {
             Self::CloseAuthority => "close authority",
             Self::MintAuthority => "mint authority",
             Self::FreezeAuthority => "freeze authority",
+            Self::UpgradeAuthority => "upgrade authority",
+            Self::Authority => "authority",
         })
     }
 }

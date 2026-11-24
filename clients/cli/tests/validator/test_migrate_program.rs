@@ -31,10 +31,10 @@ const WRITE_CHUNK_LEN: usize = 900;
 ///
 /// Source: <https://github.com/anza-xyz/agave/blob/c4b48df969a9e4f121e14a389bd7bec34c752507/programs/bpf_loader/test_elfs/out/sbpfv3_return_ok.so>
 /// (sha256 `7b7f204cc5691a93b8bbc2036b7fdb6977d237711e48c19a65688d53ce216736`).
-const PROGRAM: &[u8] = include_bytes!("../fixtures/sbpfv3_return_ok.so");
+pub const PROGRAM: &[u8] = include_bytes!("../fixtures/sbpfv3_return_ok.so");
 
 /// A buffer holding the program, with `authority` as its buffer authority.
-async fn write_buffer(env: &TestEnv, program: &[u8], authority: &Keypair) -> Address {
+pub async fn write_buffer(env: &TestEnv, program: &[u8], authority: &Keypair) -> Address {
     let buffer = Keypair::new();
     let lamports = env
         .rpc
