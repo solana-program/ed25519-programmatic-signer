@@ -10170,6 +10170,34 @@ dependencies = [
 ]
 
 [[package]]
+name = "spl-ed25519-programmatic-signer-interface"
+version = "0.1.0"
+dependencies = [
+ "codama-macros",
+ "solana-address 2.9.0",
+]
+
+[[package]]
+name = "spl-ed25519-programmatic-signer-program"
+version = "0.1.0"
+dependencies = [
+ "mollusk-svm",
+ "pinocchio",
+ "solana-account",
+ "solana-address 2.9.0",
+ "solana-hash",
+ "solana-instruction 4.0.0",
+ "solana-instruction-error 3.1.0",
+ "solana-program-error",
+ "solana-rent",
+ "solana-sha256-hasher",
+ "solana-system-interface",
+ "spl-ed25519-programmatic-signer-interface",
+ "spl-programmatic-signer-core",
+ "wincode",
+]
+
+[[package]]
 name = "spl-ed25519-signer-client"
 version = "1.0.0"
 dependencies = [
@@ -10394,6 +10422,23 @@ dependencies = [
  "tempfile",
  "test-case",
  "tokio",
+ "wincode",
+]
+
+[[package]]
+name = "spl-programmatic-signer-core"
+version = "0.1.0"
+dependencies = [
+ "codama-macros",
+ "pinocchio",
+ "solana-address 2.9.0",
+ "solana-hash",
+ "solana-instruction 4.0.0",
+ "solana-program-error",
+ "solana-sdk-ids",
+ "solana-sha256-hasher",
+ "solana-zero-copy",
+ "test-case",
  "wincode",
 ]
 

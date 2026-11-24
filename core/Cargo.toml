@@ -1,0 +1,36 @@
+[package]
+name = "spl-programmatic-signer-core"
+version = "0.1.0"
+description = "Shared core logic for SPL Programmatic Signer programs"
+authors = { workspace = true }
+repository = { workspace = true }
+homepage = { workspace = true }
+license = { workspace = true }
+edition = { workspace = true }
+
+[lib]
+crate-type = ["rlib"]
+
+[features]
+client = ["dep:solana-instruction", "dep:solana-sdk-ids", "wincode/alloc"]
+codama = ["dep:codama-macros"]
+program = ["dep:pinocchio"]
+
+[lints]
+workspace = true
+
+[dependencies]
+codama-macros = { workspace = true, optional = true }
+pinocchio = { workspace = true, optional = true }
+solana-address = { workspace = true, features = ["wincode"] }
+solana-hash = { workspace = true, features = ["wincode"] }
+solana-instruction = { workspace = true, features = ["wincode"], optional = true }
+solana-program-error = { workspace = true }
+solana-sdk-ids = { workspace = true, optional = true }
+solana-sha256-hasher = { workspace = true, features = ["sha2"] }
+solana-zero-copy = { workspace = true, features = ["wincode"] }
+wincode = { workspace = true, features = ["derive"] }
+
+[dev-dependencies]
+test-case = { workspace = true }
+wincode = { workspace = true, features = ["alloc"] }

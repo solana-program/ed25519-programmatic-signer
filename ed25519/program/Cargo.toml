@@ -1,0 +1,37 @@
+[package]
+name = "spl-ed25519-programmatic-signer-program"
+version = "0.1.0"
+description = "SPL Ed25519 Programmatic Signer program"
+authors = { workspace = true }
+repository = { workspace = true }
+homepage = { workspace = true }
+license = { workspace = true }
+edition = { workspace = true }
+
+[lib]
+crate-type = ["cdylib"]
+
+[package.metadata.solana]
+program-id = "EdSigVfK1DkeMrjFNDMjwfQaJPhPTtX7jW8uPv3oKEgN"
+
+[lints]
+workspace = true
+
+[dependencies]
+pinocchio = { workspace = true }
+spl-programmatic-signer-core = { workspace = true, features = ["program"] }
+
+[dev-dependencies]
+mollusk-svm = { workspace = true }
+solana-account = { workspace = true }
+solana-address = { workspace = true }
+solana-hash = { workspace = true }
+solana-instruction = { workspace = true }
+solana-instruction-error = { workspace = true }
+solana-program-error = { workspace = true }
+solana-rent = { workspace = true }
+solana-sha256-hasher = { workspace = true, features = ["sha2"] }
+solana-system-interface = { workspace = true, features = ["wincode"] }
+spl-ed25519-programmatic-signer-interface = { workspace = true }
+spl-programmatic-signer-core = { workspace = true, features = ["client"] }
+wincode = { workspace = true, features = ["alloc"] }
