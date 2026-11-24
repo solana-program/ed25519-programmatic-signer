@@ -57,7 +57,7 @@ pub enum Instruction {
         codama(account(
             name = "nonce_program",
             docs = "SPL Nonce program",
-            default_value = public_key("Noncediea1fH12usShuQAz28UhgAeuE5Maf32LsMUQB"),
+            default_value = public_key("Nonce8z7LeGkpQ2bCXtSLdZqREMbuDHGhmf4ELcUU91"),
             display(skip = always)
         )),
         codama(account(

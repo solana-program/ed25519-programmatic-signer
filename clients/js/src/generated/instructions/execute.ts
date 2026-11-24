@@ -52,7 +52,7 @@ export type ExecuteInstruction<
     TProgram extends string = typeof MESSAGE_EXECUTOR_PROGRAM_ADDRESS,
     TAccountNonceAuthority extends string | AccountMeta<string> = string,
     TAccountNonceAccount extends string | AccountMeta<string> = string,
-    TAccountNonceProgram extends string | AccountMeta<string> = 'Noncediea1fH12usShuQAz28UhgAeuE5Maf32LsMUQB',
+    TAccountNonceProgram extends string | AccountMeta<string> = 'Nonce8z7LeGkpQ2bCXtSLdZqREMbuDHGhmf4ELcUU91',
     TAccountTransitionSigner extends string | AccountMeta<string> = 'EjCSGNbrrM7YJBwR9iqnrb87L1TYHfUtZ5L4gwQjWLFg',
     TRemainingAccounts extends readonly AccountMeta<string>[] = [],
 > = Instruction<TProgram> &
@@ -154,7 +154,7 @@ export function getExecuteInstruction<
     // Resolve default values.
     if (!accounts.nonceProgram.value) {
         accounts.nonceProgram.value =
-            'Noncediea1fH12usShuQAz28UhgAeuE5Maf32LsMUQB' as Address<'Noncediea1fH12usShuQAz28UhgAeuE5Maf32LsMUQB'>;
+            'Nonce8z7LeGkpQ2bCXtSLdZqREMbuDHGhmf4ELcUU91' as Address<'Nonce8z7LeGkpQ2bCXtSLdZqREMbuDHGhmf4ELcUU91'>;
     }
     if (!accounts.transitionSigner.value) {
         accounts.transitionSigner.value =

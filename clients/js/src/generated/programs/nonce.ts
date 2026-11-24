@@ -50,7 +50,7 @@ import {
 } from '../instructions';
 
 export const NONCE_PROGRAM_ADDRESS =
-    'Noncediea1fH12usShuQAz28UhgAeuE5Maf32LsMUQB' as Address<'Noncediea1fH12usShuQAz28UhgAeuE5Maf32LsMUQB'>;
+    'Nonce8z7LeGkpQ2bCXtSLdZqREMbuDHGhmf4ELcUU91' as Address<'Nonce8z7LeGkpQ2bCXtSLdZqREMbuDHGhmf4ELcUU91'>;
 
 export enum NonceAccount {
     Nonce,
@@ -92,7 +92,7 @@ export function identifyNonceInstruction(
     });
 }
 
-export type ParsedNonceInstruction<TProgram extends string = 'Noncediea1fH12usShuQAz28UhgAeuE5Maf32LsMUQB'> =
+export type ParsedNonceInstruction<TProgram extends string = 'Nonce8z7LeGkpQ2bCXtSLdZqREMbuDHGhmf4ELcUU91'> =
     | ({ instructionType: NonceInstruction.Initialize } & ParsedInitializeInstruction<TProgram>)
     | ({ instructionType: NonceInstruction.Advance } & ParsedAdvanceInstruction<TProgram>)
     | ({ instructionType: NonceInstruction.Withdraw } & ParsedWithdrawInstruction<TProgram>);
