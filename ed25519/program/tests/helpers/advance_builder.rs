@@ -8,7 +8,8 @@ use {
     solana_address::Address,
     solana_hash::Hash,
     solana_instruction::AccountMeta,
-    spl_nonce_client::instruction::advance,
+    spl_ed25519_programmatic_signer_interface::id,
+    spl_programmatic_signer_core::instruction::advance_nonce,
 };
 
 pub struct AdvanceBuilder<'a> {
@@ -18,11 +19,9 @@ pub struct AdvanceBuilder<'a> {
     nonce_account: Option<(Address, Account)>,
     excess_lamports: u64,
     current_nonce: Option<Hash>,
-    transition_commitment: Hash,
+    salt: Hash,
     authority_is_signer: bool,
     advance_authority: Option<Address>,
-    transition_signer: Address,
-    without_transition_signature: bool,
     checks: Vec<Check<'a>>,
 }
 
@@ -35,11 +34,9 @@ impl Default for AdvanceBuilder<'_> {
             nonce_account: None,
             excess_lamports: 0,
             current_nonce: None,
-            transition_commitment: Hash::new_from_array([3; 32]),
+            salt: Hash::new_from_array([3; 32]),
             authority_is_signer: true,
             advance_authority: None,
-            transition_signer: Address::new_from_array([4; 32]),
-            without_transition_signature: false,
             checks: vec![],
         }
     }
@@ -77,8 +74,8 @@ impl<'a> AdvanceBuilder<'a> {
         self
     }
 
-    pub fn transition_commitment(mut self, transition_commitment: Hash) -> Self {
-        self.transition_commitment = transition_commitment;
+    pub fn salt(mut self, salt: Hash) -> Self {
+        self.salt = salt;
         self
     }
 
@@ -89,16 +86,6 @@ impl<'a> AdvanceBuilder<'a> {
 
     pub fn advance_authority(mut self, authority: Address) -> Self {
         self.advance_authority = Some(authority);
-        self
-    }
-
-    pub fn transition_signer(mut self, signer: Address) -> Self {
-        self.transition_signer = signer;
-        self
-    }
-
-    pub fn without_transition_signature(mut self) -> Self {
-        self.without_transition_signature = true;
         self
     }
 
@@ -120,24 +107,20 @@ impl<'a> AdvanceBuilder<'a> {
             .unwrap_or_else(|| decode_state(&nonce_account).nonce);
         let advance_authority = self.advance_authority.unwrap_or(self.authority);
 
-        let mut instruction = advance(
-            &advance_authority,
-            &self.transition_signer,
+        let mut instruction = advance_nonce(
+            &id(),
             &nonce_account_address,
+            &advance_authority,
             current_nonce,
-            self.transition_commitment,
+            self.salt,
         );
         if !self.authority_is_signer {
             instruction.accounts[0] = AccountMeta::new_readonly(advance_authority, false);
-        }
-        if self.without_transition_signature {
-            instruction.accounts[1].is_signer = false;
         }
 
         let accounts = [
             (advance_authority, Account::default()),
             (nonce_account_address, nonce_account),
-            (self.transition_signer, Account::default()),
         ];
 
         if self.checks.is_empty() {

@@ -32,5 +32,6 @@ solana-zero-copy = { workspace = true, features = ["wincode"] }
 wincode = { workspace = true, features = ["derive"] }
 
 [dev-dependencies]
+solana-hash = { workspace = true, features = ["decode"] }
 test-case = { workspace = true }
 wincode = { workspace = true, features = ["alloc"] }

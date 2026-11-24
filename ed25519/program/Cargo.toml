@@ -34,4 +34,5 @@ solana-sha256-hasher = { workspace = true, features = ["sha2"] }
 solana-system-interface = { workspace = true, features = ["wincode"] }
 spl-ed25519-programmatic-signer-interface = { workspace = true }
 spl-programmatic-signer-core = { workspace = true, features = ["client"] }
+test-case = { workspace = true }
 wincode = { workspace = true, features = ["alloc"] }

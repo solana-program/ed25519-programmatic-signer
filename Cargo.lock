@@ -10194,6 +10194,7 @@ dependencies = [
  "solana-system-interface",
  "spl-ed25519-programmatic-signer-interface",
  "spl-programmatic-signer-core",
+ "test-case",
  "wincode",
 ]
 

@@ -1,5 +1,5 @@
 use {
-    crate::state::Nonce,
+    crate::{error::Error, state::Nonce},
     pinocchio::{
         AccountView, Address, ProgramResult,
         error::ProgramError,
@@ -67,21 +67,15 @@ pub fn process_initialize_nonce(
     Ok(())
 }
 
-use {
-    pinocchio::{AccountView, Address, ProgramResult, error::ProgramError},
-    solana_hash::Hash,
-    spl_nonce_interface::{error::Error, state::Nonce},
-};
-
 /// Consumes the stored nonce and advances it to a fresh value.
 #[inline(never)]
-pub fn process_advance(
+pub fn process_advance_nonce(
     program_id: &Address,
     accounts: &mut [AccountView],
     current_nonce: Hash,
-    transition_commitment: Hash,
+    salt: Hash,
 ) -> ProgramResult {
-    let [authority, transition_signer, nonce_account, ..] = accounts else {
+    let [authority, nonce_account, ..] = accounts else {
         return Err(ProgramError::NotEnoughAccountKeys);
     };
 
@@ -98,7 +92,7 @@ pub fn process_advance(
     if authority.address() != &state.authority {
         return Err(Error::AuthorityMismatch.into());
     }
-    if !authority.is_signer() || !transition_signer.is_signer() {
+    if !authority.is_signer() {
         return Err(ProgramError::MissingRequiredSignature);
     }
 
@@ -108,12 +102,7 @@ pub fn process_advance(
         return Err(Error::NonceMismatch.into());
     }
 
-    state.nonce = state.derive_next_nonce(
-        program_id,
-        nonce_account.address(),
-        transition_signer.address(),
-        &transition_commitment,
-    );
+    state.nonce = state.derive_advance_nonce(program_id, nonce_account.address(), &salt);
 
     Ok(())
 }

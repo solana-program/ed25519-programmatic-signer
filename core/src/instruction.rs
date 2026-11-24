@@ -2,11 +2,13 @@
 use codama_macros::CodamaInstructions;
 #[cfg(feature = "client")]
 use {
+    alloc::vec,
     solana_address::Address,
     solana_instruction::{AccountMeta, Instruction as SolanaInstruction},
     solana_sdk_ids::sysvar::slot_hashes,
 };
 use {
+    solana_hash::Hash,
     solana_program_error::ProgramError,
     wincode::{SchemaRead, SchemaWrite},
 };
@@ -47,6 +49,34 @@ pub enum Instruction {
         ))
     )]
     InitializeNonce,
+
+    /// Advances a nonce account to invalidate pending authorizations.
+    ///
+    /// Accounts:
+    /// - `[signer]` Stored nonce authority
+    /// - `[writable]` Nonce account
+    #[cfg_attr(
+        feature = "codama",
+        codama(display(intent = "Advance nonce account")),
+        codama(account(
+            name = "authority",
+            signer,
+            docs = "Authority stored in the nonce account",
+            display(label = "Nonce authority")
+        )),
+        codama(account(name = "nonce_account", writable, docs = "Nonce account to advance"))
+    )]
+    AdvanceNonce {
+        /// Must match the nonce currently stored in the account so an advance
+        /// cannot be replayed or accidentally skip past a newer state.
+        #[cfg_attr(feature = "codama", codama(type = public_key))]
+        current_nonce: Hash,
+        /// Value mixed into the hash that derives the next nonce. Pass random
+        /// bytes for an unpredictable next nonce or a chosen value to compute
+        /// the next nonce offline.
+        #[cfg_attr(feature = "codama", codama(type = public_key))]
+        salt: Hash,
+    },
 }
 
 impl Instruction {
@@ -66,7 +96,7 @@ pub fn initialize_nonce(
     SolanaInstruction::new_with_wincode(
         *program_id,
         &Instruction::InitializeNonce,
-        alloc::vec![
+        vec![
             AccountMeta::new(*nonce_account, false),
             AccountMeta::new_readonly(*authority, false),
             AccountMeta::new_readonly(slot_hashes::id(), false),
@@ -74,15 +104,47 @@ pub fn initialize_nonce(
     )
 }
 
+/// Creates an `AdvanceNonce` instruction for `program_id`.
+#[cfg(feature = "client")]
+pub fn advance_nonce(
+    program_id: &Address,
+    nonce_account: &Address,
+    authority: &Address,
+    current_nonce: Hash,
+    salt: Hash,
+) -> SolanaInstruction {
+    SolanaInstruction::new_with_wincode(
+        *program_id,
+        &Instruction::AdvanceNonce {
+            current_nonce,
+            salt,
+        },
+        vec![
+            AccountMeta::new_readonly(*authority, true),
+            AccountMeta::new(*nonce_account, false),
+        ],
+    )
+}
+
 #[cfg(test)]
 mod tests {
-    use {super::Instruction, solana_program_error::ProgramError, test_case::test_case};
+    use {
+        super::Instruction, solana_hash::Hash, solana_program_error::ProgramError,
+        test_case::test_case,
+    };
 
-    #[test]
-    fn initialize_tag_and_round_trip() {
-        let instruction = Instruction::InitializeNonce;
+    #[test_case(Instruction::InitializeNonce, 0; "initialize")]
+    #[test_case(
+        Instruction::AdvanceNonce {
+            current_nonce: Hash::new_from_array([1; 32]),
+            salt: Hash::new_from_array([2; 32]),
+        },
+        1;
+        "advance"
+    )]
+    fn instruction_tags_and_round_trip(instruction: Instruction, expected_tag: u8) {
         let bytes = wincode::serialize(&instruction).unwrap();
-        assert_eq!(bytes, [0]);
+        assert_eq!(bytes[0], expected_tag);
         assert_eq!(Instruction::try_from_bytes(&bytes).unwrap(), instruction);
 
         let mut trailing = bytes;
@@ -93,7 +155,7 @@ mod tests {
         );
     }
 
-    #[test_case(1; "next tag")]
+    #[test_case(2; "next tag")]
     #[test_case(u8::MAX; "max tag")]
     fn try_from_bytes_rejects_unknown(tag: u8) {
         assert_eq!(

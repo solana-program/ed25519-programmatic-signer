@@ -11,10 +11,11 @@ use {
     solana_instruction::AccountMeta,
     solana_instruction_error::InstructionError,
     solana_program_error::ProgramError,
-    spl_nonce_client::instruction::advance,
-    spl_nonce_interface::{
+    spl_ed25519_programmatic_signer_interface::id,
+    spl_programmatic_signer_core::{
         error::Error as NonceError,
-        state::{NONCE_STEP_TAG, Nonce},
+        instruction::advance_nonce,
+        state::{NONCE_ADVANCE_TAG, Nonce},
     },
     test_case::test_case,
 };
@@ -23,17 +24,16 @@ pub mod helpers;
 
 #[test_case(0)]
 #[test_case(1)]
-#[test_case(2)]
 fn advance_rejects_missing_accounts(account_count: usize) {
     let authority = Address::from([2; 32]);
     let mollusk = init_mollusk();
     let (nonce_account_address, nonce_account) = initialize_nonce_account(&mollusk, &authority);
     let current_nonce = decode_state(&nonce_account).nonce;
 
-    let mut instruction = advance(
-        &authority,
-        &authority,
+    let mut instruction = advance_nonce(
+        &id(),
         &nonce_account_address,
+        &authority,
         current_nonce,
         Hash::default(),
     );
@@ -96,45 +96,6 @@ fn advance_requires_authority_signature() {
 }
 
 #[test]
-fn advance_requires_transition_signature() {
-    AdvanceBuilder::default()
-        .without_transition_signature()
-        .check(Check::err(ProgramError::MissingRequiredSignature))
-        .execute();
-}
-
-#[test]
-fn authority_can_advance_as_its_own_transition_signer() {
-    let authority = Address::new_unique();
-    let result = AdvanceBuilder::default()
-        .authority(authority)
-        .transition_signer(authority)
-        .execute();
-    assert!(result.program_result.is_ok());
-}
-
-#[test]
-fn transition_signer_identity_separates_nonce_branches() {
-    let mollusk = init_mollusk();
-    let authority = Address::new_unique();
-    let (nonce_address, nonce_account) = initialize_nonce_account(&mollusk, &authority);
-    let first = AdvanceBuilder::default()
-        .authority(authority)
-        .nonce_account((nonce_address, nonce_account.clone()))
-        .transition_signer(Address::from([4; 32]))
-        .execute();
-    let second = AdvanceBuilder::default()
-        .authority(authority)
-        .nonce_account((nonce_address, nonce_account))
-        .transition_signer(Address::from([5; 32]))
-        .execute();
-    assert_ne!(
-        decode_state(first.get_account(&nonce_address).unwrap()).nonce,
-        decode_state(second.get_account(&nonce_address).unwrap()).nonce,
-    );
-}
-
-#[test]
 fn advance_rejects_incorrect_current_nonce() {
     let authority = Address::from([2; 32]);
     let mollusk = init_mollusk();
@@ -176,22 +137,22 @@ fn advance_rejects_reuse_of_consumed_nonce() {
 }
 
 #[test]
-fn repeated_transition_commitment_produces_distinct_successors() {
+fn repeated_salt_produces_distinct_successors() {
     let authority = Address::from([2; 32]);
     let mollusk = init_mollusk();
     let (nonce_account_address, nonce_account) = initialize_nonce_account(&mollusk, &authority);
-    let transition_commitment = Hash::new_from_array([7; 32]);
+    let salt = Hash::new_from_array([7; 32]);
 
     let first = AdvanceBuilder::default()
         .nonce_account((nonce_account_address, nonce_account))
-        .transition_commitment(transition_commitment)
+        .salt(salt)
         .execute();
     let first_account = first.get_account(&nonce_account_address).unwrap().clone();
     let first_nonce = decode_state(&first_account).nonce;
 
     let second = AdvanceBuilder::default()
         .nonce_account((nonce_account_address, first_account))
-        .transition_commitment(transition_commitment)
+        .salt(salt)
         .execute();
     let second_nonce = decode_state(second.get_account(&nonce_account_address).unwrap()).nonce;
 
@@ -206,14 +167,14 @@ fn advance_rejects_readonly_nonce_account() {
     let original_nonce_account = nonce_account.clone();
     let current_nonce = decode_state(&nonce_account).nonce;
 
-    let mut instruction = advance(
-        &authority,
-        &authority,
+    let mut instruction = advance_nonce(
+        &id(),
         &nonce_account_address,
+        &authority,
         current_nonce,
         Hash::default(),
     );
-    instruction.accounts[2] = AccountMeta::new_readonly(nonce_account_address, false);
+    instruction.accounts[1] = AccountMeta::new_readonly(nonce_account_address, false);
 
     let result = mollusk.process_and_validate_instruction(
         &instruction,
@@ -235,35 +196,37 @@ fn advance_rejects_readonly_nonce_account() {
 #[test]
 fn advance_writes_expected_state() {
     let authority = Address::from([2; 32]);
-    let transition_signer = Address::new_unique();
     let mut mollusk = init_mollusk();
     mollusk.sysvars.clock.slot = 42;
     let (nonce_account_address, nonce_account) = initialize_nonce_account(&mollusk, &authority);
-    let old_nonce = decode_state(&nonce_account).nonce;
-    let transition_commitment = Hash::new_from_array([7; 32]);
+    let initial = decode_state(&nonce_account);
+    let old_nonce = initial.nonce;
+    let salt = Hash::new_from_array([7; 32]);
 
     let result = AdvanceBuilder::default()
         .authority(authority)
-        .transition_signer(transition_signer)
         .nonce_account((nonce_account_address, nonce_account))
-        .transition_commitment(transition_commitment)
+        .salt(salt)
         .execute();
 
     let state = decode_state(result.get_account(&nonce_account_address).unwrap());
-    let program_id = spl_nonce_interface::id().to_bytes();
-    let nonce_account_address = nonce_account_address.to_bytes();
-    let old_nonce = old_nonce.to_bytes();
-    let transition_commitment = transition_commitment.to_bytes();
+    let program_id = id().to_bytes();
+    let nonce_account_bytes = nonce_account_address.to_bytes();
+    let old_nonce_bytes = old_nonce.to_bytes();
+    let salt_bytes = salt.to_bytes();
     assert_eq!(
         state.nonce,
         solana_sha256_hasher::hashv(&[
-            NONCE_STEP_TAG,
+            NONCE_ADVANCE_TAG,
             &program_id,
-            &nonce_account_address,
-            &old_nonce,
-            transition_signer.as_ref(),
-            &transition_commitment,
+            &nonce_account_bytes,
+            &old_nonce_bytes,
+            &salt_bytes,
         ])
+    );
+    assert_eq!(
+        state.nonce,
+        initial.derive_advance_nonce(&id(), &nonce_account_address, &salt)
     );
     assert_eq!(state.authority, authority);
     assert_eq!(u64::from(state.initialize_slot), 42);
@@ -277,10 +240,10 @@ fn advance_accepts_extra_accounts() {
     let current_nonce = decode_state(&nonce_account).nonce;
     let extra_account = Address::new_unique();
 
-    let mut instruction = advance(
-        &authority,
-        &authority,
+    let mut instruction = advance_nonce(
+        &id(),
         &nonce_account_address,
+        &authority,
         current_nonce,
         Hash::default(),
     );
