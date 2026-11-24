@@ -116,14 +116,37 @@ pub fn migrate<T: DeserializeOwned>(
     new_owner: Option<&Address>,
     extra: &[&str],
 ) -> T {
+    migrate_with_stderr(env, kind, account, new_owner, extra).0
+}
+
+/// Like [`migrate`], but also return the stderr, where warnings go.
+pub fn migrate_with_stderr<T: DeserializeOwned>(
+    env: &TestEnv,
+    kind: &str,
+    account: &Address,
+    new_owner: Option<&Address>,
+    extra: &[&str],
+) -> (T, String) {
     let account = account.to_string();
     let new_owner = new_owner.map(ToString::to_string);
-    let mut args = vec![kind, &account];
+    let mut args = vec![
+        "-C",
+        &env.config_file_path,
+        "--output",
+        "json",
+        "migrate",
+        kind,
+        &account,
+    ];
     if let Some(new_owner) = &new_owner {
         args.extend(["--new-authority-signing-pubkey", new_owner]);
     }
     args.extend_from_slice(extra);
-    migrate_with_args(env, &args)
+    let output = run_psigner(&args);
+    (
+        serde_json::from_slice(&output.stdout).unwrap(),
+        String::from_utf8(output.stderr).unwrap(),
+    )
 }
 
 /// Run `migrate <args>` and parse its JSON output.

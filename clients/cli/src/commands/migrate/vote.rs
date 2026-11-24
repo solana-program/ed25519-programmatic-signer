@@ -32,10 +32,8 @@ pub(super) async fn run(
     client: &Client,
     output: OutputFormat,
 ) -> Result<String> {
-    let withdrawer = authorized_withdrawer(
-        &client.vote_account(&command.vote_account).await?,
-        &command.vote_account,
-    )?;
+    let state = client.vote_account(&command.vote_account).await?;
+    let withdrawer = authorized_withdrawer(&state, &command.vote_account)?;
     let new_authority_signing_pubkey = match command.new_authority_signing_pubkey {
         Some(new_authority_signing_pubkey) => new_authority_signing_pubkey,
         None => default_new_authority(
@@ -50,6 +48,15 @@ pub(super) async fn run(
         "the withdrawer of vote account {} is already {new_owner_programmatic_signer}",
         command.vote_account
     );
+    // The validator needs the voter's private key to vote, so it can't move to a programmatic
+    // signer. Flag it when that key is the one being migrated away from.
+    if authorized_voters(&state).contains(&withdrawer) {
+        eprintln!(
+            "Warning: {withdrawer} is also the authorized voter of vote account {}. Only the \
+             withdrawer is migrated, so {withdrawer} stays the voter.",
+            command.vote_account
+        );
+    }
 
     let instruction = authorize_checked(
         &command.vote_account,
@@ -81,6 +88,17 @@ pub(super) fn authorized_withdrawer(
         VoteStateVersions::V3(state) => state.authorized_withdrawer,
         VoteStateVersions::V4(state) => state.authorized_withdrawer,
     })
+}
+
+/// The current authorized voter and any scheduled for later epochs.
+fn authorized_voters(state: &VoteStateVersions) -> Vec<Address> {
+    let voters = match state {
+        VoteStateVersions::Uninitialized => return vec![],
+        VoteStateVersions::V1_14_11(state) => &state.authorized_voters,
+        VoteStateVersions::V3(state) => &state.authorized_voters,
+        VoteStateVersions::V4(state) => &state.authorized_voters,
+    };
+    voters.iter().map(|(_, voter)| *voter).collect()
 }
 
 #[derive(Debug, Deserialize, Serialize)]
