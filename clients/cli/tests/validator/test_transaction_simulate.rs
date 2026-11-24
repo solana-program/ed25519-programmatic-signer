@@ -7,7 +7,7 @@ use {
         migration::send,
         test_migrate_program::{PROGRAM, deploy_program, write_buffer},
         test_migrate_token::{self as token, create_mint, mint_to_new_account, mint_tokens},
-        test_transaction_submit::{SubmitTest, TRANSFER_AMOUNT, fund},
+        test_transaction_submit::{SubmitTest, TRANSFER_AMOUNT, create_durable_nonce, fund},
     },
     base64::{Engine, prelude::BASE64_STANDARD},
     solana_address::Address,
@@ -20,7 +20,7 @@ use {
     solana_message::v1,
     solana_program_pack::Pack,
     solana_signer::Signer,
-    solana_system_interface::instruction::{create_account, transfer},
+    solana_system_interface::instruction::{authorize_nonce_account, create_account, transfer},
     solana_transaction::Transaction,
     spl_token_2022_interface::{
         extension::ExtensionType,
@@ -876,4 +876,50 @@ pub async fn simulates_upgradeable_loader_authority_changes(env: &TestEnv) {
     ];
     expected.sort_by_key(|change| change["account"].as_str().unwrap().to_owned());
     assert_eq!(changes, expected);
+}
+
+/// A durable nonce account's authority change, labelled with the signing pubkey of the current
+/// authority.
+pub async fn simulates_durable_nonce_authority_change(env: &TestEnv) {
+    let authority = Keypair::new();
+    let signer = programmatic_signer(&authority.pubkey());
+    let new_authority = Keypair::new().pubkey();
+    let durable_nonce = create_durable_nonce(env, &signer).await;
+    let test = SubmitTest::new(env, &signer).await;
+    let execution_message = v1::Message::try_compile_with_config(
+        &signer,
+        &[authorize_nonce_account(
+            &durable_nonce,
+            &signer,
+            &new_authority,
+        )],
+        test.nonce,
+        v1::TransactionConfig::empty(),
+    )
+    .unwrap();
+
+    let for_authority = authority.pubkey().to_string();
+    let output = simulate(
+        env,
+        &test,
+        &execution_message,
+        &["--signing-pubkey", &for_authority],
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(output.status.success(), "{stderr}");
+    let value: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(value["accountChanges"], serde_json::json!([]));
+    assert_eq!(
+        value["authorityChanges"],
+        serde_json::json!([{
+            "account": durable_nonce.to_string(),
+            "kind": "durableNonce",
+            "role": "authority",
+            "before": {
+                "address": signer.to_string(),
+                "signingPubkey": for_authority,
+            },
+            "after": { "address": new_authority.to_string() },
+        }])
+    );
 }
