@@ -1809,6 +1809,14 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "773648b94d0e5d620f64f280777445740e61fe701025087ec8b57f45c791888b"
 
 [[package]]
+name = "core-mock-program"
+version = "0.1.0"
+dependencies = [
+ "pinocchio",
+ "spl-programmatic-signer-core",
+]
+
+[[package]]
 name = "cpubits"
 version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -10170,6 +10178,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "spl-ed25519-programmatic-signer-interface"
+version = "0.1.0"
+dependencies = [
+ "codama-macros",
+ "solana-address 2.9.0",
+]
+
+[[package]]
+name = "spl-ed25519-programmatic-signer-program"
+version = "0.1.0"
+dependencies = [
+ "pinocchio",
+ "spl-programmatic-signer-core",
+]
+
+[[package]]
 name = "spl-ed25519-signer-client"
 version = "1.0.0"
 dependencies = [
@@ -10394,6 +10418,28 @@ dependencies = [
  "tempfile",
  "test-case",
  "tokio",
+ "wincode",
+]
+
+[[package]]
+name = "spl-programmatic-signer-core"
+version = "0.1.0"
+dependencies = [
+ "codama-macros",
+ "mollusk-svm",
+ "pinocchio",
+ "solana-account",
+ "solana-address 2.9.0",
+ "solana-hash",
+ "solana-instruction 4.0.0",
+ "solana-instruction-error 3.1.0",
+ "solana-program-error",
+ "solana-rent",
+ "solana-sdk-ids",
+ "solana-sha256-hasher",
+ "solana-system-interface",
+ "solana-zero-copy",
+ "test-case",
  "wincode",
 ]
 
