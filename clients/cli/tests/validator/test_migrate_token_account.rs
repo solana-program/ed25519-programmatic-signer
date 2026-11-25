@@ -6,7 +6,7 @@ use {
         },
         migration::{
             assert_signers, authorization, create_nonce, decode_execution_message,
-            execute_as_new_owner, migrate, migrate_error, send,
+            execute_as_new_owner, migrate, migrate_error, migrate_with_stderr, send,
         },
         test_migrate_token::{DECIMALS, create_mint, mint_tokens},
     },
@@ -290,7 +290,7 @@ pub async fn migrates_token_account_authorities_one_at_a_time(env: &TestEnv) {
         "{stderr}"
     );
 
-    let migration: TokenAccountMigrationOutput = migrate(
+    let (migration, stderr): (TokenAccountMigrationOutput, _) = migrate_with_stderr(
         env,
         "token-account",
         &account,
@@ -299,6 +299,8 @@ pub async fn migrates_token_account_authorities_one_at_a_time(env: &TestEnv) {
     );
     assert_eq!(migration.authority_types, ["owner"]);
     assert!(migration.unset_authority_types.is_empty());
+    // The close authority belongs to another address, so it isn't named.
+    assert!(!stderr.contains("Warning"), "{stderr}");
     assert_signers(
         &migration.required_signers,
         &[authorization(&new_owner.pubkey())],
@@ -320,7 +322,7 @@ pub async fn migrates_token_account_authorities_one_at_a_time(env: &TestEnv) {
         Some(close_authority.pubkey())
     );
 
-    let migration: TokenAccountMigrationOutput = migrate(
+    let (migration, stderr): (TokenAccountMigrationOutput, _) = migrate_with_stderr(
         env,
         "token-account",
         &account,
@@ -328,6 +330,8 @@ pub async fn migrates_token_account_authorities_one_at_a_time(env: &TestEnv) {
         &["--authority-type", "close"],
     );
     assert_eq!(migration.authority_types, ["close"]);
+    // The owner already moved.
+    assert!(!stderr.contains("Warning"), "{stderr}");
     assert_eq!(migration.revoked_delegate, None);
     assert_signers(
         &migration.required_signers,
@@ -347,6 +351,27 @@ pub async fn migrates_token_account_authorities_one_at_a_time(env: &TestEnv) {
     assert_eq!(
         Option::<Address>::from(state.close_authority),
         Some(new_owner_programmatic_signer)
+    );
+
+    // An owner that is also the close authority keeps it when only the owner moves.
+    let account =
+        create_token_account(env, &token_program, &mint, &owner.pubkey(), &[], 1_000).await;
+    set_close_authority(env, &token_program, &account, &owner, &owner.pubkey()).await;
+    let (migration, stderr): (TokenAccountMigrationOutput, _) = migrate_with_stderr(
+        env,
+        "token-account",
+        &account,
+        Some(&new_owner.pubkey()),
+        &["--authority-type", "owner"],
+    );
+    assert_eq!(migration.authority_types, ["owner"]);
+    assert!(
+        stderr.contains(&format!(
+            "Warning: {} also holds the close authority of token account {account}, which this \
+             migration doesn't move",
+            owner.pubkey()
+        )),
+        "{stderr}"
     );
 
     // Without a close authority, the owner has it and it changes with the owner.
@@ -538,6 +563,16 @@ pub async fn migrates_wrapped_sol_token_account(env: &TestEnv) {
     // Moving both works because the close authority moves before the owner change unsets it.
     let account = create_wrapped_sol_account(env, &owner.pubkey()).await;
     set_close_authority(env, &token_program, &account, &owner, &owner.pubkey()).await;
+    // Moving only the owner unsets the close authority rather than leaving it with the owner, so
+    // there's nothing to warn about.
+    let (_, stderr): (TokenAccountMigrationOutput, _) = migrate_with_stderr(
+        env,
+        "token-account",
+        &account,
+        Some(&new_owner.pubkey()),
+        &["--authority-type", "owner"],
+    );
+    assert!(!stderr.contains("Warning"), "{stderr}");
     let migration: TokenAccountMigrationOutput = migrate(
         env,
         "token-account",

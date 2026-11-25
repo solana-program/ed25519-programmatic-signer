@@ -1,6 +1,7 @@
 use {
     super::{
         RequiredSigners, default_new_authority, execution_message, new_owner_programmatic_signer,
+        warn_kept_authorities,
     },
     crate::{
         client::Client,
@@ -17,7 +18,7 @@ use {
     spl_token_2022_interface::instruction::set_authority,
     spl_token_group_interface::instruction::update_group_authority,
     spl_token_metadata_interface::instruction::update_authority,
-    std::{collections::BTreeMap, fmt},
+    std::fmt,
 };
 
 #[derive(Debug, Args)]
@@ -154,25 +155,16 @@ pub(super) async fn run(
     ));
     let execution_message = execution_message(&new_owner_programmatic_signer, &instructions)?;
 
-    // Authorities this migration leaves with an address it moves others away from. Only possible
-    // with --authority-type, since otherwise every set authority moves.
-    let mut remaining = BTreeMap::<Address, Vec<&str>>::new();
-    for (role, authority) in &authorities {
-        let Some(authority) = authority else {
-            continue;
-        };
-        if !roles.contains(role) && current_authorities.contains(authority) {
-            remaining.entry(*authority).or_default().push(role.name());
-        }
-    }
-    for (authority, names) in remaining {
-        eprintln!(
-            "Warning: {authority} also holds the {} authority of mint {}, which this migration \
-             doesn't move. Add it with --authority-type to move it too.",
-            names.join(", "),
-            command.mint
-        );
-    }
+    // Only possible with --authority-type, since otherwise every set authority moves.
+    warn_kept_authorities(
+        format_args!("mint {}", command.mint),
+        authorities.iter().filter_map(|(role, authority)| {
+            authority
+                .filter(|_| !roles.contains(role))
+                .map(|authority| (role.name(), authority))
+        }),
+        &current_authorities,
+    );
 
     output.render(&MintMigrationOutput {
         mint: command.mint.to_string(),

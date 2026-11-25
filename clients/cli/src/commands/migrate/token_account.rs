@@ -1,6 +1,7 @@
 use {
     super::{
         RequiredSigners, default_new_authority, execution_message, new_owner_programmatic_signer,
+        warn_kept_authorities,
     },
     crate::{client::Client, output::OutputFormat},
     anyhow::{Context, Result, bail, ensure},
@@ -236,6 +237,19 @@ pub(super) async fn run(
     let unset_close_authority = close_authority.filter(|_| {
         moves_owner && state.base.is_native() && !roles.contains(&AuthorityType::Close)
     });
+
+    // Only possible with --authority-type, since otherwise every set authority moves.
+    warn_kept_authorities(
+        format_args!("token account {address}"),
+        AuthorityType::value_variants()
+            .iter()
+            .copied()
+            .filter(|role| !roles.contains(role))
+            // Changing a wrapped SOL account's owner unsets its close authority, so it isn't kept.
+            .filter(|role| *role != AuthorityType::Close || unset_close_authority.is_none())
+            .filter_map(|role| current_authority(role).map(|authority| (role.name(), authority))),
+        &current_authorities,
+    );
 
     output.render(&TokenAccountMigrationOutput {
         token_account: address.to_string(),

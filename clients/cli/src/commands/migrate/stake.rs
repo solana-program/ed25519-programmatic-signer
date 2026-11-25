@@ -1,6 +1,7 @@
 use {
     super::{
         RequiredSigners, default_new_authority, execution_message, new_owner_programmatic_signer,
+        warn_kept_authorities,
     },
     crate::{client::Client, output::OutputFormat},
     anyhow::{Context, Result, bail, ensure},
@@ -87,8 +88,11 @@ pub(super) async fn run(
         .collect::<Vec<_>>();
     // While a lockup is in force only its custodian can change it, and changing the withdrawer
     // also needs the custodian. Whether a lockup is in force is checked against the current state.
-    // Moving only the staker never involves the custodian, so it skips the clock lookup.
-    let lockup_custodian = if requested == [AuthorityType::Staker] {
+    // Moving only the staker never involves the custodian, so it skips the clock lookup, unless the
+    // staker is also the custodian, which a lockup in force would leave behind with it.
+    let lockup_custodian = if requested == [AuthorityType::Staker]
+        && meta.lockup.custodian != meta.authorized.staker
+    {
         None
     } else {
         let clock = client.clock().await?;
@@ -170,6 +174,30 @@ pub(super) async fn run(
         })
         .collect::<Result<Vec<_>>>()?;
     let execution_message = execution_message(&new_owner_programmatic_signer, &instructions)?;
+
+    // Only possible with --authority-type, since by default the custodian moves when it's held by
+    // one of the moved authorities.
+    let moved_from = authority_types
+        .iter()
+        .map(|authority_type| authority_type.current_authority(&meta))
+        .collect::<Vec<_>>();
+    warn_kept_authorities(
+        format_args!("stake account {}", command.stake_account),
+        AuthorityType::value_variants()
+            .iter()
+            .filter(|authority_type| !authority_types.contains(authority_type))
+            // Without a lockup in force, the custodian has no authority.
+            .filter(|authority_type| {
+                **authority_type != AuthorityType::Custodian || lockup_custodian.is_some()
+            })
+            .map(|authority_type| {
+                (
+                    authority_type.name(),
+                    authority_type.current_authority(&meta),
+                )
+            }),
+        &moved_from,
+    );
 
     output.render(&StakeMigrationOutput {
         stake_account: command.stake_account.to_string(),
