@@ -1,17 +1,32 @@
 use {
-    crate::nonce::recent_slot_hash,
+    crate::state::Nonce,
     pinocchio::{
         AccountView, Address, ProgramResult,
         error::ProgramError,
-        sysvars::{Sysvar, clock::Clock, rent::Rent},
+        sysvars::{Sysvar, clock::Clock, rent::Rent, slot_hashes::SlotHashes},
     },
-    spl_nonce_interface::state::Nonce,
+    solana_hash::Hash,
 };
+
+/// Reads the most recent hash from the `SlotHashes` sysvar.
+#[inline(always)]
+fn recent_slot_hash(slot_hashes_account: &AccountView) -> Result<Hash, ProgramError> {
+    let slot_hashes = SlotHashes::from_account_view(slot_hashes_account)?;
+    let recent_slot_hash = &slot_hashes
+        .get_entry(0)
+        .ok_or(ProgramError::InvalidArgument)?
+        .hash;
+
+    Ok(Hash::new_from_array(*recent_slot_hash))
+}
 
 /// Turns a caller-created, program-owned account into a [`Nonce`]
 /// bound to `authority` with a fresh nonce value.
 #[inline(always)]
-pub fn process_initialize(program_id: &Address, accounts: &mut [AccountView]) -> ProgramResult {
+pub fn process_initialize_nonce(
+    program_id: &Address,
+    accounts: &mut [AccountView],
+) -> ProgramResult {
     let [nonce_account, authority, slot_hashes_account, ..] = accounts else {
         return Err(ProgramError::NotEnoughAccountKeys);
     };

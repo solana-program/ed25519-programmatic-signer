@@ -1,12 +1,15 @@
 use {
-    crate::helpers::{common::init_mollusk, nonce_account_builder::NonceAccountBuilder},
+    crate::helpers::{
+        common::{MOCK_PROGRAM_ID, init_mollusk},
+        nonce_account_builder::NonceAccountBuilder,
+    },
     mollusk_svm::{
         Mollusk,
         result::{Check, InstructionResult},
     },
     solana_account::Account,
     solana_address::Address,
-    spl_nonce_client::instruction::initialize,
+    spl_programmatic_signer_core::instruction::initialize_nonce,
 };
 
 pub struct InitializeBuilder<'a> {
@@ -64,7 +67,8 @@ impl<'a> InitializeBuilder<'a> {
             .unwrap_or_else(|| Address::from([2; 32]));
         let slot_hashes = self.mollusk.sysvars.keyed_account_for_slot_hashes_sysvar();
 
-        let mut instruction = initialize(&nonce_account.0, &authority_address);
+        let mut instruction =
+            initialize_nonce(&MOCK_PROGRAM_ID, &nonce_account.0, &authority_address);
         if let Some(instruction_data) = self.instruction_data {
             instruction.data = instruction_data;
         }

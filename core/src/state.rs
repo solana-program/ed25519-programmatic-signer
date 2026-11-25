@@ -9,8 +9,7 @@ use {
     wincode::{SchemaRead, SchemaWrite, ZeroCopy},
 };
 
-pub const NONCE_INIT_TAG: &[u8] = b"spl-nonce::init::v1";
-pub const NONCE_STEP_TAG: &[u8] = b"spl-nonce::step::v1";
+pub const NONCE_INIT_TAG: &[u8] = b"spl-programmatic-signer::nonce::init::v1";
 
 /// On-chain data for a caller-created nonce account.
 ///
@@ -25,9 +24,7 @@ pub const NONCE_STEP_TAG: &[u8] = b"spl-nonce::step::v1";
     codama(discriminator(size = 72))
 )]
 pub struct Nonce {
-    /// Single-use value that prevents a signed message from being replayed. `Advance`
-    /// requires this value, the stored authority's signer privilege, and a transition
-    /// signer whose address is included in the freshly derived hash.
+    /// Single-use value that prevents a signed execution message from being replayed.
     #[cfg_attr(feature = "codama", codama(type = public_key))]
     pub nonce: Hash,
     /// Address allowed to consume this nonce and advance its value.
@@ -56,24 +53,6 @@ impl Nonce {
             program_id.as_array(),       // binds the derivation to the program address
             nonce_account.as_array(),    // binds the initial value to the nonce-account address
             recent_slot_hash.as_bytes(), // makes reinitialization differ when the latest slot hash changes
-        ])
-    }
-
-    /// Derives the value that follows this nonce.
-    pub fn derive_next_nonce(
-        &self,
-        program_id: &Address,
-        nonce_account: &Address,
-        transition_signer: &Address,
-        transition_commitment: &Hash,
-    ) -> Hash {
-        hashv(&[
-            NONCE_STEP_TAG,                   // domain-separates advancement from initialization
-            program_id.as_array(),            // binds the derivation to the program address
-            nonce_account.as_array(),         // binds each successor to the nonce-account address
-            self.nonce.as_bytes(),            // makes the successor depend on the current nonce
-            transition_signer.as_array(),     // binds the successor to the transition signer
-            transition_commitment.as_bytes(), // binds the successor to the action this step authorizes
         ])
     }
 
@@ -159,40 +138,6 @@ mod tests {
         assert_eq!(
             wincode::serialized_size(&account).unwrap() as usize,
             Nonce::LEN
-        );
-    }
-
-    #[test]
-    fn derivations_match_frozen_vectors() {
-        let program_id = Address::from([1; 32]);
-        let nonce_account = Address::from([2; 32]);
-        let recent_slot_hash = Hash::from([3; 32]);
-        let transition_commitment = Hash::from([4; 32]);
-
-        assert_eq!(
-            Nonce::derive_initial_nonce(&program_id, &nonce_account, &recent_slot_hash),
-            "vDVVCR9vGGZ7RKg1RHT3Bgtn8VgaBEexvVfvniSZ4xc"
-                .parse::<Hash>()
-                .unwrap()
-        );
-
-        let state = Nonce {
-            nonce: "GgBaCs3NCBuZN12kCJgAW63ydqohFkHEdfdEXBPzLHq"
-                .parse::<Hash>()
-                .unwrap(),
-            authority: Address::default(),
-            initialize_slot: 42.into(),
-        };
-        assert_eq!(
-            state.derive_next_nonce(
-                &program_id,
-                &nonce_account,
-                &Address::from([5; 32]),
-                &transition_commitment,
-            ),
-            "FYhH2U33x6G4riCkS4A2J4v3vW87BJWoSPaiLzaZyyZq"
-                .parse::<Hash>()
-                .unwrap()
         );
     }
 
