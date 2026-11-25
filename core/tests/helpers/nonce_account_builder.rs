@@ -1,0 +1,86 @@
+use {
+    solana_account::Account, solana_address::Address, solana_hash::Hash, solana_rent::Rent,
+    spl_nonce_interface::state::Nonce,
+};
+
+pub struct NonceAccountBuilder {
+    key: Address,
+    owner: Address,
+    lamports: Option<u64>,
+    data: Option<Vec<u8>>,
+}
+
+impl Default for NonceAccountBuilder {
+    fn default() -> Self {
+        Self {
+            key: Address::from([1; 32]),
+            owner: spl_nonce_interface::id(),
+            lamports: None,
+            data: None,
+        }
+    }
+}
+
+impl NonceAccountBuilder {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn key(mut self, key: Address) -> Self {
+        self.key = key;
+        self
+    }
+
+    pub fn owner(mut self, owner: Address) -> Self {
+        self.owner = owner;
+        self
+    }
+
+    pub fn lamports(mut self, lamports: u64) -> Self {
+        self.lamports = Some(lamports);
+        self
+    }
+
+    pub fn data(mut self, data: Vec<u8>) -> Self {
+        self.data = Some(data);
+        self
+    }
+
+    pub fn initialized(
+        mut self,
+        authority: Address,
+        recent_slot_hash: &Hash,
+        initialize_slot: u64,
+    ) -> Self {
+        let state = Nonce {
+            nonce: Nonce::derive_initial_nonce(
+                &spl_nonce_interface::id(),
+                &self.key,
+                recent_slot_hash,
+            ),
+            authority,
+            initialize_slot: initialize_slot.into(),
+        };
+        self.data = Some(wincode::serialize(&state).unwrap());
+        self
+    }
+
+    pub fn build(self) -> (Address, Account) {
+        let data = self
+            .data
+            // Default to program-owned, zero-filled account (waiting to be initialized)
+            .unwrap_or_else(|| vec![0; Nonce::LEN]);
+        let lamports = self
+            .lamports
+            .unwrap_or_else(|| Rent::default().minimum_balance(data.len()));
+        (
+            self.key,
+            Account {
+                lamports,
+                data,
+                owner: self.owner,
+                ..Account::default()
+            },
+        )
+    }
+}
