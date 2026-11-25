@@ -17,6 +17,7 @@ workspace = true
 
 [dependencies]
 pinocchio = { workspace = true, features = ["alloc"] }
+solana-address = { workspace = true, features = ["wincode"] }
 solana-message = { workspace = true }
 spl-programmatic-signer-core = { workspace = true, features = ["program"] }
 wincode = { workspace = true, features = ["derive"] }

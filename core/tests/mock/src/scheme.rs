@@ -1,4 +1,5 @@
 use {
+    crate::auth::MockAuth,
     alloc::vec::Vec,
     pinocchio::{AccountView, Address, error::ProgramError},
     solana_message::v1,
@@ -6,23 +7,8 @@ use {
         pda::ProgrammaticSigner,
         scheme::{AuthorizedSigners, DerivedSigner, SignerScheme},
     },
-    wincode::SchemaRead,
 };
 
-#[derive(SchemaRead)]
-#[wincode(tag_encoding = "u8")]
-pub enum MockAuth {
-    /// Do not authorize this signer slot for nonce consumption or CPI.
-    None,
-    /// Authorize this slot as an outer transaction signer (pair with `is_signer = true` on `Execute`).
-    TransactionSigner,
-    /// Authorize this slot as the [`ProgrammaticSigner`] PDA derived from the given authority.
-    Programmatic(Address),
-    /// Fail `SignerScheme::authorize` with [`ProgramError::InvalidArgument`].
-    Invalid,
-}
-
-/// Test [`SignerScheme`] that skips signature verification and follows [`MockAuth`] directly.
 pub struct MockScheme;
 
 impl SignerScheme for MockScheme {
