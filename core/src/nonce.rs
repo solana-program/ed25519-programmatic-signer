@@ -1,5 +1,5 @@
 use {
-    crate::{error::Error, state::Nonce},
+    crate::{error::Error, instruction::WITHDRAW_ALL, state::Nonce},
     pinocchio::{
         AccountView, Address, ProgramResult,
         error::ProgramError,
@@ -107,6 +107,11 @@ pub fn process_withdraw_nonce(
         return Err(ProgramError::MissingRequiredSignature);
     }
 
+    let lamports = if lamports == WITHDRAW_ALL {
+        nonce_account.lamports()
+    } else {
+        lamports
+    };
     let remaining = nonce_account
         .lamports()
         .checked_sub(lamports)

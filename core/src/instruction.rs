@@ -12,6 +12,12 @@ use {
     wincode::{SchemaRead, SchemaWrite},
 };
 
+/// `WithdrawNonce` amount that withdraws the nonce account's entire balance, closing it.
+///
+/// Unlike the exact balance, this stays valid if the balance grows before the withdrawal lands,
+/// such as from a transfer into the nonce account. Wallets render it as the raw `u64::MAX`.
+pub const WITHDRAW_ALL: u64 = u64::MAX;
+
 /// Instructions supported by an SPL Programmatic Signer program.
 #[derive(Clone, Debug, PartialEq, Eq, SchemaRead, SchemaWrite)]
 #[wincode(tag_encoding = "u8")]
@@ -60,6 +66,9 @@ pub enum Instruction {
     /// requires the current slot to be strictly greater than `initialize_slot` to
     /// prevent restoring the initial nonce by closing and recreating in the same slot. The destination must differ from the nonce account.
     ///
+    /// An amount of [`WITHDRAW_ALL`] withdraws the entire balance at execution, so a pre-signed
+    /// close still succeeds after lamports are sent to the nonce account.
+    ///
     /// Accounts:
     /// - `[signer]` Authority stored in the nonce account, or the nonce account
     ///   itself if it is not initialized
@@ -94,6 +103,7 @@ pub enum Instruction {
     )]
     WithdrawNonce {
         /// Number of lamports to withdraw. Withdrawing the full balance closes the account.
+        /// [`WITHDRAW_ALL`] withdraws the full balance, whatever it is at execution.
         lamports: u64,
     },
 }
@@ -123,8 +133,8 @@ pub fn initialize_nonce(
     )
 }
 
-/// Creates a `WithdrawNonce` instruction for `program_id`. Withdrawing the full balance closes
-/// the account.
+/// Creates a `WithdrawNonce` instruction for `program_id`. Withdrawing the full balance, or
+/// [`WITHDRAW_ALL`], closes the account.
 ///
 /// `authority` is the stored nonce authority, or `nonce_account` itself to recover funds from
 /// an account that is not initialized (for example, one created with the wrong size).
