@@ -376,7 +376,12 @@ async fn scan_mint(
                 .into_iter()
                 .filter(|(_, authority)| *authority == Some(*owner))
                 .map(|(role, _)| role)
-                .collect();
+                .collect::<Vec<_>>();
+            // Revoking an authority leaves its old address in place, so the filter still matches
+            // a mint whose authority the owner revoked.
+            if roles.is_empty() {
+                continue;
+            }
             // A mint matched by both its mint and freeze authority is found twice.
             mints.insert(address, (token_program, roles));
         }

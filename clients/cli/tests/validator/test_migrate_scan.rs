@@ -124,6 +124,22 @@ pub async fn scans_owner_for_migrations(env: &TestEnv) {
     let extension_mint = create_extension_mint(env, &owner, &owner.pubkey()).await;
     // Only extension authorities have no fixed offset to find the mint by, so it isn't found.
     create_extension_mint(env, &other, &owner.pubkey()).await;
+    // A revoked mint authority keeps the owner's address in the mint data, but isn't listed.
+    let revoked_mint = create_mint(env, &token, &owner.pubkey(), None).await;
+    send(
+        env,
+        &[set_authority(
+            &token,
+            &revoked_mint,
+            None,
+            AuthorityType::MintTokens,
+            &owner.pubkey(),
+            &[],
+        )
+        .unwrap()],
+        &[&owner],
+    )
+    .await;
 
     let held_mint = test_migrate_token::create_mint(env, &token, &[]).await;
     let held_account = mint_tokens(env, &token, &held_mint, &owner.pubkey(), 150).await;
