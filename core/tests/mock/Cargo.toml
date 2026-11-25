@@ -16,5 +16,7 @@ crate-type = ["cdylib"]
 workspace = true
 
 [dependencies]
-pinocchio = { workspace = true }
+pinocchio = { workspace = true, features = ["alloc"] }
+solana-message = { workspace = true }
 spl-programmatic-signer-core = { workspace = true, features = ["program"] }
+wincode = { workspace = true, features = ["derive"] }
