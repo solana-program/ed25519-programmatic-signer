@@ -3,7 +3,7 @@ use {
         common::{execute::programmatic_signer, helpers::TestEnv},
         migration::{
             assert_signers, authorization, create_nonce, decode_execution_message,
-            execute_as_new_owner, migrate, migrate_error, send,
+            execute_as_new_owner, migrate, migrate_error, migrate_with_stderr, send,
         },
     },
     solana_address::Address,
@@ -195,9 +195,18 @@ async fn migrates_mint_authorities_one_at_a_time(env: &TestEnv, token_program: &
     let mint = create_mint(env, token_program, &owner.pubkey(), Some(&owner.pubkey())).await;
     let nonce_account = create_nonce(env, &owner.pubkey());
 
-    let freeze: MintMigrationOutput =
-        migrate(env, "mint", &mint, None, &["--authority-type", "freeze"]);
+    let (freeze, stderr): (MintMigrationOutput, _) =
+        migrate_with_stderr(env, "mint", &mint, None, &["--authority-type", "freeze"]);
     assert_eq!(freeze.authority_types, ["freeze"]);
+    // The owner keeps the mint authority, so it's named.
+    assert!(
+        stderr.contains(&format!(
+            "Warning: {} also holds the mint authority of mint {mint}, which this migration \
+             doesn't move",
+            owner.pubkey()
+        )),
+        "{stderr}"
+    );
     assert_eq!(
         freeze.new_authority_signing_pubkey,
         owner.pubkey().to_string()
@@ -263,8 +272,10 @@ async fn migrates_mint_authorities_one_at_a_time(env: &TestEnv, token_program: &
         "{stderr}"
     );
 
-    let mint_only: MintMigrationOutput =
-        migrate(env, "mint", &mint, None, &["--authority-type", "mint"]);
+    // The freeze authority already moved, so nothing is left behind.
+    let (mint_only, stderr): (MintMigrationOutput, _) =
+        migrate_with_stderr(env, "mint", &mint, None, &["--authority-type", "mint"]);
+    assert!(!stderr.contains("Warning"), "{stderr}");
     execute_as_new_owner(
         env,
         &mint_only.execution_message,
@@ -578,8 +589,11 @@ pub async fn migrates_token_2022_extension_authorities(env: &TestEnv) {
     let mint = create_extension_mint(env, &owner, &owner.pubkey()).await;
     let nonce_account = create_nonce(env, &owner.pubkey());
 
-    // Every set authority moves by default, to the programmatic signer of the shared authority.
-    let migration: MintMigrationOutput = migrate(env, "mint", &mint, None, &[]);
+    // Every set authority moves by default, to the programmatic signer of the shared authority,
+    // so none is left behind to warn about.
+    let (migration, stderr): (MintMigrationOutput, _) =
+        migrate_with_stderr(env, "mint", &mint, None, &[]);
+    assert!(!stderr.contains("Warning"), "{stderr}");
     assert_eq!(
         migration.authority_types,
         [
@@ -662,7 +676,7 @@ pub async fn migrates_some_token_2022_extension_authorities(env: &TestEnv) {
         "{stderr}"
     );
 
-    let migration: MintMigrationOutput = migrate(
+    let (migration, stderr): (MintMigrationOutput, _) = migrate_with_stderr(
         env,
         "mint",
         &mint,
@@ -675,6 +689,21 @@ pub async fn migrates_some_token_2022_extension_authorities(env: &TestEnv) {
     assert_eq!(
         migration.authority_types,
         ["permanent-delegate", "pause", "metadata-update"]
+    );
+    // The authorities the owner keeps are named. The mint authority belongs to another address,
+    // so it isn't.
+    assert!(
+        stderr.contains(&format!(
+            "Warning: {} also holds the transfer-fee-config, withheld-withdraw, metadata-pointer, \
+             group-pointer, group-update authority of mint {mint}, which this migration doesn't \
+             move",
+            owner.pubkey()
+        )),
+        "{stderr}"
+    );
+    assert!(
+        !stderr.contains(&mint_authority.pubkey().to_string()),
+        "{stderr}"
     );
     execute_as_new_owner(
         env,
