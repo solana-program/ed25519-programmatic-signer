@@ -70,9 +70,10 @@ use {
             rejects_stale_nonce_hash, rejects_transaction_over_transaction_size,
             reports_created_and_closed_accounts, reports_failed_simulation_logs,
             simulates_at_relay_cpi_depth, simulates_durable_nonce_authority_change,
-            simulates_promoted_and_forwarded_signers, simulates_token_authority_changes_token,
-            simulates_token_authority_changes_token_2022, simulates_token_transfer,
-            simulates_upgradeable_loader_authority_changes,
+            simulates_promoted_and_forwarded_signers,
+            simulates_token_2022_mint_extension_authority_changes,
+            simulates_token_authority_changes_token, simulates_token_authority_changes_token_2022,
+            simulates_token_transfer, simulates_upgradeable_loader_authority_changes,
         },
         test_transaction_submit::{
             cancels_when_forwarded_signer_declines, dry_run_reports_failed_simulation,
@@ -241,6 +242,11 @@ fn main() -> ExitCode {
         ),
         async_trial!(simulates_token_transfer, env, runtime_handle),
         async_trial!(simulates_token_authority_changes_token, env, runtime_handle),
+        async_trial!(
+            simulates_token_2022_mint_extension_authority_changes,
+            env,
+            runtime_handle
+        ),
         async_trial!(
             simulates_token_authority_changes_token_2022,
             env,
