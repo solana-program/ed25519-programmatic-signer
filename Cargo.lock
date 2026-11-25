@@ -1813,7 +1813,9 @@ name = "core-mock-program"
 version = "0.1.0"
 dependencies = [
  "pinocchio",
+ "solana-message",
  "spl-programmatic-signer-core",
+ "wincode",
 ]
 
 [[package]]
@@ -10190,6 +10192,7 @@ name = "spl-ed25519-programmatic-signer-program"
 version = "0.1.0"
 dependencies = [
  "pinocchio",
+ "solana-message",
  "spl-programmatic-signer-core",
 ]
 
@@ -10433,6 +10436,7 @@ dependencies = [
  "solana-hash",
  "solana-instruction 4.0.0",
  "solana-instruction-error 3.1.0",
+ "solana-message",
  "solana-program-error",
  "solana-rent",
  "solana-sdk-ids",

@@ -19,4 +19,5 @@ workspace = true
 
 [dependencies]
 pinocchio = { workspace = true }
+solana-message = { workspace = true }
 spl-programmatic-signer-core = { workspace = true, features = ["program"] }

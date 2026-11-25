@@ -1,5 +1,8 @@
-use pinocchio::{
-    AccountView, Address, ProgramResult, no_allocator, nostd_panic_handler, program_entrypoint,
+use {
+    crate::scheme::UnimplementedScheme,
+    pinocchio::{
+        AccountView, Address, ProgramResult, no_allocator, nostd_panic_handler, program_entrypoint,
+    },
 };
 
 program_entrypoint!(process_instruction);
@@ -12,5 +15,9 @@ fn process_instruction(
     accounts: &mut [AccountView],
     instruction_data: &[u8],
 ) -> ProgramResult {
-    spl_programmatic_signer_core::process_instruction(program_id, accounts, instruction_data)
+    spl_programmatic_signer_core::process_instruction::<UnimplementedScheme>(
+        program_id,
+        accounts,
+        instruction_data,
+    )
 }
