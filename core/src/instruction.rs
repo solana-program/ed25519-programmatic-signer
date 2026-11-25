@@ -209,7 +209,7 @@ pub fn consume_nonce(
 /// one `Sig` entry per required signer.
 ///
 /// The message's `account_keys` are supplied as instruction accounts rather than repeated inside
-/// instruction data. All returned accounts start with `is_signer = false`; callers mark any outer
+/// instruction data. All returned accounts start with `is_signer = false`. Callers mark any outer
 /// relay signers as `is_signer = true`.
 #[cfg(feature = "client")]
 pub fn execute<Sig>(
