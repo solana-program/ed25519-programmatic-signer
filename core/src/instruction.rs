@@ -12,12 +12,6 @@ use {
     wincode::{SchemaRead, SchemaWrite},
 };
 
-/// `WithdrawNonce` amount that withdraws the nonce account's entire balance, closing it.
-///
-/// Unlike the exact balance, this stays valid if the balance grows before the withdrawal lands,
-/// such as from a transfer into the nonce account. Wallets render it as the raw `u64::MAX`.
-pub const WITHDRAW_ALL: u64 = u64::MAX;
-
 /// Instructions supported by an SPL Programmatic Signer program.
 #[derive(Clone, Debug, PartialEq, Eq, SchemaRead, SchemaWrite)]
 #[wincode(tag_encoding = "u8")]
@@ -66,8 +60,7 @@ pub enum Instruction {
     /// requires the current slot to be strictly greater than `initialize_slot` to
     /// prevent restoring the initial nonce by closing and recreating in the same slot. The destination must differ from the nonce account.
     ///
-    /// An amount of [`WITHDRAW_ALL`] withdraws the entire balance at execution, so a pre-signed
-    /// close still succeeds after lamports are sent to the nonce account.
+    /// To close the account without stating its exact balance, use `CloseNonce`.
     ///
     /// Accounts:
     /// - `[signer]` Authority stored in the nonce account, or the nonce account
@@ -103,9 +96,48 @@ pub enum Instruction {
     )]
     WithdrawNonce {
         /// Number of lamports to withdraw. Withdrawing the full balance closes the account.
-        /// [`WITHDRAW_ALL`] withdraws the full balance, whatever it is at execution.
         lamports: u64,
     },
+
+    /// Withdraws the entire balance of a nonce account to a destination, closing it.
+    ///
+    /// Behaves like `WithdrawNonce` for the full balance, except the balance is read at
+    /// execution. A pre-signed close therefore still succeeds after lamports are sent to the
+    /// nonce account. The same authority, same-slot close, and destination rules apply.
+    ///
+    /// Accounts:
+    /// - `[signer]` Authority stored in the nonce account, or the nonce account
+    ///   itself if it is not initialized
+    /// - `[writable]` Nonce account
+    /// - `[writable]` Destination receiving the lamports
+    #[cfg_attr(
+        feature = "codama",
+        codama(display(
+            intent = "Close nonce account",
+            interpolated_intent = "Close nonce account ${accounts.nonceAccount} and send its \
+                                   balance to ${accounts.destination}"
+        )),
+        codama(account(
+            name = "authority",
+            signer,
+            docs = "Authority stored in the nonce account, or the nonce account itself if it is \
+                    not initialized",
+            display(label = "Nonce authority")
+        )),
+        codama(account(
+            name = "nonce_account",
+            writable,
+            docs = "Nonce account to close",
+            display(label = "Nonce account to close")
+        )),
+        codama(account(
+            name = "destination",
+            writable,
+            docs = "Account receiving the lamports",
+            display(label = "Withdrawal destination")
+        ))
+    )]
+    CloseNonce,
 }
 
 impl Instruction {
@@ -133,8 +165,8 @@ pub fn initialize_nonce(
     )
 }
 
-/// Creates a `WithdrawNonce` instruction for `program_id`. Withdrawing the full balance, or
-/// [`WITHDRAW_ALL`], closes the account.
+/// Creates a `WithdrawNonce` instruction for `program_id`. Withdrawing the full balance closes
+/// the account.
 ///
 /// `authority` is the stored nonce authority, or `nonce_account` itself to recover funds from
 /// an account that is not initialized (for example, one created with the wrong size).
@@ -157,12 +189,36 @@ pub fn withdraw_nonce(
     )
 }
 
+/// Creates a `CloseNonce` instruction for `program_id`, which withdraws the full balance at
+/// execution.
+///
+/// `authority` is the stored nonce authority, or `nonce_account` itself to recover funds from
+/// an account that is not initialized (for example, one created with the wrong size).
+#[cfg(feature = "client")]
+pub fn close_nonce(
+    program_id: &Address,
+    authority: &Address,
+    nonce_account: &Address,
+    destination: &Address,
+) -> SolanaInstruction {
+    SolanaInstruction::new_with_wincode(
+        *program_id,
+        &Instruction::CloseNonce,
+        vec![
+            AccountMeta::new_readonly(*authority, true),
+            AccountMeta::new(*nonce_account, false),
+            AccountMeta::new(*destination, false),
+        ],
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use {super::Instruction, solana_program_error::ProgramError, test_case::test_case};
 
     #[test_case(Instruction::InitializeNonce, 0; "initialize")]
     #[test_case(Instruction::WithdrawNonce { lamports: 42 }, 1; "withdraw")]
+    #[test_case(Instruction::CloseNonce, 2; "close")]
     fn instruction_tags_and_round_trip(instruction: Instruction, expected_tag: u8) {
         let bytes = wincode::serialize(&instruction).unwrap();
         assert_eq!(bytes[0], expected_tag);
@@ -176,7 +232,7 @@ mod tests {
         );
     }
 
-    #[test_case(2; "next tag")]
+    #[test_case(3; "next tag")]
     #[test_case(u8::MAX; "max tag")]
     fn try_from_bytes_rejects_unknown(tag: u8) {
         assert_eq!(

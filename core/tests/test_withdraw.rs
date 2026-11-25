@@ -9,7 +9,7 @@ use {
     solana_address::Address,
     solana_program_error::ProgramError,
     solana_rent::Rent,
-    spl_programmatic_signer_core::{error::Error, instruction::WITHDRAW_ALL, state::Nonce},
+    spl_programmatic_signer_core::{error::Error, state::Nonce},
     test_case::test_case,
 };
 
@@ -318,9 +318,9 @@ fn withdraw_to_authority_is_allowed() {
 }
 
 #[test]
-fn withdraw_all_closes_account_after_balance_grows() {
+fn close_succeeds_after_balance_grows() {
     let nonce_address = Address::new_unique();
-    // Lamports sent to the nonce account after a close was signed for its exact balance
+    // Lamports sent to the nonce account after the close was signed
     let donated = 1;
     let balance = Rent::default()
         .minimum_balance(Nonce::LEN)
@@ -339,7 +339,7 @@ fn withdraw_all_closes_account_after_balance_grows() {
             },
         ))
         .withdrawal_slot(43)
-        .amount(WITHDRAW_ALL)
+        .close()
         .check(Check::success())
         .check(Check::account(&nonce_address).closed().build())
         .check(
@@ -351,17 +351,39 @@ fn withdraw_all_closes_account_after_balance_grows() {
 }
 
 #[test]
-fn withdraw_all_rejects_close_in_initialization_slot() {
+fn close_nonce_rejects_wrong_authority() {
+    WithdrawBuilder::default()
+        .initialization_slot(42)
+        .withdrawal_slot(43)
+        .withdraw_authority(Address::new_unique())
+        .close()
+        .check(Check::err(Error::AuthorityMismatch.into()))
+        .execute();
+}
+
+#[test]
+fn close_nonce_requires_authority_signature() {
+    WithdrawBuilder::default()
+        .initialization_slot(42)
+        .withdrawal_slot(43)
+        .authority_not_signer()
+        .close()
+        .check(Check::err(ProgramError::MissingRequiredSignature))
+        .execute();
+}
+
+#[test]
+fn close_nonce_rejects_initialization_slot() {
     WithdrawBuilder::default()
         .initialization_slot(42)
         .withdrawal_slot(42)
-        .amount(WITHDRAW_ALL)
+        .close()
         .check(Check::err(Error::CloseSameSlot.into()))
         .execute();
 }
 
 #[test]
-fn withdraw_all_closes_uninitialized_account() {
+fn close_nonce_closes_uninitialized_account() {
     let (nonce_address, nonce_account) = NonceAccountBuilder::new().build();
     let balance = nonce_account.lamports;
     let destination = Address::new_unique();
@@ -375,7 +397,7 @@ fn withdraw_all_closes_uninitialized_account() {
                 ..Account::default()
             },
         ))
-        .amount(WITHDRAW_ALL)
+        .close()
         .check(Check::success())
         .check(Check::account(&nonce_address).closed().build())
         .check(
@@ -387,7 +409,7 @@ fn withdraw_all_closes_uninitialized_account() {
 }
 
 #[test]
-fn withdraw_all_rejects_destination_overflow() {
+fn close_nonce_rejects_destination_overflow() {
     WithdrawBuilder::default()
         .initialization_slot(42)
         .withdrawal_slot(43)
@@ -398,7 +420,7 @@ fn withdraw_all_rejects_destination_overflow() {
                 ..Account::default()
             },
         ))
-        .amount(WITHDRAW_ALL)
+        .close()
         .check(Check::err(ProgramError::ArithmeticOverflow))
         .execute();
 }
