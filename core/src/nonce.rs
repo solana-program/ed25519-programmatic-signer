@@ -1,5 +1,5 @@
 use {
-    crate::state::Nonce,
+    crate::{error::Error, state::Nonce},
     pinocchio::{
         AccountView, Address, ProgramResult,
         error::ProgramError,
@@ -67,21 +67,12 @@ pub fn process_initialize_nonce(
     Ok(())
 }
 
-use {
-    pinocchio::{
-        AccountView, Address, ProgramResult,
-        error::ProgramError,
-        sysvars::{Sysvar, clock::Clock, rent::Rent},
-    },
-    spl_nonce_interface::{error::Error, state::Nonce},
-};
-
 /// Withdraws lamports, closing the nonce account when its full balance is withdrawn.
 ///
 /// An initialized nonce account requires its stored authority to sign. Any other
 /// program-owned account can only be withdrawn from with the nonce account's own signature, so they can be recovered.
 #[inline(never)]
-pub fn process_withdraw(
+pub fn process_withdraw_nonce(
     program_id: &Address,
     accounts: &mut [AccountView],
     lamports: u64,

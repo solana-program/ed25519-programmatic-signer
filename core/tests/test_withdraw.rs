@@ -1,6 +1,5 @@
 use {
     crate::helpers::{
-        advance_builder::AdvanceBuilder,
         common::{init_mollusk, initialize_nonce_account},
         nonce_account_builder::NonceAccountBuilder,
         withdraw_builder::WithdrawBuilder,
@@ -8,10 +7,9 @@ use {
     mollusk_svm::result::Check,
     solana_account::Account,
     solana_address::Address,
-    solana_hash::Hash,
     solana_program_error::ProgramError,
     solana_rent::Rent,
-    spl_nonce_interface::{error::Error, state::Nonce},
+    spl_programmatic_signer_core::{error::Error, state::Nonce},
     test_case::test_case,
 };
 
@@ -195,19 +193,15 @@ fn close_rejects_slot_not_after_initialization(slot: u64) {
 }
 
 #[test]
-fn advance_does_not_bypass_same_slot_close_guard() {
-    let nonce_address = Address::new_unique();
-    let advanced = AdvanceBuilder::default()
-        .nonce_address(nonce_address)
-        .initialization_slot(42)
-        .excess_lamports(100)
-        .transition_commitment(Hash::default())
-        .execute();
+fn advanced_nonce_does_not_bypass_same_slot_close_guard() {
+    let authority = Address::from([2; 32]);
+    let mut mollusk = init_mollusk();
+    mollusk.sysvars.clock.slot = 42;
+    let (nonce_address, mut nonce_account) = initialize_nonce_account(&mollusk, &authority);
+    // Simulate an advance in the initialization slot: only the stored nonce value changes
+    nonce_account.data[..32].fill(7);
     WithdrawBuilder::default()
-        .nonce_account((
-            nonce_address,
-            advanced.get_account(&nonce_address).unwrap().clone(),
-        ))
+        .nonce_account((nonce_address, nonce_account))
         .withdrawal_slot(42)
         .withdraw_all()
         .check(Check::err(Error::CloseSameSlot.into()))

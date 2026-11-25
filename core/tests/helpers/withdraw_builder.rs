@@ -1,12 +1,12 @@
 use {
-    crate::helpers::common::{init_mollusk, initialize_nonce_account_at},
+    crate::helpers::common::{MOCK_PROGRAM_ID, init_mollusk, initialize_nonce_account_at},
     mollusk_svm::{
         Mollusk,
         result::{Check, InstructionResult},
     },
     solana_account::Account,
     solana_address::Address,
-    spl_nonce_client::instruction::withdraw,
+    spl_programmatic_signer_core::instruction::withdraw_nonce,
 };
 
 enum Destination {
@@ -147,7 +147,13 @@ impl<'a> WithdrawBuilder<'a> {
             Destination::Nonce => nonce_address,
             Destination::Authority => authority,
         };
-        let mut instruction = withdraw(&authority, &nonce_address, &destination_address, amount);
+        let mut instruction = withdraw_nonce(
+            &MOCK_PROGRAM_ID,
+            &authority,
+            &nonce_address,
+            &destination_address,
+            amount,
+        );
         instruction.accounts[0].is_signer = self.authority_is_signer;
         instruction.accounts.truncate(self.account_count);
 

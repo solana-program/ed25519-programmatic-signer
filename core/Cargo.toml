@@ -44,3 +44,7 @@ wincode = { workspace = true, features = ["alloc"] }
 [[test]]
 name = "test_initialize"
 required-features = ["client"]
+
+[[test]]
+name = "test_withdraw"
+required-features = ["client"]

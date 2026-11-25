@@ -1,5 +1,8 @@
 use {
-    crate::{instruction::Instruction, nonce::process_initialize_nonce},
+    crate::{
+        instruction::Instruction,
+        nonce::{process_initialize_nonce, process_withdraw_nonce},
+    },
     pinocchio::{AccountView, Address, ProgramResult},
 };
 
@@ -12,5 +15,8 @@ pub fn process_instruction(
 ) -> ProgramResult {
     match Instruction::try_from_bytes(instruction_data)? {
         Instruction::InitializeNonce => process_initialize_nonce(program_id, accounts),
+        Instruction::WithdrawNonce { lamports } => {
+            process_withdraw_nonce(program_id, accounts, lamports)
+        }
     }
 }
