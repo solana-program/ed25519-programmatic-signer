@@ -1,0 +1,25 @@
+[package]
+name = "spl-ed25519-programmatic-signer-interface"
+version = "0.1.0"
+description = "Interface for the SPL Ed25519 Programmatic Signer program"
+authors = { workspace = true }
+repository = { workspace = true }
+homepage = { workspace = true }
+license = { workspace = true }
+edition = { workspace = true }
+
+[lib]
+crate-type = ["rlib"]
+
+[features]
+codama = ["dep:codama-macros"]
+
+[package.metadata.solana]
+program-id = "EdSigVfK1DkeMrjFNDMjwfQaJPhPTtX7jW8uPv3oKEgN"
+
+[lints]
+workspace = true
+
+[dependencies]
+codama-macros = { workspace = true, optional = true }
+solana-address = { workspace = true, features = ["decode"] }

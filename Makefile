@@ -11,7 +11,7 @@ nightly = +${RUST_TOOLCHAIN_NIGHTLY}
 # in the case where there is no subdirectory.
 pattern-dir = $(firstword $(subst -, ,$1))
 find-pattern-dir = $(findstring $(call pattern-dir,$1)-,$1)
-make-path = $(subst $(call find-pattern-dir,$1),$(subst -,/,$(call find-pattern-dir,$1)),$1)
+make-path = $(if $(wildcard $(subst -,/,$1)),$(subst -,/,$1),$(subst $(call find-pattern-dir,$1),$(subst -,/,$(call find-pattern-dir,$1)),$1))
 
 rust-toolchain-nightly:
 	@echo ${RUST_TOOLCHAIN_NIGHTLY}
@@ -76,7 +76,7 @@ test-js-%:
 	cd $(call make-path,$*) && pnpm install && pnpm build && pnpm test $(ARGS)
 
 test-%:
-	SBF_OUT_DIR=$(PWD)/target/deploy cargo $(nightly) test --manifest-path $(call make-path,$*)/Cargo.toml $(ARGS)
+	SBF_OUT_DIR=$(PWD)/target/deploy cargo $(nightly) test --all-features --manifest-path $(call make-path,$*)/Cargo.toml $(ARGS)
 
 generate-clients: generate-idl-workspace
 	pnpm codama run js $(ARGS)

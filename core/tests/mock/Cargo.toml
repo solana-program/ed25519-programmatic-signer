@@ -1,0 +1,20 @@
+[package]
+name = "core-mock-program"
+version = "0.1.0"
+description = "Test-only mock program for spl-programmatic-signer-core"
+authors = { workspace = true }
+repository = { workspace = true }
+homepage = { workspace = true }
+license = { workspace = true }
+edition = { workspace = true }
+publish = false
+
+[lib]
+crate-type = ["cdylib"]
+
+[lints]
+workspace = true
+
+[dependencies]
+pinocchio = { workspace = true }
+spl-programmatic-signer-core = { workspace = true, features = ["program"] }
