@@ -8,10 +8,10 @@ on:
 env:
   IDL_PACKAGES: "['workspace']"
   JS_PACKAGES: "['clients-js']"
-  RUST_PACKAGES: "['clients-cli', 'executor-client', 'executor-interface', 'executor-program', 'nonce-client', 'nonce-interface', 'nonce-program', 'signer-client', 'signer-interface', 'signer-program']"
-  SBPF_PROGRAM_PACKAGES: "['executor-program', 'nonce-program', 'signer-program']"
+  RUST_PACKAGES: "['clients-cli', 'core', 'core-tests-mock', 'ed25519-interface', 'ed25519-program', 'executor-client', 'executor-interface', 'executor-program', 'nonce-client', 'nonce-interface', 'nonce-program', 'signer-client', 'signer-interface', 'signer-program']"
+  SBPF_PROGRAM_PACKAGES: "['core-tests-mock', 'ed25519-program', 'executor-program', 'nonce-program', 'signer-program']"
   NO_STD_CORE_PACKAGES: "['nonce-interface', 'nonce-program']"
-  NO_STD_ALLOC_PACKAGES: "['executor-client', 'executor-interface', 'executor-program', 'nonce-client', 'signer-client', 'signer-interface', 'signer-program']"
+  NO_STD_ALLOC_PACKAGES: "['core', 'ed25519-interface', 'ed25519-program', 'executor-client', 'executor-interface', 'executor-program', 'nonce-client', 'signer-client', 'signer-interface', 'signer-program']"
 
 jobs:
   set_env:
