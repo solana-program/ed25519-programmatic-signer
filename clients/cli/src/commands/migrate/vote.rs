@@ -50,7 +50,7 @@ pub(super) async fn run(
     );
     // The validator needs the voter's private key to vote, so it can't move to a programmatic
     // signer. Flag it when that key is the one being migrated away from.
-    if authorized_voters(&state).contains(&withdrawer) {
+    if authorized_voter(&state) == Some(withdrawer) {
         eprintln!(
             "Warning: {withdrawer} is also the authorized voter of vote account {}. Only the \
              withdrawer is migrated, so {withdrawer} stays the voter.",
@@ -90,15 +90,17 @@ pub(super) fn authorized_withdrawer(
     })
 }
 
-/// The current authorized voter and any scheduled for later epochs.
-fn authorized_voters(state: &VoteStateVersions) -> Vec<Address> {
+/// The latest authorized voter, which is the one in force once any scheduled change takes effect.
+/// Earlier entries may be stale, as past epochs are only purged when the vote program next
+/// processes the account.
+fn authorized_voter(state: &VoteStateVersions) -> Option<Address> {
     let voters = match state {
-        VoteStateVersions::Uninitialized => return vec![],
+        VoteStateVersions::Uninitialized => return None,
         VoteStateVersions::V1_14_11(state) => &state.authorized_voters,
         VoteStateVersions::V3(state) => &state.authorized_voters,
         VoteStateVersions::V4(state) => &state.authorized_voters,
     };
-    voters.iter().map(|(_, voter)| *voter).collect()
+    voters.last().map(|(_, voter)| *voter)
 }
 
 #[derive(Debug, Deserialize, Serialize)]
