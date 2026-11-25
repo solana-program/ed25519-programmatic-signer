@@ -6,7 +6,7 @@ use {
         },
         migration::{
             assert_signers, authorization, create_nonce, decode_execution_message,
-            execute_as_new_owner, migrate, migrate_error,
+            execute_as_new_owner, migrate, migrate_error, migrate_with_stderr,
         },
     },
     base64::{Engine, prelude::BASE64_STANDARD},
@@ -81,8 +81,10 @@ pub async fn migrates_vote_withdrawer_to_new_owner(env: &TestEnv) {
     let vote = create_vote_account(env, &identity, &old_withdrawer.pubkey()).await;
     let nonce_account = create_nonce(env, &new_owner.pubkey());
 
-    let migration: VoteMigrationOutput =
-        migrate(env, "vote", &vote, Some(&new_owner.pubkey()), &[]);
+    let (migration, stderr): (VoteMigrationOutput, _) =
+        migrate_with_stderr(env, "vote", &vote, Some(&new_owner.pubkey()), &[]);
+    // The voter is the identity, not the withdrawer, so there's nothing to warn about.
+    assert!(!stderr.contains("Warning"), "{stderr}");
     assert_eq!(migration.vote_account, vote.to_string());
     assert_eq!(
         migration.new_authority,
@@ -388,10 +390,19 @@ pub async fn migrates_vote_withdrawer_held_by_identity(env: &TestEnv) {
     let vote = create_vote_account(env, &identity, &identity.pubkey()).await;
     let nonce_account = create_nonce(env, &identity.pubkey());
 
-    let migration: VoteMigrationOutput = migrate(env, "vote", &vote, None, &[]);
+    let (migration, stderr): (VoteMigrationOutput, _) =
+        migrate_with_stderr(env, "vote", &vote, None, &[]);
     assert_eq!(
         migration.new_authority_signing_pubkey,
         identity.pubkey().to_string()
+    );
+    // The identity is also the voter, which stays with it.
+    assert!(
+        stderr.contains(&format!(
+            "Warning: {} is also the authorized voter of vote account {vote}",
+            identity.pubkey()
+        )),
+        "{stderr}"
     );
     assert_signers(
         &migration.required_signers,
