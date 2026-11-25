@@ -4,9 +4,9 @@ use solana_address::Address;
 
 /// Programmatic signer for an authority.
 ///
-/// Program-owned runtime signer. `Submit` promotes it to `is_signer=true` via
-/// `invoke_signed` wherever the executor CPI references it, after the corresponding
-/// authority has signed the authorization message.
+/// Program-owned runtime signer. `Execute` authorizes it as a signer via
+/// `invoke_signed` wherever payload instructions reference it, after the corresponding
+/// authority has signed the execution message.
 ///
 /// Seeds: `["programmatic-signer", authority, bump]`
 #[cfg_attr(
