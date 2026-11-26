@@ -37,6 +37,14 @@ pub enum Error {
         ))
     )]
     CloseSameSlot = 3,
+    /// The nonce consumption marker instruction cannot be invoked directly.
+    #[cfg_attr(
+        feature = "codama",
+        codama(error(
+            message = "The nonce consumption marker instruction cannot be invoked directly"
+        ))
+    )]
+    ConsumeNonceNotCallable = 4,
 }
 
 impl From<Error> for ProgramError {

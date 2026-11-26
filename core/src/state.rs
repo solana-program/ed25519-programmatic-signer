@@ -10,6 +10,7 @@ use {
 };
 
 pub const NONCE_INIT_TAG: &[u8] = b"spl-programmatic-signer::nonce::init::v1";
+pub const NONCE_EXECUTE_TAG: &[u8] = b"spl-programmatic-signer::nonce::execute::v1";
 
 /// On-chain data for a caller-created nonce account.
 ///
@@ -53,6 +54,22 @@ impl Nonce {
             program_id.as_array(),       // binds the derivation to the program address
             nonce_account.as_array(),    // binds the initial value to the nonce-account address
             recent_slot_hash.as_bytes(), // makes reinitialization differ when the latest slot hash changes
+        ])
+    }
+
+    /// Derives the value that follows this nonce after `Execute`.
+    pub fn derive_execute_nonce(
+        &self,
+        program_id: &Address,
+        nonce_account: &Address,
+        message_hash: &Hash,
+    ) -> Hash {
+        hashv(&[
+            NONCE_EXECUTE_TAG,        // domain-separates execution from initialization
+            program_id.as_array(),    // binds the derivation to the program address
+            nonce_account.as_array(), // binds each successor to the nonce-account address
+            self.nonce.as_bytes(),    // makes the successor depend on the current nonce
+            message_hash.as_bytes(),  // binds the successor to the authorized execution message
         ])
     }
 
@@ -114,8 +131,6 @@ impl Nonce {
 
 #[cfg(test)]
 mod tests {
-    extern crate alloc;
-
     use {
         super::{Address, Hash, Nonce},
         crate::error::DecodeError,
@@ -138,6 +153,35 @@ mod tests {
         assert_eq!(
             wincode::serialized_size(&account).unwrap() as usize,
             Nonce::LEN
+        );
+    }
+
+    #[test]
+    fn derivations_match_frozen_vectors() {
+        let program_id = Address::from([1; 32]);
+        let nonce_account = Address::from([2; 32]);
+        let recent_slot_hash = Hash::from([3; 32]);
+        let message_hash = Hash::from([4; 32]);
+
+        assert_eq!(
+            Nonce::derive_initial_nonce(&program_id, &nonce_account, &recent_slot_hash),
+            "AeYMqup6fhQgEVWnzv8YhWq93CfS3CbbaiQJPAfWmqze"
+                .parse::<Hash>()
+                .unwrap()
+        );
+
+        let state = Nonce {
+            nonce: "GgBaCs3NCBuZN12kCJgAW63ydqohFkHEdfdEXBPzLHq"
+                .parse::<Hash>()
+                .unwrap(),
+            authority: Address::default(),
+            initialize_slot: 42.into(),
+        };
+        assert_eq!(
+            state.derive_execute_nonce(&program_id, &nonce_account, &message_hash),
+            "rgbZ9Fp4bPiLtLk1n3PtY6TExCek2irAuPo8p4m5uoN"
+                .parse::<Hash>()
+                .unwrap()
         );
     }
 

@@ -10433,6 +10433,7 @@ dependencies = [
  "solana-hash",
  "solana-instruction 4.0.0",
  "solana-instruction-error 3.1.0",
+ "solana-message",
  "solana-program-error",
  "solana-rent",
  "solana-sdk-ids",

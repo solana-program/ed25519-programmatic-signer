@@ -4,9 +4,9 @@ use solana_address::Address;
 
 /// Programmatic signer for an authority.
 ///
-/// Program-owned runtime signer. `Submit` promotes it to `is_signer=true` via
-/// `invoke_signed` wherever the executor CPI references it, after the corresponding
-/// authority has signed the authorization message.
+/// Program-derived runtime signer. `Execute` authorizes it as a signer via
+/// `invoke_signed` wherever payload instructions reference it, after the corresponding
+/// authority has signed the execution message.
 ///
 /// Seeds: `["programmatic-signer", authority, bump]`
 #[cfg_attr(
@@ -30,5 +30,31 @@ impl ProgrammaticSigner {
     pub fn derive_address(program_id: &Address, authority: &Address) -> Address {
         let (address, _bump) = Self::derive_address_and_bump(program_id, authority);
         address
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use {super::ProgrammaticSigner, solana_address::Address};
+
+    #[test]
+    fn derives_deterministic_off_curve_pda() {
+        let program_id = Address::from([1; 32]);
+        let authority = Address::from([2; 32]);
+
+        let (pda, bump) = ProgrammaticSigner::derive_address_and_bump(&program_id, &authority);
+        assert_eq!(
+            pda,
+            ProgrammaticSigner::derive_address(&program_id, &authority)
+        );
+        assert_eq!(
+            Address::create_program_address(
+                &[ProgrammaticSigner::SEED_PREFIX, authority.as_ref(), &[bump],],
+                &program_id,
+            )
+            .unwrap(),
+            pda,
+        );
+        assert!(!pda.is_on_curve());
     }
 }
