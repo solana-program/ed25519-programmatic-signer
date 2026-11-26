@@ -54,3 +54,7 @@ required-features = ["client"]
 [[test]]
 name = "test_consume_nonce"
 required-features = ["client"]
+
+[[test]]
+name = "test_message"
+required-features = ["client"]

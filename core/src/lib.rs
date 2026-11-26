@@ -4,6 +4,8 @@ extern crate alloc;
 
 pub mod error;
 pub mod instruction;
+#[cfg(feature = "client")]
+pub mod message;
 #[cfg(feature = "program")]
 mod nonce;
 pub mod pda;
