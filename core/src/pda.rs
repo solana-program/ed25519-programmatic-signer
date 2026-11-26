@@ -1,0 +1,60 @@
+#[cfg(feature = "codama")]
+use codama_macros::CodamaPda;
+use solana_address::Address;
+
+/// Programmatic signer for an authority.
+///
+/// Program-derived runtime signer. `Execute` authorizes it as a signer via
+/// `invoke_signed` wherever payload instructions reference it, after the corresponding
+/// authority has signed the execution message.
+///
+/// Seeds: `["programmatic-signer", authority, bump]`
+#[cfg_attr(
+    feature = "codama",
+    derive(CodamaPda),
+    codama(seed(type = string(utf8), value = "programmatic-signer")),
+    codama(seed(name = "authority", type = public_key))
+)]
+pub struct ProgrammaticSigner;
+
+impl ProgrammaticSigner {
+    pub const SEED_PREFIX: &[u8] = b"programmatic-signer";
+
+    #[inline(always)]
+    pub fn derive_address_and_bump(program_id: &Address, authority: &Address) -> (Address, u8) {
+        Address::derive_program_address(&[Self::SEED_PREFIX, authority.as_ref()], program_id)
+            .expect("failed to derive ProgrammaticSigner from authority")
+    }
+
+    #[inline(always)]
+    pub fn derive_address(program_id: &Address, authority: &Address) -> Address {
+        let (address, _bump) = Self::derive_address_and_bump(program_id, authority);
+        address
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use {super::ProgrammaticSigner, solana_address::Address};
+
+    #[test]
+    fn derives_deterministic_off_curve_pda() {
+        let program_id = Address::from([1; 32]);
+        let authority = Address::from([2; 32]);
+
+        let (pda, bump) = ProgrammaticSigner::derive_address_and_bump(&program_id, &authority);
+        assert_eq!(
+            pda,
+            ProgrammaticSigner::derive_address(&program_id, &authority)
+        );
+        assert_eq!(
+            Address::create_program_address(
+                &[ProgrammaticSigner::SEED_PREFIX, authority.as_ref(), &[bump],],
+                &program_id,
+            )
+            .unwrap(),
+            pda,
+        );
+        assert!(!pda.is_on_curve());
+    }
+}
