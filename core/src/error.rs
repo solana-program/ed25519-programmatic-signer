@@ -7,10 +7,10 @@ use {core::fmt, solana_program_error::ProgramError};
 #[repr(u32)]
 #[cfg_attr(feature = "codama", derive(CodamaErrors))]
 pub enum Error {
-    /// The nonce account is malformed or not writable.
+    /// The nonce account is uninitialized or malformed.
     #[cfg_attr(
         feature = "codama",
-        codama(error(message = "The nonce account is malformed or not writable"))
+        codama(error(message = "The nonce account is uninitialized or malformed"))
     )]
     InvalidNonceAccount = 0,
     /// The stored authority does not match the passed authority account.
