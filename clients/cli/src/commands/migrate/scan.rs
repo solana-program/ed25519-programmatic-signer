@@ -2,10 +2,9 @@ use {
     super::{new_owner_programmatic_signer, stake, token_account, vote::authorized_withdrawer},
     crate::{
         client::{
-            Client, decode_mint, decode_stake_account, decode_upgradeable_loader_account,
-            decode_vote_account,
+            Client, decode_stake_account, decode_upgradeable_loader_account, decode_vote_account,
         },
-        mint_authority::AuthorityType,
+        mint_authority::{AuthorityType, authorities},
         output::OutputFormat,
     },
     anyhow::{Context, Result, ensure},
@@ -353,47 +352,38 @@ async fn scan_mint(
         (token_2022, &base_mint),
         (token_2022, &extended_mint),
     ] {
-        for (role, offset) in [
-            (AuthorityType::Mint, MINT_AUTHORITY_OFFSET),
-            (AuthorityType::Freeze, FREEZE_AUTHORITY_OFFSET),
-        ] {
+        // Mints are found by their mint or freeze authority. Extension authorities have no fixed
+        // offset to filter on.
+        for offset in [MINT_AUTHORITY_OFFSET, FREEZE_AUTHORITY_OFFSET] {
             queries.push((
                 token_program,
-                role,
                 vec![layout.clone(), memcmp(offset, owner.as_ref())],
             ));
         }
     }
 
     let mut mints = BTreeMap::<Address, (Address, Vec<AuthorityType>)>::new();
-    for (token_program, role, filters) in queries {
+    for (token_program, filters) in queries {
+        // The whole mint is needed to read its extension authorities.
         let matches = client
-            .program_accounts(
-                &token_program,
-                filters,
-                // Skip any extensions, only the base mint is needed.
-                Some(UiDataSliceConfig {
-                    offset: 0,
-                    length: Mint::LEN,
-                }),
-            )
+            .program_accounts(&token_program, filters, None)
             .await?;
         for (address, account) in matches {
-            let Ok((_, mint)) = decode_mint(&address, &account) else {
+            let Ok(authorities) = authorities(&account.data) else {
                 continue;
             };
-            let authority: Option<Address> = match role {
-                AuthorityType::Mint => mint.mint_authority.into(),
-                AuthorityType::Freeze => mint.freeze_authority.into(),
-                _ => unreachable!("only the mint and freeze authorities are scanned"),
-            };
-            if authority == Some(*owner) {
-                mints
-                    .entry(address)
-                    .or_insert((token_program, vec![]))
-                    .1
-                    .push(role);
+            let roles = authorities
+                .into_iter()
+                .filter(|(_, authority)| *authority == Some(*owner))
+                .map(|(role, _)| role)
+                .collect::<Vec<_>>();
+            // Revoking an authority leaves its old address in place, so the filter still matches
+            // a mint whose authority the owner revoked.
+            if roles.is_empty() {
+                continue;
             }
+            // A mint matched by both its mint and freeze authority is found twice.
+            mints.insert(address, (token_program, roles));
         }
     }
 
@@ -403,8 +393,7 @@ async fn scan_mint(
             let address = address.to_string();
             let mut args = vec!["mint", &address];
             args.extend(new_authority_args);
-            // `migrate mint` also moves Token-2022 extension authorities by default, which the
-            // scan doesn't check, so name each authority type the owner holds.
+            // Name each authority type the owner holds.
             let authority_types = roles
                 .iter()
                 .map(|role| role.name())

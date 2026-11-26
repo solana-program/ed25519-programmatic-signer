@@ -444,7 +444,7 @@ pub async fn rejects_invalid_mint_migrations(env: &TestEnv) {
 
 /// Create a Token-2022 mint whose extension authorities are all `authority`, with metadata and a
 /// group stored in the mint. It has no freeze or close authority.
-async fn create_extension_mint(
+pub async fn create_extension_mint(
     env: &TestEnv,
     mint_authority: &Keypair,
     authority: &Address,

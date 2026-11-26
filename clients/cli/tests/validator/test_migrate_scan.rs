@@ -5,7 +5,7 @@ use {
             helpers::{TestEnv, run_psigner},
         },
         migration::{migrate_error_with_args, migrate_with_args, send},
-        test_migrate_mint::{create_mint, create_mint_with_extensions},
+        test_migrate_mint::{create_extension_mint, create_mint, create_mint_with_extensions},
         test_migrate_program::deploy_program,
         test_migrate_stake::{STAKE_LAMPORTS, create_stake_account},
         test_migrate_token::{self, mint_to_new_account, mint_tokens},
@@ -120,6 +120,26 @@ pub async fn scans_owner_for_migrations(env: &TestEnv) {
     // Without extensions, a Token-2022 mint has the base layout rather than the extended one.
     let base_2022_mint =
         create_mint_with_extensions(env, &token_2022, &owner.pubkey(), None, &[]).await;
+    // Found by its mint authority, with the owner's extension authorities listed too.
+    let extension_mint = create_extension_mint(env, &owner, &owner.pubkey()).await;
+    // Only extension authorities have no fixed offset to find the mint by, so it isn't found.
+    create_extension_mint(env, &other, &owner.pubkey()).await;
+    // A revoked mint authority keeps the owner's address in the mint data, but isn't listed.
+    let revoked_mint = create_mint(env, &token, &owner.pubkey(), None).await;
+    send(
+        env,
+        &[set_authority(
+            &token,
+            &revoked_mint,
+            None,
+            AuthorityType::MintTokens,
+            &owner.pubkey(),
+            &[],
+        )
+        .unwrap()],
+        &[&owner],
+    )
+    .await;
 
     let held_mint = test_migrate_token::create_mint(env, &token, &[]).await;
     let held_account = mint_tokens(env, &token, &held_mint, &owner.pubkey(), 150).await;
@@ -295,6 +315,29 @@ pub async fn scans_owner_for_migrations(env: &TestEnv) {
                  --authority-type mint"
             )),
         ),
+        (
+            extension_mint.to_string(),
+            token_2022.to_string(),
+            [
+                "mint",
+                "transfer-fee-config",
+                "withheld-withdraw",
+                "permanent-delegate",
+                "metadata-pointer",
+                "group-pointer",
+                "pause",
+                "metadata-update",
+                "group-update",
+            ]
+            .map(String::from)
+            .to_vec(),
+            command(&format!(
+                "mint {extension_mint} --new-authority-signing-pubkey {new_owner} \
+                 --authority-type \
+                 mint,transfer-fee-config,withheld-withdraw,permanent-delegate,metadata-pointer,\
+                 group-pointer,pause,metadata-update,group-update"
+            )),
+        ),
     ];
     expected_mints.sort();
     assert_eq!(mints, expected_mints);
@@ -437,7 +480,7 @@ pub async fn scans_owner_for_migrations(env: &TestEnv) {
         display.contains("Vote accounts (withdrawer) (1):"),
         "{display}"
     );
-    assert!(display.contains("Mints (4):"), "{display}");
+    assert!(display.contains("Mints (5):"), "{display}");
     assert!(display.contains("Token accounts (6):"), "{display}");
     assert!(!display.contains("Not scanned"), "{display}");
 
