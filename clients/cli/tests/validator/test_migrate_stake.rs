@@ -6,7 +6,8 @@ use {
         },
         migration::{
             assert_signers, authorization, create_nonce, decode_execution_message,
-            execute_as_new_owner, keypair_file, migrate, migrate_error, sign_as_new_owner,
+            execute_as_new_owner, keypair_file, migrate, migrate_error, migrate_with_stderr,
+            sign_as_new_owner,
         },
     },
     solana_address::Address,
@@ -71,6 +72,16 @@ fn migrate_stake(
     extra: &[&str],
 ) -> StakeMigrationOutput {
     migrate(env, "stake", stake, new_owner, extra)
+}
+
+/// Like `migrate_stake`, but also return its stderr, which holds any warnings.
+fn migrate_stake_with_stderr(
+    env: &TestEnv,
+    stake: &Address,
+    new_owner: Option<&Address>,
+    extra: &[&str],
+) -> (StakeMigrationOutput, String) {
+    migrate_with_stderr(env, "stake", stake, new_owner, extra)
 }
 
 fn migrate_stake_error(
@@ -278,8 +289,18 @@ pub async fn migrates_stake_authorities_one_at_a_time(env: &TestEnv) {
         create_stake_account(env, &Authorized::auto(&owner.pubkey()), &Lockup::default()).await;
     let nonce_account = create_nonce(env, &owner.pubkey());
 
-    let staker = migrate_stake(env, &stake, None, &["--authority-type", "staker"]);
+    let (staker, stderr) =
+        migrate_stake_with_stderr(env, &stake, None, &["--authority-type", "staker"]);
     assert_eq!(staker.authority_types, ["staker"]);
+    // The owner keeps the withdrawer. Without a lockup in force, the custodian has no authority.
+    assert!(
+        stderr.contains(&format!(
+            "Warning: {} also holds the withdrawer authority of stake account {stake}, which this \
+             migration doesn't move",
+            owner.pubkey()
+        )),
+        "{stderr}"
+    );
     assert_eq!(
         staker.new_authority_signing_pubkey,
         owner.pubkey().to_string()
@@ -365,13 +386,15 @@ pub async fn migrates_stake_with_lockup_custodian(env: &TestEnv) {
     let nonce_account = create_nonce(env, &new_owner.pubkey());
 
     // Only moving the withdrawer needs the custodian.
-    let staker_only = migrate_stake(
+    let (staker_only, stderr) = migrate_stake_with_stderr(
         env,
         &stake,
         Some(&new_owner.pubkey()),
         &["--authority-type", "staker"],
     );
     assert_eq!(staker_only.current_custodian, None);
+    // The withdrawer and custodian belong to other addresses than the staker, so neither is named.
+    assert!(!stderr.contains("Warning"), "{stderr}");
 
     let migration = migrate_stake(env, &stake, Some(&new_owner.pubkey()), &[]);
     assert_eq!(
@@ -480,10 +503,19 @@ pub async fn migrates_stake_lockup_custodian_on_its_own(env: &TestEnv) {
     let stake = create_stake_account(env, &Authorized::auto(&owner.pubkey()), &locked).await;
     let nonce_account = create_nonce(env, &owner.pubkey());
 
-    // Moving only the staker leaves the custodian.
-    let staker = migrate_stake(env, &stake, None, &["--authority-type", "staker"]);
+    // Moving only the staker leaves the custodian, which the owner holds during the lockup.
+    let (staker, stderr) =
+        migrate_stake_with_stderr(env, &stake, None, &["--authority-type", "staker"]);
     assert_eq!(staker.authority_types, ["staker"]);
     assert_eq!(staker.current_custodian, None);
+    assert!(
+        stderr.contains(&format!(
+            "Warning: {} also holds the withdrawer, custodian authority of stake account {stake}, \
+             which this migration doesn't move",
+            owner.pubkey()
+        )),
+        "{stderr}"
+    );
     execute_migration(env, &staker, &nonce_account, &owner, &[], &[&owner]).await;
     assert_eq!(stake_lockup(env, &stake).await, locked);
 

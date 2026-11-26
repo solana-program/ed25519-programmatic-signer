@@ -17,7 +17,7 @@ use {
     solana_instruction::Instruction,
     solana_message::v1,
     spl_ed25519_signer_client::ProgrammaticSigner,
-    std::fmt,
+    std::{collections::BTreeMap, fmt},
 };
 
 #[derive(Debug, Args)]
@@ -102,6 +102,30 @@ fn default_new_authority(current_name: impl fmt::Display, current: Address) -> R
          default new authority signing pubkey. Pass --new-authority-signing-pubkey"
     );
     Ok(current)
+}
+
+/// Warn about authorities a migration leaves with an address it moves other authorities away from.
+/// `kept` pairs each set authority the migration doesn't move with its holder, and `moved_from`
+/// holds the current holders of the authorities it moves. `account` describes the account in the
+/// warning, such as "mint <address>".
+fn warn_kept_authorities<'a>(
+    account: impl fmt::Display,
+    kept: impl IntoIterator<Item = (&'a str, Address)>,
+    moved_from: &[Address],
+) {
+    let mut kept_by_holder = BTreeMap::<Address, Vec<&str>>::new();
+    for (name, holder) in kept {
+        if moved_from.contains(&holder) {
+            kept_by_holder.entry(holder).or_default().push(name);
+        }
+    }
+    for (holder, names) in kept_by_holder {
+        eprintln!(
+            "Warning: {holder} also holds the {} authority of {account}, which this migration \
+             doesn't move. Add it with --authority-type to move it too.",
+            names.join(", ")
+        );
+    }
 }
 
 /// Compile the execution message for a migration to `new_owner_programmatic_signer`.
