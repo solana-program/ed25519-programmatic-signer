@@ -5,6 +5,7 @@ use {
             helpers::{TestEnv, run_psigner, run_psigner_with_input},
         },
         migration::send,
+        test_migrate_mint::create_extension_mint,
         test_migrate_program::{PROGRAM, deploy_program, write_buffer},
         test_migrate_token::{self as token, create_mint, mint_to_new_account, mint_tokens},
         test_transaction_submit::{SubmitTest, TRANSFER_AMOUNT, create_durable_nonce, fund},
@@ -30,6 +31,7 @@ use {
         instruction::{initialize_account3, initialize_mint2, mint_to, transfer_checked},
         state::{Account as TokenAccount, Mint},
     },
+    spl_token_metadata_interface::instruction::update_authority,
     std::{
         collections::{BTreeMap, BTreeSet},
         process::Output,
@@ -619,8 +621,8 @@ async fn simulates_token_authority_changes(env: &TestEnv, token_program: &Addres
     let new_freeze_authority = Keypair::new().pubkey();
     let new_freeze_signer = programmatic_signer(&new_freeze_authority);
     let [delegate, close_authority, new_owner] = [(); 3].map(|()| Keypair::new().pubkey());
-    // A Token-2022 mint with an extension, which is not parsed, but whose multiplier doubles the
-    // displayed delegated amount.
+    // A Token-2022 mint with an extension, whose authority doesn't change, but whose multiplier
+    // doubles the displayed delegated amount.
     let (extensions, ui_amount) = if *token_program == spl_token_2022_interface::id() {
         (&[ExtensionType::ScaledUiAmount][..], "3")
     } else {
@@ -816,6 +818,106 @@ async fn simulates_token_authority_changes(env: &TestEnv, token_program: &Addres
             "after": { "address": new_owner.to_string() },
         }])
     );
+}
+
+/// Token-2022 extension authorities of a mint, including the metadata update authority, which has
+/// its own instruction. Only the changed ones are listed.
+pub async fn simulates_token_2022_mint_extension_authority_changes(env: &TestEnv) {
+    let token_program = spl_token_2022_interface::id();
+    let authority = Keypair::new();
+    let signer = programmatic_signer(&authority.pubkey());
+    let new_authority = Keypair::new().pubkey();
+    let new_signer = programmatic_signer(&new_authority);
+    let mint = create_extension_mint(env, &Keypair::new(), &signer).await;
+    let test = SubmitTest::new(env, &signer).await;
+    let execution_message = v1::Message::try_compile_with_config(
+        &signer,
+        &[
+            set_authority(
+                &token_program,
+                &mint,
+                Some(&new_signer),
+                AuthorityType::PermanentDelegate,
+                &signer,
+                &[],
+            )
+            .unwrap(),
+            set_authority(
+                &token_program,
+                &mint,
+                None,
+                AuthorityType::Pause,
+                &signer,
+                &[],
+            )
+            .unwrap(),
+            update_authority(&token_program, &mint, &signer, new_signer.into()),
+        ],
+        test.nonce,
+        v1::TransactionConfig::empty(),
+    )
+    .unwrap();
+
+    let for_authority = authority.pubkey().to_string();
+    let for_new_authority = new_authority.to_string();
+    let signing_pubkeys = [
+        "--signing-pubkey",
+        &for_authority,
+        "--signing-pubkey",
+        &for_new_authority,
+    ];
+    let output = simulate(env, &test, &execution_message, &signing_pubkeys);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(output.status.success(), "{stderr}");
+    let value: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    let signer_value = serde_json::json!({
+        "address": signer.to_string(),
+        "signingPubkey": for_authority,
+    });
+    let new_signer_value = serde_json::json!({
+        "address": new_signer.to_string(),
+        "signingPubkey": for_new_authority,
+    });
+    let change = |role: &str, after: &serde_json::Value| {
+        serde_json::json!({
+            "account": mint.to_string(),
+            "kind": "mint",
+            "role": role,
+            "before": signer_value,
+            "after": after,
+        })
+    };
+    assert_eq!(
+        value["authorityChanges"],
+        serde_json::json!([
+            change("permanentDelegate", &new_signer_value),
+            change("pauseAuthority", &serde_json::Value::Null),
+            change("metadataUpdateAuthority", &new_signer_value),
+        ])
+    );
+
+    let encoded = BASE64_STANDARD.encode(execution_message.serialize());
+    let nonce_account = test.nonce_account.to_string();
+    let display = run_psigner(
+        &[
+            &[
+                "-C",
+                &env.config_file_path,
+                "transaction",
+                "simulate",
+                &encoded,
+                &nonce_account,
+            ][..],
+            &signing_pubkeys,
+        ]
+        .concat(),
+    );
+    let display = String::from_utf8(display.stdout).unwrap();
+    let line = format!(
+        "  {mint}  mint permanent delegate: {signer} (PDA of {for_authority}) -> {new_signer} \
+         (PDA of {for_new_authority})"
+    );
+    assert!(display.contains(&line), "{display}");
 }
 
 pub async fn simulates_token_authority_changes_token(env: &TestEnv) {

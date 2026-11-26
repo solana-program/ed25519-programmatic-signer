@@ -2,6 +2,7 @@
 //! transaction writes to.
 
 use {
+    crate::mint_authority::{self, AuthorityType as MintAuthorityType},
     serde::Serialize,
     solana_account::Account,
     solana_account_decoder::{
@@ -14,9 +15,8 @@ use {
     solana_stake_interface::state::StakeStateV2,
     solana_vote_interface::state::VoteStateVersions,
     spl_token_2022_interface::{
-        check_spl_token_program_account,
-        extension::StateWithExtensions,
-        state::{Account as TokenAccount, Mint},
+        check_spl_token_program_account, extension::StateWithExtensions,
+        state::Account as TokenAccount,
     },
     std::{
         collections::{BTreeMap, BTreeSet},
@@ -126,7 +126,7 @@ pub(super) enum AccountKind {
     Vote,
     /// A Token or Token-2022 account. Extensions are not parsed.
     TokenAccount,
-    /// A Token or Token-2022 mint. Extensions are not parsed.
+    /// A Token or Token-2022 mint, including the authorities of its Token-2022 extensions.
     Mint,
     /// An upgradeable loader program data account, which holds its program's upgrade authority.
     ProgramData,
@@ -153,9 +153,29 @@ pub(super) enum AuthorityRole {
     Owner,
     /// A token account's delegate, which may transfer up to its delegated amount.
     Delegate,
+    /// A token account's or mint's close authority.
     CloseAuthority,
     MintAuthority,
     FreezeAuthority,
+    TransferFeeConfigAuthority,
+    /// A mint's authority to withdraw withheld transfer fees.
+    WithheldWithdrawAuthority,
+    InterestRateAuthority,
+    /// A mint's permanent delegate, which may transfer or burn any holder's tokens.
+    PermanentDelegate,
+    ConfidentialTransferAuthority,
+    TransferHookAuthority,
+    ConfidentialTransferFeeAuthority,
+    MetadataPointerAuthority,
+    GroupPointerAuthority,
+    GroupMemberPointerAuthority,
+    ScaledUiAmountAuthority,
+    PauseAuthority,
+    PermissionedBurnAuthority,
+    /// The update authority of token metadata stored in a mint.
+    MetadataUpdateAuthority,
+    /// The update authority of a token group stored in a mint.
+    GroupUpdateAuthority,
     UpgradeAuthority,
     /// A buffer account's authority, which may write to it, deploy it or close it, or a durable
     /// nonce account's authority, which may advance it, withdraw from it or authorize another.
@@ -416,7 +436,8 @@ fn parse_durable_nonce(account: &Account) -> Option<ParsedAccount> {
     })
 }
 
-/// Parse the base state of a token account or mint, ignoring any Token-2022 extensions.
+/// Parse a token account or a mint. For token accounts, Token-2022 extensions are ignored because
+/// they hold no authorities. For mints, Token-2022 extensions are parsed to find their authorities.
 fn parse_token(
     account: &Account,
     token_data: Option<&SplTokenAdditionalDataV2>,
@@ -449,25 +470,13 @@ fn parse_token(
                 ],
             )
         } else {
-            let Mint {
-                mint_authority,
-                freeze_authority,
-                ..
-            } = StateWithExtensions::<Mint>::unpack(&account.data)
-                .ok()?
-                .base;
             (
                 AccountKind::Mint,
-                vec![
-                    (
-                        AuthorityRole::MintAuthority,
-                        Option::from(mint_authority).map(ParsedAuthority::new),
-                    ),
-                    (
-                        AuthorityRole::FreezeAuthority,
-                        Option::from(freeze_authority).map(ParsedAuthority::new),
-                    ),
-                ],
+                mint_authority::authorities(&account.data)
+                    .ok()?
+                    .into_iter()
+                    .map(|(role, authority)| (mint_role(role), authority.map(ParsedAuthority::new)))
+                    .collect(),
             )
         };
     Some(ParsedAccount {
@@ -477,6 +486,31 @@ fn parse_token(
             .filter_map(|(role, authority)| Some((role, authority?)))
             .collect(),
     })
+}
+
+fn mint_role(role: MintAuthorityType) -> AuthorityRole {
+    match role {
+        MintAuthorityType::Mint => AuthorityRole::MintAuthority,
+        MintAuthorityType::Freeze => AuthorityRole::FreezeAuthority,
+        MintAuthorityType::TransferFeeConfig => AuthorityRole::TransferFeeConfigAuthority,
+        MintAuthorityType::WithheldWithdraw => AuthorityRole::WithheldWithdrawAuthority,
+        MintAuthorityType::CloseMint => AuthorityRole::CloseAuthority,
+        MintAuthorityType::InterestRate => AuthorityRole::InterestRateAuthority,
+        MintAuthorityType::PermanentDelegate => AuthorityRole::PermanentDelegate,
+        MintAuthorityType::ConfidentialTransferMint => AuthorityRole::ConfidentialTransferAuthority,
+        MintAuthorityType::TransferHookProgramId => AuthorityRole::TransferHookAuthority,
+        MintAuthorityType::ConfidentialTransferFeeConfig => {
+            AuthorityRole::ConfidentialTransferFeeAuthority
+        }
+        MintAuthorityType::MetadataPointer => AuthorityRole::MetadataPointerAuthority,
+        MintAuthorityType::GroupPointer => AuthorityRole::GroupPointerAuthority,
+        MintAuthorityType::GroupMemberPointer => AuthorityRole::GroupMemberPointerAuthority,
+        MintAuthorityType::ScaledUiAmount => AuthorityRole::ScaledUiAmountAuthority,
+        MintAuthorityType::Pause => AuthorityRole::PauseAuthority,
+        MintAuthorityType::PermissionedBurn => AuthorityRole::PermissionedBurnAuthority,
+        MintAuthorityType::MetadataUpdate => AuthorityRole::MetadataUpdateAuthority,
+        MintAuthorityType::GroupUpdate => AuthorityRole::GroupUpdateAuthority,
+    }
 }
 
 impl fmt::Display for AccountChange {
@@ -551,6 +585,21 @@ impl fmt::Display for AuthorityRole {
             Self::CloseAuthority => "close authority",
             Self::MintAuthority => "mint authority",
             Self::FreezeAuthority => "freeze authority",
+            Self::TransferFeeConfigAuthority => "transfer fee config authority",
+            Self::WithheldWithdrawAuthority => "withheld withdraw authority",
+            Self::InterestRateAuthority => "interest rate authority",
+            Self::PermanentDelegate => "permanent delegate",
+            Self::ConfidentialTransferAuthority => "confidential transfer authority",
+            Self::TransferHookAuthority => "transfer hook authority",
+            Self::ConfidentialTransferFeeAuthority => "confidential transfer fee authority",
+            Self::MetadataPointerAuthority => "metadata pointer authority",
+            Self::GroupPointerAuthority => "group pointer authority",
+            Self::GroupMemberPointerAuthority => "group member pointer authority",
+            Self::ScaledUiAmountAuthority => "scaled UI amount authority",
+            Self::PauseAuthority => "pause authority",
+            Self::PermissionedBurnAuthority => "permissioned burn authority",
+            Self::MetadataUpdateAuthority => "metadata update authority",
+            Self::GroupUpdateAuthority => "group update authority",
             Self::UpgradeAuthority => "upgrade authority",
             Self::Authority => "authority",
         })
