@@ -67,6 +67,14 @@ pub fn process_initialize_nonce(
     Ok(())
 }
 
+/// How much a withdrawal takes from the nonce account.
+pub enum WithdrawAmount {
+    /// The full balance at execution, closing the account.
+    All,
+    /// An exact number of lamports. Withdrawing the full balance closes the account.
+    Lamports(u64),
+}
+
 /// Withdraws lamports, closing the nonce account when its full balance is withdrawn.
 ///
 /// An initialized nonce account requires its stored authority to sign. Any other
@@ -75,7 +83,7 @@ pub fn process_initialize_nonce(
 pub fn process_withdraw_nonce(
     program_id: &Address,
     accounts: &mut [AccountView],
-    lamports: u64,
+    amount: WithdrawAmount,
 ) -> ProgramResult {
     let [authority, nonce_account, destination, ..] = accounts else {
         return Err(ProgramError::NotEnoughAccountKeys);
@@ -107,6 +115,10 @@ pub fn process_withdraw_nonce(
         return Err(ProgramError::MissingRequiredSignature);
     }
 
+    let lamports = match amount {
+        WithdrawAmount::All => nonce_account.lamports(),
+        WithdrawAmount::Lamports(lamports) => lamports,
+    };
     let remaining = nonce_account
         .lamports()
         .checked_sub(lamports)

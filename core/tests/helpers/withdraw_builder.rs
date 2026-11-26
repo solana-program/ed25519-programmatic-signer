@@ -6,7 +6,7 @@ use {
     },
     solana_account::Account,
     solana_address::Address,
-    spl_programmatic_signer_core::instruction::withdraw_nonce,
+    spl_programmatic_signer_core::instruction::{close_nonce, withdraw_nonce},
 };
 
 enum Destination {
@@ -24,6 +24,7 @@ pub struct WithdrawBuilder<'a> {
     account_count: usize,
     excess_lamports: u64,
     amount: Option<u64>,
+    close: bool,
     withdrawal_slot: Option<u64>,
     authority_is_signer: bool,
     withdraw_authority: Option<Address>,
@@ -47,6 +48,7 @@ impl Default for WithdrawBuilder<'_> {
             account_count: 3,
             excess_lamports: 100,
             amount: Some(100),
+            close: false,
             withdrawal_slot: None,
             authority_is_signer: true,
             withdraw_authority: None,
@@ -115,6 +117,12 @@ impl<'a> WithdrawBuilder<'a> {
         self
     }
 
+    /// Sends `CloseNonce` instead of `WithdrawNonce`, so no amount is passed.
+    pub fn close(mut self) -> Self {
+        self.close = true;
+        self
+    }
+
     pub fn authority_not_signer(mut self) -> Self {
         self.authority_is_signer = false;
         self
@@ -147,13 +155,22 @@ impl<'a> WithdrawBuilder<'a> {
             Destination::Nonce => nonce_address,
             Destination::Authority => authority,
         };
-        let mut instruction = withdraw_nonce(
-            &MOCK_PROGRAM_ID,
-            &authority,
-            &nonce_address,
-            &destination_address,
-            amount,
-        );
+        let mut instruction = if self.close {
+            close_nonce(
+                &MOCK_PROGRAM_ID,
+                &authority,
+                &nonce_address,
+                &destination_address,
+            )
+        } else {
+            withdraw_nonce(
+                &MOCK_PROGRAM_ID,
+                &authority,
+                &nonce_address,
+                &destination_address,
+                amount,
+            )
+        };
         instruction.accounts[0].is_signer = self.authority_is_signer;
         instruction.accounts.truncate(self.account_count);
 

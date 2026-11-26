@@ -316,3 +316,111 @@ fn withdraw_to_authority_is_allowed() {
         .check(Check::account(&authority).lamports(amount).build())
         .execute();
 }
+
+#[test]
+fn close_succeeds_after_balance_grows() {
+    let nonce_address = Address::new_unique();
+    // Lamports sent to the nonce account after the close was signed
+    let donated = 1;
+    let balance = Rent::default()
+        .minimum_balance(Nonce::LEN)
+        .checked_add(donated)
+        .unwrap();
+    let destination = Address::new_unique();
+    WithdrawBuilder::default()
+        .nonce_address(nonce_address)
+        .initialization_slot(42)
+        .excess_lamports(donated)
+        .destination_account((
+            destination,
+            Account {
+                lamports: 1_000_000,
+                ..Account::default()
+            },
+        ))
+        .withdrawal_slot(43)
+        .close()
+        .check(Check::success())
+        .check(Check::account(&nonce_address).closed().build())
+        .check(
+            Check::account(&destination)
+                .lamports(balance.checked_add(1_000_000).unwrap())
+                .build(),
+        )
+        .execute();
+}
+
+#[test]
+fn close_nonce_rejects_wrong_authority() {
+    WithdrawBuilder::default()
+        .initialization_slot(42)
+        .withdrawal_slot(43)
+        .withdraw_authority(Address::new_unique())
+        .close()
+        .check(Check::err(Error::AuthorityMismatch.into()))
+        .execute();
+}
+
+#[test]
+fn close_nonce_requires_authority_signature() {
+    WithdrawBuilder::default()
+        .initialization_slot(42)
+        .withdrawal_slot(43)
+        .authority_not_signer()
+        .close()
+        .check(Check::err(ProgramError::MissingRequiredSignature))
+        .execute();
+}
+
+#[test]
+fn close_nonce_rejects_initialization_slot() {
+    WithdrawBuilder::default()
+        .initialization_slot(42)
+        .withdrawal_slot(42)
+        .close()
+        .check(Check::err(Error::CloseSameSlot.into()))
+        .execute();
+}
+
+#[test]
+fn close_nonce_closes_uninitialized_account() {
+    let (nonce_address, nonce_account) = NonceAccountBuilder::new().build();
+    let balance = nonce_account.lamports;
+    let destination = Address::new_unique();
+    WithdrawBuilder::default()
+        .nonce_account((nonce_address, nonce_account))
+        .withdraw_authority(nonce_address)
+        .destination_account((
+            destination,
+            Account {
+                lamports: 1_000_000,
+                ..Account::default()
+            },
+        ))
+        .close()
+        .check(Check::success())
+        .check(Check::account(&nonce_address).closed().build())
+        .check(
+            Check::account(&destination)
+                .lamports(balance.checked_add(1_000_000).unwrap())
+                .build(),
+        )
+        .execute();
+}
+
+#[test]
+fn close_nonce_rejects_destination_overflow() {
+    WithdrawBuilder::default()
+        .initialization_slot(42)
+        .withdrawal_slot(43)
+        .destination_account((
+            Address::new_unique(),
+            Account {
+                lamports: u64::MAX,
+                ..Account::default()
+            },
+        ))
+        .close()
+        .check(Check::err(ProgramError::ArithmeticOverflow))
+        .execute();
+}
