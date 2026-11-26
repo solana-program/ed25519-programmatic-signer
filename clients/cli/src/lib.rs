@@ -1,6 +1,7 @@
 mod cli;
 mod client;
 mod commands;
+mod mint_authority;
 mod output;
 
 pub use commands::{

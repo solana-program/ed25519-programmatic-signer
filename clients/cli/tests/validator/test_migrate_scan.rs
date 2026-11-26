@@ -264,7 +264,8 @@ pub async fn scans_owner_for_migrations(env: &TestEnv) {
             token.to_string(),
             vec!["mint".to_string(), "freeze".to_string()],
             command(&format!(
-                "mint {token_mint} --new-authority-signing-pubkey {new_owner}"
+                "mint {token_mint} --new-authority-signing-pubkey {new_owner} --authority-type \
+                 mint,freeze"
             )),
         ),
         (
